@@ -1,0 +1,77 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="NPv64050cORZFsmivGDy">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="0" arrows="1" fold="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="0g9v7HaOAvQywPjOM8PP-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Lawyers" vertex="1">
+          <mxGeometry height="60" width="120" x="420" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="0g9v7HaOAvQywPjOM8PP-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Clients" vertex="1">
+          <mxGeometry height="60" width="120" x="520" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-13" edge="1" parent="1" style="edgeStyle=none;curved=0;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;startArrow=classic;startFill=1;entryX=0.079;entryY=0.743;entryDx=0;entryDy=0;entryPerimeter=0;endArrow=none;endFill=0;" target="wke5tFkdf7U2sImnfMdO-6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="340" y="360" />
+              <mxPoint x="390" y="360" />
+            </Array>
+            <mxPoint x="340" y="201.2" as="sourcePoint" />
+            <mxPoint x="430" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Administrator" vertex="1">
+          <mxGeometry height="60" width="120" x="320" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-6" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="JuriSync" vertex="1">
+          <mxGeometry height="80" width="80" x="440" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-11" edge="1" parent="1" source="0g9v7HaOAvQywPjOM8PP-4" style="edgeStyle=none;curved=0;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;entryX=1.005;entryY=0.495;entryDx=0;entryDy=0;entryPerimeter=0;startArrow=classic;startFill=1;endArrow=none;endFill=0;" target="wke5tFkdf7U2sImnfMdO-6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="580" y="280" />
+              <mxPoint x="580" y="340" />
+            </Array>
+            <mxPoint x="530" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-15" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;autosize=1;resizable=0;" value="System Operation Reports,&lt;div&gt;Firm-wide Schedule View,&amp;nbsp;&lt;/div&gt;&lt;div&gt;Schedule Conflict Alerts&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="170" x="170" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-16" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;autosize=1;resizable=0;" value="Triggered Case Updates,&lt;div&gt;Hearing Reminders,&amp;nbsp;&lt;/div&gt;&lt;div&gt;Court Deadline Alerts&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="160" x="580" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-17" edge="1" parent="1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.758;entryY=0.936;entryDx=0;entryDy=0;entryPerimeter=0;fontSize=12;startSize=8;endSize=8;startArrow=classic;startFill=1;endArrow=none;endFill=0;" target="wke5tFkdf7U2sImnfMdO-6">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="499.9998734177215" y="480" as="sourcePoint" />
+            <mxPoint x="500.61000000000007" y="383.6" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-23" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;autosize=1;resizable=0;" value="Case Files &amp;amp; Scanned Pleadings,&amp;nbsp;&lt;div&gt;Personal Schedule Entries,&lt;/div&gt;&lt;div&gt;Email Triggers&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="200" x="260" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="wke5tFkdf7U2sImnfMdO-28" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;autosize=1;resizable=0;" value="Shared Schedule View,&lt;div&gt;Internal Notifications,&amp;nbsp;&lt;/div&gt;&lt;div&gt;Document Access,&amp;nbsp;&lt;/div&gt;&lt;div&gt;Schedule Conflict Alerts&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="150" x="500" y="385" as="geometry" />
+        </mxCell>
+        <mxCell id="5JFgoPtuKFVcmzMYs4dX-1" edge="1" parent="1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.758;entryY=0.936;entryDx=0;entryDy=0;entryPerimeter=0;fontSize=12;startSize=8;endSize=8;startArrow=none;startFill=0;endArrow=classic;endFill=1;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="459.9998734177215" y="480" as="sourcePoint" />
+            <mxPoint x="461" y="375" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="5JFgoPtuKFVcmzMYs4dX-2" edge="1" parent="1" style="edgeStyle=none;curved=0;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;startArrow=none;startFill=0;entryX=0.062;entryY=0.244;entryDx=0;entryDy=0;entryPerimeter=0;" target="wke5tFkdf7U2sImnfMdO-6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410" y="320" />
+            </Array>
+            <mxPoint x="410" y="200" as="sourcePoint" />
+            <mxPoint x="440" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="5JFgoPtuKFVcmzMYs4dX-3" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;autosize=1;resizable=0;fontSize=12;" value="User Account Details,&amp;nbsp;&lt;div&gt;Shared Schedule Data,&amp;nbsp;&lt;/div&gt;&lt;div&gt;Conflict Resolutions&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="150" x="420" y="230" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

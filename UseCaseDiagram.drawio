@@ -1,0 +1,114 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="bY52UMOIi8krNUiComDJ">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#0050ef;strokeColor=#001DBC;fontColor=#ffffff;" value="" vertex="1">
+          <mxGeometry height="750" width="230" x="270" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-9" edge="1" parent="1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;endArrow=none;endFill=0;" target="Evcb9tsNy2l8zpBmtZxL-8">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="190" y="120" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-1" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Lawyers" vertex="1">
+          <mxGeometry height="60" width="30" x="160" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-3" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Clients" vertex="1">
+          <mxGeometry height="60" width="30" x="610" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-6" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Manage Shared Schedule" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-7" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Manage Case Profiles" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-8" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Manage Personal Schedules" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-9" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Receive Case Updates" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="780" as="geometry" />
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-26" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="b_DTGCtoJytToXDP8y-o-7" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="190" y="120" as="sourcePoint" />
+            <mxPoint x="270" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="b_DTGCtoJytToXDP8y-o-27" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;entryX=0.001;entryY=0.511;entryDx=0;entryDy=0;entryPerimeter=0;" target="b_DTGCtoJytToXDP8y-o-8" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="190" y="120" as="sourcePoint" />
+            <mxPoint x="329" y="300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tLDH-LKYSm9dMnsmj8Op-1" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="0KvyEY98Wsb2miIn9oPV-1" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="190" y="120" as="sourcePoint" />
+            <mxPoint x="330" y="390.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tLDH-LKYSm9dMnsmj8Op-2" edge="1" parent="1" style="endArrow=none;html=1;rounded=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" target="b_DTGCtoJytToXDP8y-o-9" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="600" y="750" as="sourcePoint" />
+            <mxPoint x="700" y="742.82" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0KvyEY98Wsb2miIn9oPV-1" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="View Shared Schedule" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-7" edge="1" parent="1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;endArrow=none;endFill=0;" target="Evcb9tsNy2l8zpBmtZxL-6">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="590" y="200" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-14" edge="1" parent="1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;endArrow=none;endFill=0;" target="Evcb9tsNy2l8zpBmtZxL-8">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="590" y="200" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="O5qrFQBQFe3KAFJ2qOA_-1" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" value="Administrator" vertex="1">
+          <mxGeometry height="60" width="30" x="610" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="O5qrFQBQFe3KAFJ2qOA_-8" edge="1" parent="1" source="b_DTGCtoJytToXDP8y-o-6" style="endArrow=none;html=1;rounded=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="480" y="140" as="sourcePoint" />
+            <mxPoint x="590" y="200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-2" parent="1" style="text;html=1;whiteSpace=wrap;align=center;verticalAlign=middle;rounded=0;fontSize=16;fontStyle=1" value="JuriSync" vertex="1">
+          <mxGeometry height="30" width="60" x="360" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-6" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Manage User Accounts" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-8" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Manage Internal Notifications" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-12" edge="1" parent="1" source="Evcb9tsNy2l8zpBmtZxL-11" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;startSize=8;endSize=8;endArrow=none;endFill=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="590" y="200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Evcb9tsNy2l8zpBmtZxL-11" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="View System Reports" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="eqnWZqyhkhe5NA-CeR_v-2" parent="1" style="ellipse;whiteSpace=wrap;html=1;" value="Manage Schedule Conflicts" vertex="1">
+          <mxGeometry height="80" width="120" x="330" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="eqnWZqyhkhe5NA-CeR_v-4" edge="1" parent="1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;endArrow=none;endFill=0;" target="eqnWZqyhkhe5NA-CeR_v-2">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="190" y="120" as="sourcePoint" />
+            <mxPoint x="300" y="740" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eqnWZqyhkhe5NA-CeR_v-5" edge="1" parent="1" style="edgeStyle=none;curved=1;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;startSize=8;endSize=8;endArrow=none;endFill=0;" target="eqnWZqyhkhe5NA-CeR_v-2">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="590" y="200" as="sourcePoint" />
+            <mxPoint x="540" y="710" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
