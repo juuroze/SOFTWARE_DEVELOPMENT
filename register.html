@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register Test User</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f8fafc;">
+    <div style="background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: 350px;">
+        <h2>Register Test User</h2>
+        <form id="reg-form">
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">Full Name</label>
+                <input type="text" id="reg-name" value="Test Attorney" style="width: 100%; padding: 8px; box-sizing: border-box;" required>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">Email</label>
+                <input type="email" id="reg-email" value="testing123@gmail.com" style="width: 100%; padding: 8px; box-sizing: border-box;" required>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 13px;">Password</label>
+                <input type="password" id="reg-password" placeholder="Enter password" style="width: 100%; padding: 8px; box-sizing: border-box;" required>
+            </div>
+            <button type="submit" id="reg-btn" style="width: 100%; padding: 10px; background: #0f172a; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">Register User</button>
+        </form>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5'; 
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        document.getElementById('reg-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fullName = document.getElementById('reg-name').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const btn = document.getElementById('reg-btn');
+
+            btn.disabled = true;
+            btn.innerText = 'Registering...';
+
+            // 1. Sign up user in Supabase Auth
+            const { data, error } = await supabaseClient.auth.signUp({
+                email: email,
+                password: password,
+                options: {
+                    data: { full_name: fullName, role: 'lawyer' }
+                }
+            });
+
+            if (error) {
+                alert('Registration failed: ' + error.message);
+                btn.disabled = false;
+                btn.innerText = 'Register User';
+                return;
+            }
+
+            // 2. Safely insert into your public 'profiles' table
+            const userId = data.user ? data.user.id : null;
+            if (userId) {
+                const { error: profileError } = await supabaseClient.from('profiles').insert([{
+                    id: userId,
+                    full_name: fullName,
+                    role: 'lawyer',
+                    status: 'active',
+                    specialization: 'General Practice'
+                }]);
+
+                if (profileError) {
+                    alert('Auth created, but profile insert failed: ' + profileError.message);
+                } else {
+                    alert('User successfully registered and profile created! You can now log in.');
+                }
+            }
+
+            btn.disabled = false;
+            btn.innerText = 'Register User';
+        });
+    </script>
+</body>
+</html>

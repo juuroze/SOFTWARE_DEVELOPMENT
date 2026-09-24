@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JuriSync - Login</title>
+    <link rel="stylesheet" href="style.css">
+    <link 
+        rel="stylesheet" 
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    >
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="login-body">
+    <div class="login-card">
+        <div class="brand-wrapper">
+            <img src="logo11.png" alt="JuriSync Logo" class="brand-logo-login">
+        </div>
+        <h2>JuriSync</h2>
+        <p>Sign in to manage your calendar and cases</p>
+        
+        <form id="login-form" autocomplete="off">
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="email" placeholder="attorney@lawfirm.com" required autocomplete="off">
+            </div>
+            
+            <div class="form-group">
+                <label>Password</label>
+                <div style="position: relative;">
+                    <input type="password" id="password" placeholder="Enter your password" required autocomplete="new-password" style="width: 100%; padding-right: 42px; box-sizing: border-box;">
+                    <button type="button" id="toggle-password-visibility" aria-label="Show password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #64748b; padding: 4px; display: flex; align-items: center;">
+                        <i class="fa-solid fa-eye-slash" id="toggle-password-icon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-options">
+                <a href="#" class="forgot-password">Forgot password?</a>
+            </div>
+            
+            <button type="submit" class="btn-login">Sign In</button>
+
+            <div class="login-footer">
+                Don't have an account? <a href="#">Contact your administrator</a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5'; 
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const togglePasswordBtn = document.getElementById('toggle-password-visibility');
+        const passwordInputEl = document.getElementById('password');
+        const togglePasswordIcon = document.getElementById('toggle-password-icon');
+
+        if (togglePasswordBtn && passwordInputEl && togglePasswordIcon) {
+            togglePasswordBtn.addEventListener('click', () => {
+                const willBeVisible = passwordInputEl.type === 'password';
+                passwordInputEl.type = willBeVisible ? 'text' : 'password';
+                // Visible password -> open eye (click to hide). Hidden password -> slashed eye (click to reveal).
+                togglePasswordIcon.classList.toggle('fa-eye', willBeVisible);
+                togglePasswordIcon.classList.toggle('fa-eye-slash', !willBeVisible);
+                togglePasswordBtn.setAttribute('aria-label', willBeVisible ? 'Hide password' : 'Show password');
+            });
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault(); 
+            
+            const emailInput = document.getElementById('email').value.trim();
+            const passwordInput = document.getElementById('password').value;
+            const loginBtn = document.querySelector('.btn-login');
+            
+            loginBtn.disabled = true;
+            loginBtn.innerText = 'Signing In...';
+
+            const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+                email: emailInput,
+                password: passwordInput
+            });
+
+            if (authError) {
+                alert('Login failed: ' + authError.message);
+                loginBtn.disabled = false;
+                loginBtn.innerText = 'Sign In';
+                return;
+            }
+
+            const userId = authData.user.id;
+            let { data: profileData, error: profileError } = await supabaseClient
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .single();
+
+            if (profileError || !profileData) {
+                const { data: insertedProfile, error: insertError } = await supabaseClient
+                    .from('profiles')
+                    .insert([{
+                        id: userId,
+                        full_name: emailInput.split('@')[0],
+                        role: 'lawyer',
+                        status: 'active',
+                        specialization: 'General Practice'
+                    }])
+                    .select('*')
+                    .single();
+
+                if (insertError) {
+                    console.error("Profile auto-creation error:", insertError.message);
+                    alert('Authenticated, but failed to load or create profile data. Check database permissions.');
+                    loginBtn.disabled = false;
+                    loginBtn.innerText = 'Sign In';
+                    return;
+                }
+                profileData = insertedProfile;
+            }
+
+            localStorage.setItem('userProfile', JSON.stringify(profileData));
+            window.location.href = 'index.html';
+        });
+    </script>
+</body>
+</html>

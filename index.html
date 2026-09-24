@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JuriSync - Law Firm Management</title>
+    
+    <link rel="stylesheet" href="style.css">
+    <link 
+        rel="stylesheet" 
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    >
+    
+    <script 
+        src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+    ></script>
+</head>
+
+<body>
+
+    <div class="container">
+
+        <nav class="sidebar">
+
+            <div class="sidebar-header">
+                <div class="brand-wrapper-sidebar">
+                    <img src="logo11.png" alt="JuriSync Logo" class="brand-logo-small">
+                    <h2>JuriSync</h2>
+                </div>
+                <p>Law Firm Management</p>
+            </div>
+
+            <ul class="nav-links">
+                <li class="active" data-target="dashboard-view">
+                    <i class="fa-solid fa-table-columns"></i>
+                    <span>Dashboard</span>
+                </li>
+                
+                <li data-target="calendar-view">
+                    <i class="fa-solid fa-calendar-days"></i>
+                    <span>Calendar</span>
+                </li>
+                
+                <li data-target="documents-view">
+                    <i class="fa-solid fa-file-lines"></i>
+                    <span>Documents</span>
+                </li>
+
+                <li data-target="cases-view">
+                    <i class="fa-solid fa-briefcase"></i>
+                    <span>Cases</span>
+                </li>
+                
+                <li data-target="notifications-view">
+                    <i class="fa-solid fa-bell"></i>
+                    <span>Notifications</span>
+                </li>
+
+                <li id="nav-manage-lawyers" data-target="manage-lawyers-view" style="display: none;">
+                    <i class="fa-solid fa-users-gear"></i>
+                    <span>Manage Lawyers</span>
+                </li>
+            </ul>
+
+            <ul class="nav-links" style="margin-top: auto; margin-bottom: 0;">
+                <li id="logout-sidebar-btn" class="logout-item">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                    <span>Logout</span>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer" id="sidebar-profile-trigger" style="cursor: pointer; margin-top: 15px;" title="Edit profile">
+                <div class="user-info">
+                    <div class="avatar-small">
+                        LC
+                    </div>
+                    <div class="user-details">
+                        <p class="user-name">Atty. Carlos</p>
+                        <p class="user-role">Administrator</p>
+                    </div>
+                    <i class="fa-solid fa-pen" style="font-size: 11px; color: #94a3b8; margin-left: auto;"></i>
+                </div>
+            </div>
+
+        </nav>
+
+        <main class="main-content">
+
+            <section id="dashboard-view" class="view-section">
+                <header class="view-header">
+                    <div>
+                        <h1>Dashboard</h1>
+                        <p>Strategic overview of legal proceedings and firm calendar.</p>
+                    </div>
+                </header>
+
+               <div class="profile-header-card" style="margin-bottom: 25px;">
+                    <div class="profile-info-flex">
+                        <div class="avatar-large">SC</div>
+                        <div>
+                            <h2>Loading...</h2>
+                            <p class="role-text">Lawyer</p>
+                            <div class="contact-text">
+                                <span><i class="fa-regular fa-envelope"></i> email@lawfirm.com</span>
+                                <span><i class="fa-solid fa-phone"></i> (555) 123-4567</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-card" style="margin-bottom: 25px;">
+                    <div class="card-title-flex">
+                        <h3>Deadlines</h3>
+                        <span id="deadline-timeframe-label" class="text-muted" style="font-weight: 600;">Loading...</span>
+                    </div>
+                    <div id="deadline-list-inject">
+                        </div>
+                    <button class="btn-full-width-outline" id="btn-dash-view-calendar" style="margin-top: 15px;">
+                        View Full Calendar
+                    </button>
+                </div>
+
+                <div class="schedule-stats-row">
+                    <div class="sched-stat-card">
+                        <div>
+                            <h3 style="color: #3b82f6;">0</h3>
+                            <p>Active Cases</p>
+                        </div>
+                        <i class="fa-regular fa-file-lines" style="color: #94a3b8; font-size: 20px;"></i>
+                    </div>
+                    <div class="sched-stat-card">
+                        <div>
+                            <h3 style="color: #ef4444;">0</h3>
+                            <p>Deadlines</p>
+                        </div>
+                        <i class="fa-solid fa-circle-exclamation" style="color: #fca5a5; font-size: 20px;"></i>
+                    </div>
+                    <div class="sched-stat-card">
+                        <div>
+                            <h3 style="color: #22c55e;">0</h3>
+                            <p>Completed</p>
+                        </div>
+                        <i class="fa-regular fa-circle-check" style="color: #86efac; font-size: 20px;"></i>
+                    </div>
+                    <div class="sched-stat-card">
+                        <div>
+                            <h3 style="color: #a855f7;">0</h3>
+                            <p>Hours/Week</p>
+                        </div>
+                        <i class="fa-regular fa-clock" style="color: #d8b4fe; font-size: 20px;"></i>
+                    </div>
+                </div>
+
+                <div class="schedule-tabs-container">
+                    <button class="sched-tab-btn active" data-scheduletab="sched-today">Today</button>
+                    <button class="sched-tab-btn" data-scheduletab="sched-cases">My Cases</button>
+                    <button class="sched-tab-btn" data-scheduletab="sched-perf">Performance</button>
+                </div>
+
+                <div id="sched-today" class="sched-tab-content">
+                    <div class="schedule-grid-layout">
+                        <div class="sched-left-col">
+                            <div class="content-card" style="margin-bottom: 25px;">
+                                <div class="card-title-flex">
+                                    <h3><i class="fa-regular fa-clock"></i> Today's Schedule</h3>
+                                </div>
+                                <div id="timeline-inject" class="timeline-container">
+                                    </div>
+                            </div>
+                            
+                            <div class="content-card">
+                                <div class="card-title-flex">
+                                    <h3><i class="fa-regular fa-file-lines"></i> Recent Documents</h3>
+                                </div>
+                                <div id="recent-docs-inject">
+                                    </div>
+                                <button id="btn-sched-view-docs" class="btn-full-width-outline">
+                                    View All Documents
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="sched-right-col">
+                            <div class="content-card">
+                                <div class="card-title-flex">
+                                    <h3><i class="fa-solid fa-circle-exclamation"></i> Upcoming Deadlines</h3>
+                                </div>
+                                <div id="upcoming-dl-inject">
+                                    </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="sched-perf" class="sched-tab-content hidden">
+                    <div class="content-card">
+                        <p>Performance data loading...</p>
+                    </div>
+                </div>
+                
+                <div id="sched-cases" class="sched-tab-content hidden">
+                    <div class="content-card">
+                        <p>Cases data loading...</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="calendar-view" class="view-section hidden">
+                <header class="view-header flex-between">
+                    <div>
+                        <h1>Firm-wide Calendar</h1>
+                        <p>Intelligent tracking for hearings, deadlines, and meetings.</p>
+                    </div>
+                    <button class="btn-primary-black btn-add-event" id="btn-add-event-header" style="display: none;">
+                        <i class="fa-solid fa-plus"></i> Add Event
+                    </button>
+                </header>
+
+                <div class="calendar-wrapper">
+                    <div class="calendar-container-card">
+                        <div class="calendar-header-nav">
+                            <h3 id="currentMonthYear">April 2026</h3>
+                            <div class="nav-btns">
+                                <button id="prevMonth" class="btn-nav">
+                                    <i class="fa-solid fa-chevron-left"></i>
+                                </button>
+                                <button id="nextMonth" class="btn-nav">
+                                    <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="calendar-box">
+                            <div class="calendar-weekdays">
+                                <div>Sun</div>
+                                <div>Mon</div>
+                                <div>Tue</div>
+                                <div>Wed</div>
+                                <div>Thu</div>
+                                <div>Fri</div>
+                                <div>Sat</div>
+                            </div>
+                            <div id="calendar-days" class="calendar-grid-body">
+                                </div>
+                        </div>
+                    </div>
+
+                    <aside class="calendar-sidebar-widgets">
+                        <div class="widget-card">
+                            <h4>
+                                <i class="fa-solid fa-triangle-exclamation"></i> 
+                                Active Conflicts
+                            </h4>
+                            <div id="widget-conflicts-list">
+                                </div>
+                        </div>
+                        
+                        <div class="widget-card">
+                            <h4>
+                                <i class="fa-solid fa-location-dot"></i> 
+                                Resources
+                            </h4>
+                            <div id="widget-resources-list">
+                                </div>
+                        </div>
+                        
+                        <div class="widget-card">
+                            <h4>
+                                <i class="fa-solid fa-user-group"></i> 
+                                Lawyers
+                            </h4>
+                            <ul id="lawyer-status-list-sidebar">
+                                </ul>
+                        </div>
+                    </aside>
+                </div>
+            </section>
+
+            <section id="documents-view" class="view-section hidden">
+                <header class="view-header flex-between">
+                    <div>
+                        <h1>Document Repository</h1>
+                        <p>Centralized storage for all case-related documents</p>
+                    </div>
+                    <button class="btn-primary-black" id="btn-upload-doc" style="display: none;">
+                        <i class="fa-solid fa-upload"></i> Upload Document
+                    </button>
+                </header>
+
+                <div class="doc-search-bar">
+                    <div class="search-input-container">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="doc-search-input" placeholder="Search by filename or title...">
+                    </div>
+                    <div class="filter-select-wrapper">
+                        <i class="fa-solid fa-filter"></i>
+                        <select id="doc-filter">
+                            <option value="all">All Documents</option>
+                            <option value="motion">Motions</option>
+                            <option value="contract">Contracts</option>
+                            <option value="pleading">Pleadings</option>
+                            <option value="evidence">Evidence</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="results-metadata">
+                    <p id="docs-found-count">Found 0 documents</p>
+                </div>
+                
+                <div id="documents-grid-inject" class="documents-grid-layout">
+                    </div>
+            </section>
+
+            <section id="cases-view" class="view-section hidden">
+                <header class="view-header flex-between">
+                    <div>
+                        <h1>Cases</h1>
+                        <p>Case status, client records, and lawyer-client messaging.</p>
+                    </div>
+                    <button class="btn-primary-black" id="btn-add-client">
+                        <i class="fa-solid fa-user-plus"></i> Add Client
+                    </button>
+                </header>
+
+                <div id="cases-list-inject" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 35px;">
+                    </div>
+
+                <div class="content-card" style="margin-top: 10px;">
+                    <div class="card-title-flex">
+                        <h3><i class="fa-solid fa-address-book"></i> Client Directory</h3>
+                    </div>
+                    <div id="clients-list-inject">
+                        </div>
+                </div>
+            </section>
+
+
+            <section id="notifications-view" class="view-section hidden">
+                
+                <header class="view-header">
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                        <h1 style="margin: 0;">Notifications</h1>
+                        <span id="notif-header-badge" class="badge-pill bg-red" style="font-size: 13px; padding: 4px 10px;">
+                            Loading...
+                        </span>
+                    </div>
+                    <p>Your daily summary of alerts and reminders.</p>
+                </header>
+
+                <div class="notif-toggles">
+                    <button class="notif-tab-btn active" data-notiftab="notif-all">
+                        <i class="fa-regular fa-bell"></i> Notifications
+                    </button>
+                    <button class="notif-tab-btn" data-notiftab="notif-email">
+                        <i class="fa-regular fa-envelope"></i> Email Queue
+                    </button>
+                </div>
+
+                <div id="notif-all" class="notif-content-pane">
+                    <div class="notif-grid-layout">
+                        
+                        <div class="notif-list-container">
+                            <div class="content-card" style="padding: 0; overflow: hidden;">
+                                <div class="card-header-basic" style="padding: 20px 25px; border-bottom: 1px solid #f1f5f9; background: #fafbfc;">
+                                    <h3 style="font-size: 15px;">All Notifications</h3>
+                                </div>
+                                <div id="notifications-list-inject" style="padding: 20px 25px;">
+                                    </div>
+                            </div>
+                        </div>
+
+                        <div class="notif-sidebar-container">
+                            <div class="content-card" style="margin-bottom: 25px;">
+                                <h3 style="font-size: 15px; margin-bottom: 20px;">Notification Stats</h3>
+                                <div class="stat-row">
+                                    <span style="color: #64748b; font-size: 13px;">Unread</span>
+                                    <span style="color: #3b82f6; font-size: 18px; font-weight: 700;">0</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span style="color: #64748b; font-size: 13px;">High Priority</span>
+                                    <span style="color: #ef4444; font-size: 18px; font-weight: 700;">0</span>
+                                </div>
+                                <div class="stat-row" style="border: none;">
+                                    <span style="color: #64748b; font-size: 13px;">Emails Sent</span>
+                                    <span style="color: #22c55e; font-size: 18px; font-weight: 700;">0</span>
+                                </div>
+                            </div>
+
+                            <div class="content-card">
+                                <h3 style="font-size: 15px; margin-bottom: 20px;">Actions</h3>
+                                <button id="btn-mark-read" class="btn-action-outline">Mark All as Read</button>
+                                <button id="btn-clear-read" class="btn-action-outline">Clear Read Notifications</button>
+                                <button id="btn-send-test-email" class="btn-action-dark">
+                                    <i class="fa-regular fa-paper-plane"></i> Send Test Email
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="notif-email" class="notif-content-pane hidden">
+                    <div class="content-card" style="padding: 0; overflow: hidden;">
+                        <div class="card-header-basic" style="padding: 20px 25px; border-bottom: 1px solid #f1f5f9; background: #fafbfc;">
+                            <h3 style="font-size: 15px;">Email Notification Queue</h3>
+                        </div>
+                        <div id="email-queue-list-inject" style="padding: 20px 25px;">
+                            </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <section id="manage-lawyers-view" class="view-section hidden">
+                <header class="view-header flex-between">
+                    <div>
+                        <h1>Manage Lawyers</h1>
+                        <p>Your team's professional directory and management.</p>
+                    </div>
+                    <button class="btn-primary-black" id="btn-open-add-lawyer-modal">
+                        <i class="fa-solid fa-user-plus"></i> Add New Lawyer
+                    </button>
+                </header>
+
+                <div class="manage-lawyers-tabs" style="display: flex; gap: 0; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0;">
+                    <button class="manage-tab-btn active" data-managetab="manage-active-lawyers" style="padding: 12px 24px; background: none; border: none; border-bottom: 2px solid #0f172a; margin-bottom: -2px; font-weight: 600; color: #0f172a; cursor: pointer; font-family: inherit; font-size: 14px;">
+                        <i class="fa-solid fa-user-check" style="margin-right: 8px;"></i> Active Lawyers
+                    </button>
+                    <button class="manage-tab-btn" data-managetab="manage-archived-lawyers" style="padding: 12px 24px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; color: #64748b; cursor: pointer; font-family: inherit; font-size: 14px;">
+                        <i class="fa-solid fa-box-archive" style="margin-right: 8px;"></i> Archived Lawyers
+                    </button>
+                </div>
+
+                <div id="manage-active-lawyers" class="manage-tab-content">
+                    <div class="content-card">
+                        <div class="card-header-basic" style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-size: 16px; color: #0f172a;">Firm Lawyers Directory</h3>
+                            <span id="manage-lawyers-count" style="font-size: 12px; color: #64748b;">Loading...</span>
+                        </div>
+                        <div id="manage-lawyers-list-inject" style="display: flex; flex-direction: column; gap: 12px;">
+                            <p style="color:#64748b; text-align:center; padding:30px;">Lawyer directory will be displayed here.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="manage-archived-lawyers" class="manage-tab-content hidden">
+                    <div class="content-card">
+                        <div class="card-header-basic" style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-size: 16px; color: #0f172a;">Archived Lawyers</h3>
+                            <span id="manage-archived-count" style="font-size: 12px; color: #64748b;">Loading...</span>
+                        </div>
+                        <div id="manage-archived-list-inject" style="display: flex; flex-direction: column; gap: 12px;">
+                            <p style="color:#64748b; text-align:center; padding:30px;">Loading archived lawyers...</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+        
+        <div id="logout-modal" class="modal-overlay hidden">
+            <div class="modal-card" style="background: #ffffff; border-radius: 12px; padding: 30px;">
+                <h3>Confirm Logout</h3>
+                <p>Are you sure you want to log out of JuriSync?</p>
+                <div class="modal-actions">
+                    <button id="btn-cancel-logout" class="btn-action-outline">Cancel</button>
+                    <button id="btn-confirm-logout" class="btn-action-dark bg-red">Logout</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="day-details-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 550px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
+                    <h2 id="day-details-title" style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 0;">Events for the Day</h2>
+                    <button id="close-day-details-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div id="day-details-list" style="display: flex; flex-direction: column; gap: 15px;">
+                    </div>
+            </div>
+        </div>
+
+        <div id="room-booking-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 450px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
+                    <h2 id="room-booking-title" style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 0;">Booking Details</h2>
+                    <button id="close-room-booking-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div id="room-booking-body" style="display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #334155;">
+                    </div>
+            </div>
+        </div>
+
+        <div id="add-event-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Schedule New Event</h2>
+                    <button id="close-modal-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Fill out the one-stop form below to auto-sync Client and Case data.</p>
+                
+                <form id="add-event-form">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Event Title</label>
+                        <input type="text" id="event-title" required placeholder="e.g., Initial Hearing" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                    </div>
+                    
+                    <div class="form-row" style="display: flex; gap: 16px; margin-bottom: 16px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Date</label>
+                            <input type="date" id="event-date" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Time</label>
+                            <input type="time" id="event-time" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                    </div>
+
+                    <div class="form-row" style="display: flex; gap: 16px; margin-bottom: 16px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">End Date <span style="font-weight: 400; color: #94a3b8;">(optional)</span></label>
+                            <input type="date" id="event-end-date" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">End Time <span style="font-weight: 400; color: #94a3b8;">(optional)</span></label>
+                            <input type="time" id="event-end-time" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                    </div>
+                    <p id="event-end-hint" style="font-size: 11px; color: #94a3b8; margin: -10px 0 16px 0;">Leave blank to default to 1 hour after the start time.</p>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Priority</label>
+                        <div style="position: relative;">
+                            <select id="event-priority" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
+                                <option value="normal">Normal</option>
+                                <option value="high">High Priority</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Assigned Lawyer</label>
+                        <div style="position: relative;">
+                            <select id="event-lawyer" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 24px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Location/Resource</label>
+                        <div style="position: relative;">
+                            <select id="event-location" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
+                                <option value="">Select location</option>
+                                <option value="Conference Room A">Conference Room A</option>
+                                <option value="Conference Room B">Conference Room B</option>
+                                <option value="Courtroom 3B">Courtroom 3B</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 16px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                        <button type="button" id="btn-toggle-client" style="width: 100%; padding: 12px; background: #f8fafc; border: none; text-align: left; font-weight: 600; color: #0f172a; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-family: inherit; font-size: 13px;">
+                            <span><i class="fa-solid fa-user-plus" style="margin-right: 8px; color: #3b82f6;"></i> Add Client Details</span>
+                            <i class="fa-solid fa-chevron-down" id="client-toggle-icon"></i>
+                        </button>
+                        
+                        <div id="client-details-section" class="hidden" style="padding: 15px; background: #ffffff; border-top: 1px solid #e2e8f0;">
+                            <div class="form-group" style="margin-bottom: 14px;">
+                                <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Client</label>
+                                <select id="event-existing-client" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; background: white;">
+                                    <option value="">+ Add New Client</option>
+                                </select>
+                            </div>
+                            <div id="event-new-client-fields">
+                            <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 12px;">
+                                <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">First Name</label>
+                                    <input type="text" id="client-fname" placeholder="First Name" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
+                                </div>
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">M.I.</label>
+                                    <input type="text" id="client-mi" maxlength="2" placeholder="M.I" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
+                                </div>
+                                <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Last Name</label>
+                                    <input type="text" id="client-lname" placeholder="Last Name" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
+                                </div>
+                            </div>
+                            <div class="form-row" style="display: flex; gap: 10px;">
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Email</label>
+                                    <input type="email" id="client-email" placeholder="client@email.com" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
+                                </div>
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Phone</label>
+                                    <input type="tel" id="client-phone" placeholder="09123456789" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
+                                </div>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                        <button type="button" id="btn-toggle-case" style="width: 100%; padding: 12px; background: #f8fafc; border: none; text-align: left; font-weight: 600; color: #0f172a; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-family: inherit; font-size: 13px;">
+                            <span><i class="fa-solid fa-scale-balanced" style="margin-right: 8px; color: #8b5cf6;"></i> Add Case Details</span>
+                            <i class="fa-solid fa-chevron-down" id="case-toggle-icon"></i>
+                        </button>
+                        
+                        <div id="case-details-section" class="hidden" style="padding: 15px; background: #ffffff; border-top: 1px solid #e2e8f0;">
+                            <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 12px;">
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Case Number</label>
+                                    <input type="text" id="case-number-input" placeholder="e.g., 2026-CV-01" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
+                                </div>
+                                <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Case Type</label>
+                                    <div style="position: relative;">
+                                        <select id="case-type-select" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; appearance: none; background: white;">
+                                            <option value="Civil">Civil</option>
+                                            <option value="Criminal">Criminal</option>
+                                            <option value="Corporate">Corporate</option>
+                                            <option value="Family">Family Law</option>
+                                            <option value="Estate">Estate/Probate</option>
+                                        </select>
+                                        <i class="fa-solid fa-chevron-down" style="position: absolute; right: 10px; top: 10px; color: #94a3b8; pointer-events: none; font-size: 10px;"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Case Description</label>
+                                <textarea id="case-desc-input" rows="3" placeholder="Brief description of the case..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; resize: vertical;"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Attach File (optional)</label>
+                        <input type="file" id="event-attachment" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff;">
+                        <p style="font-size: 11px; color: #94a3b8; margin: 4px 0 0 0;">Saved to Documents and linked to this event/case.</p>
+                    </div>
+
+                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Create Event</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="upload-doc-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Upload New Document</h2>
+                    <button id="close-upload-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">OCR processing will be performed automatically</p>
+                
+                <form id="upload-doc-form">
+                    <div id="drag-drop-area" style="border: 2px dashed #cbd5e1; border-radius: 8px; padding: 30px; text-align: center; margin-bottom: 20px; background: #ffffff; cursor: pointer; transition: all 0.3s ease;">
+                        <i class="fa-solid fa-arrow-up-from-bracket" style="font-size: 24px; color: #64748b; margin-bottom: 10px;"></i>
+                        <p id="drag-drop-text" style="font-size: 13px; color: #0f172a; font-weight: 500; margin-bottom: 4px;">Drag and drop files here, or click to browse</p>
+                        <p style="font-size: 11px; color: #94a3b8;">PDF, DOCX, JPG, PNG supported</p>
+                        <input type="file" id="doc-file-input" style="display:none;" accept=".pdf,.docx,.jpg,.jpeg,.png">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Case Number</label>
+                        <input type="text" id="doc-case-num" placeholder="e.g., 2026-CV-1234" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Category</label>
+                        <div style="position: relative;">
+                            <select id="doc-category" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff; appearance: none;">
+                                <option value="">Select category</option>
+                                <option value="Motion">Motion</option>
+                                <option value="Contract">Contract</option>
+                                <option value="Pleading">Pleading</option>
+                                <option value="Evidence">Evidence</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 24px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Tags (comma-separated)</label>
+                        <input type="text" id="doc-tags" placeholder="e.g., motion, criminal, dismissal" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff;">
+                    </div>
+
+                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Upload & Process</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="add-lawyer-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Add New Lawyer</h2>
+                    <button id="close-lawyer-modal-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Register a new lawyer account to the system.</p>
+                
+                <form id="add-lawyer-form">
+                    <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 16px;">
+                        <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                            <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; font-weight: 600;">First Name</label>
+                            <input type="text" id="add-lawyer-fname" required placeholder="e.g., Juan" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; font-weight: 600;">M.I.</label>
+                            <input type="text" id="add-lawyer-mi" maxlength="2" placeholder="A." style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                        <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                            <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; font-weight: 600;">Last Name</label>
+                            <input type="text" id="add-lawyer-lname" required placeholder="e.g., Dela Cruz" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                    </div>
+
+                    <div class="form-row" style="display: flex; gap: 16px; margin-bottom: 16px;">
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Email Address</label>
+                            <input type="email" id="add-lawyer-email" required placeholder="lawyer@lawfirm.com" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                        <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Phone Number</label>
+                            <input type="tel" id="add-lawyer-phone" required placeholder="e.g., 09123456789" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Temporary Password</label>
+                        <input type="password" id="add-lawyer-password" required placeholder="Minimum 6 characters" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 24px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Specialization</label>
+                        <div style="position: relative;">
+                            <select id="add-lawyer-spec" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
+                                <option value="General Practice">General Practice</option>
+                                <option value="Criminal Law">Criminal Law</option>
+                                <option value="Corporate Law">Corporate Law</option>
+                                <option value="Family Law">Family Law</option>
+                                <option value="Civil Litigation">Civil Litigation</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Register Lawyer</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="edit-lawyer-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Edit Lawyer Profile</h2>
+                    <button id="close-edit-lawyer-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Update the lawyer's information below.</p>
+                
+                <form id="edit-lawyer-form">
+                    <input type="hidden" id="edit-lawyer-id">
+                    
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Full Name</label>
+                        <input type="text" id="edit-lawyer-fullname" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Phone Number</label>
+                        <input type="tel" id="edit-lawyer-phone" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 24px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Specialization</label>
+                        <div style="position: relative;">
+                            <select id="edit-lawyer-spec" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
+                                <option value="General Practice">General Practice</option>
+                                <option value="Criminal Law">Criminal Law</option>
+                                <option value="Corporate Law">Corporate Law</option>
+                                <option value="Family Law">Family Law</option>
+                                <option value="Civil Litigation">Civil Litigation</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Save Changes</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="my-profile-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Edit Profile</h2>
+                    <button id="close-my-profile-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Update your name, contact number, and specialization.</p>
+
+                <form id="my-profile-form">
+                    <div class="form-group" style="margin-bottom: 20px; display: flex; align-items: center; gap: 16px;">
+                        <div id="my-profile-avatar-preview" style="width: 64px; height: 64px; border-radius: 50%; background: #3b82f6; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 22px; flex-shrink: 0; overflow: hidden; background-size: cover; background-position: center;">?</div>
+                        <div>
+                            <button type="button" id="my-profile-photo-btn" style="padding: 8px 14px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; color: #334155;">Change Photo</button>
+                            <input type="file" id="my-profile-photo-input" accept="image/*" style="display: none;">
+                            <p style="font-size: 11px; color: #94a3b8; margin-top: 6px;">JPG or PNG, up to 2MB.</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Email</label>
+                        <input type="text" id="my-profile-email" disabled style="width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 6px; outline: none; font-family: inherit; background: #f1f5f9; color: #64748b;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Full Name</label>
+                        <input type="text" id="my-profile-fullname" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Phone Number</label>
+                        <input type="tel" id="my-profile-phone" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 24px;" id="my-profile-spec-group">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Specialization</label>
+                        <div style="position: relative;">
+                            <select id="my-profile-spec" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
+                                <option value="General Practice">General Practice</option>
+                                <option value="Criminal Law">Criminal Law</option>
+                                <option value="Corporate Law">Corporate Law</option>
+                                <option value="Family Law">Family Law</option>
+                                <option value="Civil Litigation">Civil Litigation</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Save Changes</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="add-client-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 480px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Add Client</h2>
+                    <button id="close-add-client-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">New clients are checked against existing records to avoid duplicates.</p>
+
+                <form id="add-client-form">
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Full Name</label>
+                        <input type="text" id="client-name-input" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Email</label>
+                        <input type="email" id="client-email-input" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Phone Number</label>
+                        <input type="tel" id="client-phone-input" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Address</label>
+                        <input type="text" id="client-address-input" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 20px; display: flex; align-items: flex-start; gap: 10px; background: #f0f9ff; padding: 12px; border-radius: 8px;">
+                        <input type="checkbox" id="client-create-portal" style="margin-top: 3px;">
+                        <label for="client-create-portal" style="font-size: 12px; color: #334155; line-height: 1.4;">
+                            <strong>Send portal access invite</strong><br>
+                            Emails the client a login link so they can view their case and message their lawyer directly.
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Add Client</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="case-detail-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 550px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; display: flex; flex-direction: column;">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
+                    <div>
+                        <h2 id="case-detail-title" style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 0;">Case</h2>
+                        <p id="case-detail-subtitle" style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;"></p>
+                    </div>
+                    <button id="close-case-detail-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+
+                <div id="case-emails-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 5px; min-height: 250px; max-height: 350px;">
+                    </div>
+
+                <form id="case-email-form" style="display: flex; flex-direction: column; gap: 8px; margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                    <input type="text" id="case-email-subject" placeholder="Subject (e.g. Update on your case)" required style="padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit;">
+                    <textarea id="case-email-body" placeholder="Write a case progress update to email the client..." required rows="4" style="padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; resize: vertical;"></textarea>
+                    <input type="file" id="case-email-attachment" style="padding: 6px 0; font-family: inherit; font-size: 12px;">
+                    <button type="submit" style="align-self: flex-end; padding: 10px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;"><i class="fa-solid fa-paper-plane"></i> Send Email</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="archive-lawyer-modal" class="modal-overlay hidden">
+            <div class="modal-card" style="background: #ffffff; border-radius: 12px; padding: 30px;">
+                <h3 style="margin-top: 0; color: #0f172a;">Archive Lawyer</h3>
+                <p style="color: #475569; font-size: 14px; margin-bottom: 25px;">Are you sure you want to archive <strong id="archive-lawyer-name-display" style="color: #f59e0b;">this lawyer</strong>? Their account will be deactivated, but their historical records will remain intact.</p>
+                <input type="hidden" id="archive-lawyer-id">
+                <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button id="btn-cancel-archive-lawyer" class="btn-action-outline" style="padding: 10px 20px; border: 1px solid #cbd5e1; background: white; border-radius: 6px; cursor: pointer; font-weight: 600;">Cancel</button>
+                    <button id="btn-confirm-archive-lawyer" class="btn-action-dark" style="padding: 10px 20px; background: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Archive Account</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <script src="main.js"></script>
+    
+</body>
+</html>
