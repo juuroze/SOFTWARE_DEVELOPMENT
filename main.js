@@ -606,8 +606,8 @@ window.openDayDetails = async function(dateString) {
                     caseDetailsHtml = `
                         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 12px;">
                             <div style="display:flex; gap: 15px; margin-bottom: 6px;">
-                                <span style="color:#475569;"><strong>Case No:</strong> ${ev.cases.case_number || 'N/A'}</span>
-                                <span style="color:#475569;"><strong>Type:</strong> ${ev.cases.case_type || 'N/A'}</span>
+                                <span style="color:#475569;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
+                                <span style="color:#475569;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
                             </div>
                             <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${ev.cases.case_description || 'No description provided.'}"</em></p>
                         </div>
@@ -797,6 +797,29 @@ function setupDocumentFilters() {
     }
 }
 
+// Escapes user-entered text before it is placed inside innerHTML templates.
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Title to save for an uploaded file: the (possibly edited) File Name box,
+// falling back to the original name, and always keeping the original extension.
+function resolveDocumentTitle(customName, file) {
+    const original = file ? file.name : '';
+    const typed = (customName || '').trim();
+    if (!typed) return original;
+
+    const dot = original.lastIndexOf('.');
+    const ext = dot > 0 ? original.slice(dot) : '';
+    if (ext && !typed.toLowerCase().endsWith(ext.toLowerCase())) return typed + ext;
+    return typed;
+}
+
 function getCategoryColor(type) {
     const t = (type || '').toLowerCase();
     if (t === 'motion') return { bg: '#e0e7ff', text: '#2563eb' }; 
@@ -812,7 +835,7 @@ function getCategoryColor(type) {
 function generateTagsHtml(tagsStr) {
     if (!tagsStr) return '';
     const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t);
-    return tags.map(t => `<span style="border: 1px solid #e2e8f0; padding: 2px 10px; border-radius: 99px; font-size: 11px; color: #475569; font-weight: 500;">${t}</span>`).join('');
+    return tags.map(t => `<span style="border: 1px solid #e2e8f0; padding: 2px 10px; border-radius: 99px; font-size: 11px; color: #475569; font-weight: 500;">${escapeHtml(t)}</span>`).join('');
 }
 
 async function renderDocumentList(searchQuery = '', filterType = 'all') {
@@ -823,7 +846,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     try {
         let query = supabaseClient
             .from('documents')
-            .select('*, profiles(full_name)')
+            .select('*, profiles(full_name), cases(case_number)')
             .order('created_at', { ascending: false })
             .limit(50); 
 
@@ -845,13 +868,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (documents && documents.length > 0) {
             container.innerHTML = documents.map(doc => {
-                const actualUrl = doc.file_url ? doc.file_url : '#';
+                // JSON.stringify + escapeHtml keeps quotes in URLs/titles from breaking the inline handler.
                 const onBtnClick = doc.file_url 
-                    ? `window.open('${doc.file_url}', '_blank')` 
+                    ? `window.open(${escapeHtml(JSON.stringify(doc.file_url))}, '_blank')` 
                     : `alert('No file attached to this record in the database.')`;
                 
                 const onDownloadClick = doc.file_url 
-                    ? `forceDownload('${doc.file_url}', '${doc.title.replace(/'/g, "\\'")}')` 
+                    ? `forceDownload(${escapeHtml(JSON.stringify(doc.file_url))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))})` 
                     : `alert('No file attached to this record in the database.')`;
 
                 const typeColor = getCategoryColor(doc.type);
@@ -863,9 +886,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                             <i class="fa-solid fa-file-lines" style="font-size: 18px;"></i>
                         </div>
                         <div>
-                            <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${doc.title || 'Untitled Document'}</h4>
+                            <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${doc.type || 'document'}</span>
+                                <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>
                                 <span style="font-size: 11px; color: #64748b;">${doc.size || '0 KB'}</span>
                             </div>
                         </div>
@@ -874,11 +897,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     <div style="font-size: 12px; color: #475569; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <i class="fa-solid fa-tag" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
-                            ${doc.case_number || 'No Case Number'}
+                            ${escapeHtml(doc.cases?.case_number || 'No Case Number')}
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <i class="fa-regular fa-user" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
-                            ${doc.profiles?.full_name || 'System'}
+                            ${escapeHtml(doc.profiles?.full_name || 'System')}
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <i class="fa-regular fa-calendar" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
@@ -1140,7 +1163,7 @@ async function renderRecentDocumentsInSchedule() {
                         <i class="fa-solid fa-file-lines"></i>
                     </div>
                     <div>
-                        <h4 style="font-size:13px; color:#1e293b; margin-bottom:4px;">${doc.title}</h4>
+                        <h4 style="font-size:13px; color:#1e293b; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
                         <p style="font-size:11px; color:#64748b; text-transform:capitalize;">${doc.type || 'Doc'}</p>
                     </div>
                 </div>
@@ -1869,18 +1892,18 @@ function handleEventClientSelectChange() {
 // --- Case selection: once a client is picked, show that client's pending
 // cases so the lawyer can attach the event to an existing one instead of
 // always creating a new case. ---
+// The case number box is always read-only (it is generated by the database),
+// so only the case type and description are locked/unlocked here.
 function setCaseFieldsDisabled(disabled) {
-    const numEl = document.getElementById('case-number-input');
-    const typeEl = document.getElementById('case-type-select');
+    const typeEl = document.getElementById('case-type-input');
     const descEl = document.getElementById('case-desc-input');
-    [numEl, descEl].forEach(el => {
+    [typeEl, descEl].forEach(el => {
         if (!el) return;
         el.disabled = disabled;
         el.style.background = disabled ? '#e2e8f0' : '#ffffff';
         el.style.color = disabled ? '#64748b' : '#0f172a';
         el.style.cursor = disabled ? 'not-allowed' : 'text';
     });
-    if (typeEl) typeEl.disabled = disabled;
 }
 
 async function populateCasesForClient(clientId) {
@@ -1892,12 +1915,13 @@ async function populateCasesForClient(clientId) {
     caseSelect.value = '';
     setCaseFieldsDisabled(false);
     document.getElementById('case-number-input').value = '';
+    document.getElementById('case-type-input').value = '';
     document.getElementById('case-desc-input').value = '';
 
     if (!clientId || !currentUser) {
         caseSelect.innerHTML = '<option value="">+ New Case</option>';
         caseSelect.disabled = true;
-        if (hint) hint.textContent = 'Pick a client above to see their pending cases here, or type a case number below to look one up.';
+        if (hint) hint.textContent = 'Pick a client above to see their existing cases here. A case number is assigned automatically for new cases.';
         return;
     }
 
@@ -1932,11 +1956,12 @@ function handleEventCaseSelectChange() {
 
     const selectedId = select.value;
     const numEl = document.getElementById('case-number-input');
-    const typeEl = document.getElementById('case-type-select');
+    const typeEl = document.getElementById('case-type-input');
     const descEl = document.getElementById('case-desc-input');
 
     if (!selectedId) {
         if (numEl) numEl.value = '';
+        if (typeEl) typeEl.value = '';
         if (descEl) descEl.value = '';
         setCaseFieldsDisabled(false);
         return;
@@ -1946,48 +1971,10 @@ function handleEventCaseSelectChange() {
     if (!c) return;
 
     if (numEl) numEl.value = c.case_number || '';
-    if (typeEl && c.case_type) typeEl.value = c.case_type;
+    if (typeEl) typeEl.value = c.case_type || '';
     if (descEl) descEl.value = c.case_description || '';
 
     setCaseFieldsDisabled(true);
-}
-
-// --- Secondary flow: typing an existing case number auto-fills the client too. ---
-async function handleCaseNumberLookup() {
-    const numEl = document.getElementById('case-number-input');
-    const caseSelect = document.getElementById('event-existing-case');
-    if (!numEl || !currentUser) return;
-
-    const typedNumber = numEl.value.trim();
-    if (!typedNumber || (caseSelect && caseSelect.disabled === false && caseSelect.value)) return;
-
-    try {
-        const { data: match } = await supabaseClient
-            .from('cases')
-            .select('id, case_number, case_type, case_description, title, status, client_id')
-            .eq('lawyer_id', currentUser.id)
-            .ilike('case_number', typedNumber)
-            .maybeSingle();
-
-        if (!match || !match.client_id) return;
-
-        const clientSelect = document.getElementById('event-existing-client');
-        if (clientSelect && (window.__eventClientsMap || {})[match.client_id]) {
-            clientSelect.value = match.client_id;
-            handleEventClientSelectChange();
-
-            // populateCasesForClient runs async and resets the case dropdown —
-            // wait for it, then select this specific case once its options exist.
-            setTimeout(() => {
-                if (caseSelect) {
-                    caseSelect.value = match.id;
-                    handleEventCaseSelectChange();
-                }
-            }, 300);
-        }
-    } catch (e) {
-        console.error('Case number lookup error:', e);
-    }
 }
 
 async function prepareEventModal() {
@@ -2064,11 +2051,6 @@ async function prepareEventModal() {
                     setCaseFieldsDisabled(false);
                     populateCasesForClient(null);
 
-                    const caseNumberInput = document.getElementById('case-number-input');
-                    if (caseNumberInput) {
-                        caseNumberInput.onblur = handleCaseNumberLookup;
-                    }
-
                     if (newClientFields) newClientFields.style.display = 'block';
                 } catch (e) {
                     console.error('Error loading clients for event modal:', e);
@@ -2083,7 +2065,7 @@ async function prepareEventModal() {
 // Shared helper: upload a file to the 'documents' storage bucket and log it
 // in the documents table, optionally linked to a case/client. Returns the
 // inserted document row ({id, title, file_url, ...}) or null if no file.
-async function uploadCaseDocument(file, { caseId = null, clientId = null, category = 'Attachment', tag = '' } = {}) {
+async function uploadCaseDocument(file, { caseId = null, clientId = null, category = 'Attachment', tag = '', title = null } = {}) {
     if (!file) return null;
 
     const uniqueFileName = `${Date.now()}_${file.name}`;
@@ -2106,7 +2088,7 @@ async function uploadCaseDocument(file, { caseId = null, clientId = null, catego
     const fileSizeMb = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
 
     const docData = {
-        title: file.name,
+        title: title || file.name,
         type: category.toLowerCase(),
         size: fileSizeMb,
         file_url: fileUrl,
@@ -2145,6 +2127,15 @@ function setupAddEventModal() {
     const caseIcon = document.getElementById('case-toggle-icon');
 
     if (!modal) return;
+
+    // Choosing an attachment auto-fills the (editable) File Name box.
+    const attachInput = document.getElementById('event-attachment');
+    const attachNameInput = document.getElementById('event-attachment-name');
+    if (attachInput && attachNameInput) {
+        attachInput.addEventListener('change', () => {
+            attachNameInput.value = attachInput.files.length > 0 ? attachInput.files[0].name : '';
+        });
+    }
 
     // Puts the whole event form back to a blank state (fields, dropdowns, collapsible sections).
     function resetEventForm() {
@@ -2347,7 +2338,7 @@ function setupAddEventModal() {
             }
 
             const caseNum = document.getElementById('case-number-input').value.trim();
-            const caseType = document.getElementById('case-type-select').value;
+            const caseType = document.getElementById('case-type-input').value.trim();
             const caseDesc = document.getElementById('case-desc-input').value.trim();
 
             let formattedTime = timeInput; 
@@ -2522,17 +2513,20 @@ function setupAddEventModal() {
                 }
 
                 let newCaseId = null;
+                let finalCaseNumber = caseNum;   // for an existing case this is its current number
+                let caseWasCreated = false;
 
                 if (!isGeneral) {
                     if (selectedExistingCaseId) {
                         // A case was picked from the dropdown — reuse it, never insert a copy.
                         newCaseId = selectedExistingCaseId;
                     } else {
+                        // case_number is intentionally NOT sent: the database trigger
+                        // (assign_case_number) generates it atomically on insert.
                         const caseData = { 
                             title: title, 
                             status: 'active',
-                            case_number: caseNum,
-                            case_type: caseType,
+                            case_type: caseType || null,
                             case_description: caseDesc,
                             lawyer_id: assignedLawyerId
                         };
@@ -2542,11 +2536,15 @@ function setupAddEventModal() {
                         const { data: insertedCase, error: caseError } = await supabaseClient
                             .from('cases')
                             .insert([caseData])
-                            .select('id')
+                            .select('id, case_number')
                             .single();
 
                         if (caseError) throw new Error(caseError.message);
-                        if (insertedCase) newCaseId = insertedCase.id;
+                        if (insertedCase) {
+                            newCaseId = insertedCase.id;
+                            finalCaseNumber = insertedCase.case_number || '';
+                            caseWasCreated = true;
+                        }
                     }
                 }
 
@@ -2559,7 +2557,11 @@ function setupAddEventModal() {
                         caseId: newCaseId,
                         clientId: newClientId,
                         category: 'Event Attachment',
-                        tag: caseNum ? `Case #${caseNum}` : ''
+                        tag: finalCaseNumber ? `Case #${finalCaseNumber}` : '',
+                        title: resolveDocumentTitle(
+                            document.getElementById('event-attachment-name')?.value,
+                            attachmentFile
+                        )
                     });
                 }
 
@@ -2584,7 +2586,9 @@ function setupAddEventModal() {
                 const { error: eventError } = await supabaseClient.from('calendar_events').insert([eventData]);
                 if (eventError) throw new Error(eventError.message);
 
-                alert(isGeneral ? 'Firm-wide event successfully added!' : 'Event, Client, and Case successfully added!');
+                alert(isGeneral
+                    ? 'Firm-wide event successfully added!'
+                    : 'Event, Client, and Case successfully added!' + (caseWasCreated && finalCaseNumber ? `\n\nCase Number: ${finalCaseNumber}` : ''));
                 
                 form.reset(); 
                 setClientFieldsDisabled(false);
@@ -2805,7 +2809,7 @@ async function renderCasesTabView() {
                                 <span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; text-transform:capitalize; ${statusStyle}">${c.status || 'active'}</span>
                             </div>
                             <p style="margin:0; font-size:12px; color:#64748b;">
-                                ${c.case_number ? `#${c.case_number} • ` : ''}${c.case_type || 'General'} 
+                                ${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}${escapeHtml(c.case_type || 'General')} 
                                 • <i class="fa-solid fa-user" style="font-size:10px;"></i> ${clientName}
                                 ${globalUserRole !== 'lawyer' ? `• <i class="fa-solid fa-gavel" style="font-size:10px;"></i> ${lawyerName}` : ''}
                             </p>
@@ -3143,9 +3147,41 @@ function setupUploadModal() {
     const dropArea = document.getElementById('drag-drop-area');
     const fileInput = document.getElementById('doc-file-input');
     const dropText = document.getElementById('drag-drop-text');
+    const fileNameInput = document.getElementById('doc-file-name');
     let selectedFile = null;
 
     if (!modal) return;
+
+    // Lists the lawyer's own cases so a document can be linked without typing a number.
+    async function populateDocCaseSelect() {
+        const sel = document.getElementById('doc-case-select');
+        if (!sel || !currentUser) return;
+        sel.innerHTML = '';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = 'No case (general document)';
+        sel.appendChild(none);
+
+        try {
+            const { data: myCases, error } = await supabaseClient
+                .from('cases')
+                .select('id, case_number, title, client_id')
+                .eq('lawyer_id', currentUser.id)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+
+            (myCases || []).forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = `${c.case_number ? c.case_number + ' — ' : ''}${c.title || 'Untitled case'}`;
+                opt.dataset.caseNumber = c.case_number || '';
+                opt.dataset.clientId = c.client_id || '';
+                sel.appendChild(opt);
+            });
+        } catch (e) {
+            console.error('Error loading cases for upload modal:', e);
+        }
+    }
 
     // Clears the text fields, the chosen file and the drag-and-drop box.
     function resetUploadForm() {
@@ -3157,6 +3193,7 @@ function setupUploadModal() {
             dropText.innerText = "Drag and drop files here, or click to browse";
         }
         selectedFile = null;
+        if (fileNameInput) fileNameInput.value = '';
     }
 
     if (openBtn) {
@@ -3166,6 +3203,7 @@ function setupUploadModal() {
                 return;
             }
             resetUploadForm();
+            populateDocCaseSelect();
             modal.classList.remove('hidden');
         });
     }
@@ -3186,6 +3224,7 @@ function setupUploadModal() {
             if (e.target.files.length > 0) {
                 selectedFile = e.target.files[0];
                 dropText.innerText = selectedFile.name; 
+                if (fileNameInput) fileNameInput.value = selectedFile.name;
                 dropArea.style.borderColor = '#3b82f6'; 
                 dropArea.style.backgroundColor = '#eff6ff'; 
             }
@@ -3211,6 +3250,7 @@ function setupUploadModal() {
                 fileInput.files = e.dataTransfer.files; 
                 
                 dropText.innerText = selectedFile.name; 
+                if (fileNameInput) fileNameInput.value = selectedFile.name;
                 dropArea.style.borderColor = '#3b82f6';
                 dropArea.style.backgroundColor = '#eff6ff';
             }
@@ -3237,15 +3277,19 @@ function setupUploadModal() {
                 submitBtn.innerText = "Uploading & Processing...";
             }
 
-            const caseNum = document.getElementById('doc-case-num').value || '';
+            const caseSel = document.getElementById('doc-case-select');
+            const selectedCaseOpt = caseSel && caseSel.value ? caseSel.selectedOptions[0] : null;
+            const matchedCaseId = selectedCaseOpt ? selectedCaseOpt.value : null;
+            const matchedClientId = selectedCaseOpt && selectedCaseOpt.dataset.clientId ? selectedCaseOpt.dataset.clientId : null;
+            const caseNum = selectedCaseOpt ? (selectedCaseOpt.dataset.caseNumber || '') : '';
             const category = document.getElementById('doc-category').value || 'Document';
             const tagsInput = document.getElementById('doc-tags').value || '';
             
-            const finalTitle = selectedFile.name;
+            const finalTitle = resolveDocumentTitle(fileNameInput ? fileNameInput.value : '', selectedFile);
             const fileSizeMb = (selectedFile.size / (1024 * 1024)).toFixed(2) + ' MB';
 
             try {
-                const uniqueFileName = `${Date.now()}_${finalTitle}`;
+                const uniqueFileName = `${Date.now()}_${selectedFile.name}`;
                 const { data: uploadData, error: uploadError } = await supabaseClient
                     .storage
                     .from('documents') 
@@ -3263,23 +3307,13 @@ function setupUploadModal() {
                 
                 const fileUrl = publicUrlData.publicUrl;
 
-                let matchedCaseId = null;
-                if (caseNum) {
-                    const { data: matchedCase } = await supabaseClient
-                        .from('cases')
-                        .select('id')
-                        .eq('case_number', caseNum)
-                        .limit(1)
-                        .maybeSingle();
-                    if (matchedCase) matchedCaseId = matchedCase.id;
-                }
-
                 const docData = { 
                     title: finalTitle, 
                     type: category.toLowerCase(), 
                     size: fileSizeMb,
                     file_url: fileUrl, 
                     case_id: matchedCaseId,
+                    client_id: matchedClientId,
                     tags: caseNum ? `${tagsInput}${tagsInput ? ', ' : ''}Case #${caseNum}` : tagsInput,
                     uploaded_by: currentUser ? currentUser.id : null
                 };

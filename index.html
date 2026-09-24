@@ -613,34 +613,28 @@
                         <div id="case-details-section" class="hidden" style="padding: 15px; background: #ffffff; border-top: 1px solid #e2e8f0;">
                             <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 12px;">
                                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Case Number</label>
-                                    <input type="text" id="case-number-input" placeholder="e.g., 2026-CV-01" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
+                                    <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Case Number <span style="color: #94a3b8;">(auto)</span></label>
+                                    <input type="text" id="case-number-input" readonly tabindex="-1" placeholder="Auto-generated on save" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px; outline: none; font-family: inherit; background: #f1f5f9; color: #64748b; cursor: not-allowed;">
                                 </div>
                                 <div class="form-group" style="flex: 1; margin-bottom: 0;">
                                     <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Case Type</label>
-                                    <div style="position: relative;">
-                                        <select id="case-type-select" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; appearance: none; background: white;">
-                                            <option value="Civil">Civil</option>
-                                            <option value="Criminal">Criminal</option>
-                                            <option value="Corporate">Corporate</option>
-                                            <option value="Family">Family Law</option>
-                                            <option value="Estate">Estate/Probate</option>
-                                        </select>
-                                        <i class="fa-solid fa-chevron-down" style="position: absolute; right: 10px; top: 10px; color: #94a3b8; pointer-events: none; font-size: 10px;"></i>
-                                    </div>
+                                    <input type="text" id="case-type-input" maxlength="60" placeholder="e.g., Civil, Labor, Annulment" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit;">
                                 </div>
                             </div>
-                            <div class="form-group" style="margin-bottom: 0;">
+                            <div class="form-group" style="margin-bottom: 12px;">
                                 <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Case Description</label>
                                 <textarea id="case-desc-input" rows="3" placeholder="Brief description of the case..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; resize: vertical;"></textarea>
                             </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Attach File <span style="color: #94a3b8;">(optional)</span></label>
+                                <input type="file" id="event-attachment" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; background: #ffffff; box-sizing: border-box;">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">File Name</label>
+                                <input type="text" id="event-attachment-name" maxlength="200" placeholder="Auto-fills when you choose a file (you can edit it)" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; background: #ffffff; box-sizing: border-box;">
+                                <p style="font-size: 11px; color: #94a3b8; margin: 4px 0 0 0;">Saved to Documents and linked to this event/case.</p>
+                            </div>
                         </div>
-                    </div>
-
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Attach File (optional)</label>
-                        <input type="file" id="event-attachment" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff;">
-                        <p style="font-size: 11px; color: #94a3b8; margin: 4px 0 0 0;">Saved to Documents and linked to this event/case.</p>
                     </div>
 
                     <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Create Event</button>
@@ -665,8 +659,18 @@
                     </div>
 
                     <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Case Number</label>
-                        <input type="text" id="doc-case-num" placeholder="e.g., 2026-CV-1234" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">File Name</label>
+                        <input type="text" id="doc-file-name" maxlength="200" placeholder="Auto-fills when you choose a file (you can edit it)" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff; box-sizing: border-box;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Case <span style="font-weight: 400; color: #94a3b8;">(optional)</span></label>
+                        <div style="position: relative;">
+                            <select id="doc-case-select" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff; appearance: none;">
+                                <option value="">No case (general document)</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 16px;">
