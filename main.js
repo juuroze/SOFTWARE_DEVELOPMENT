@@ -104,6 +104,9 @@ async function updateSidebarUserInfo() {
             const manageLawyersNav = document.getElementById('nav-manage-lawyers');
             if (manageLawyersNav) manageLawyersNav.style.display = isLawyer ? 'none' : 'flex';
 
+            const lawyersStatCard = document.getElementById('stat-card-lawyers');
+            if (lawyersStatCard) lawyersStatCard.style.display = isLawyer ? 'none' : 'flex';
+
             const uploadDocBtn = document.getElementById('btn-upload-doc');
             if (uploadDocBtn) uploadDocBtn.style.display = (globalUserRole === 'administrator') ? 'none' : 'flex';
 
@@ -562,7 +565,8 @@ function setupStatDetailsModal() {
         'stat-card-cases': 'cases',
         'stat-card-deadlines': 'deadlines',
         'stat-card-completed': 'completed',
-        'stat-card-clients': 'clients'
+        'stat-card-clients': 'clients',
+        'stat-card-lawyers': 'lawyers'
     };
     Object.entries(cardMap).forEach(([id, type]) => {
         const card = document.getElementById(id);
@@ -580,7 +584,8 @@ window.openStatDetails = async function(type) {
         cases: 'Active Cases',
         deadlines: 'Upcoming Deadlines',
         completed: 'Completed Events',
-        clients: 'Active Clients'
+        clients: 'Active Clients',
+        lawyers: 'Active Lawyers'
     };
     titleEl.textContent = titles[type] || 'Details';
     listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading...</p>';
@@ -673,15 +678,12 @@ window.openStatDetails = async function(type) {
                 : '<p style="color:#64748b; text-align:center; padding:20px;">No completed events in the last 60 days.</p>';
 
         } else if (type === 'clients') {
-            const { clients, lawyers } = await getActiveClientsData();
+            const { clients } = await getActiveClientsData();
+            const isAdminView = globalUserRole !== 'lawyer';
 
-            // lawyers is null for a lawyer's own view (they only see their own clients);
-            // it's an array (possibly empty) for an administrator, who sees everyone's.
-            if (lawyers !== null) titleEl.textContent = 'Active Clients & Lawyers';
-
-            const clientCards = clients.length > 0
+            listEl.innerHTML = clients.length > 0
                 ? clients.map(cl => {
-                    const handledBy = (lawyers !== null && cl.lawyerNames.size > 0)
+                    const handledBy = (isAdminView && cl.lawyerNames.size > 0)
                         ? `<p style="color:#94a3b8; font-size:10px; margin-top:4px;"><i class="fa-solid fa-gavel"></i> ${Array.from(cl.lawyerNames).map(n => `Atty. ${escapeHtml(n)}`).join(', ')}</p>`
                         : '';
                     return `
@@ -694,25 +696,24 @@ window.openStatDetails = async function(type) {
                 }).join('')
                 : '<p style="color:#64748b; text-align:center; padding:20px;">No active clients found.</p>';
 
-            if (lawyers === null) {
-                listEl.innerHTML = clientCards;
-            } else {
-                const lawyerCards = lawyers.length > 0
-                    ? lawyers.map(l => `
-                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
-                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</h4>
-                            <p style="color: #64748b; font-size: 11px;">${escapeHtml(l.specialization || 'General Practice')}${l.phone ? ' • ' + escapeHtml(l.phone) : ''}</p>
-                        </div>
-                    `).join('')
-                    : '<p style="color:#64748b; text-align:center; padding:20px;">No active lawyers found.</p>';
+        } else if (type === 'lawyers') {
+            const lawyers = await getActiveLawyersData();
 
-                listEl.innerHTML = `
-                    <h4 style="margin:0; font-size:12px; color:#334155; text-transform:uppercase; letter-spacing:0.03em;">Clients</h4>
-                    ${clientCards}
-                    <h4 style="margin:6px 0 0 0; font-size:12px; color:#334155; text-transform:uppercase; letter-spacing:0.03em;">Lawyers</h4>
-                    ${lawyerCards}
-                `;
-            }
+            const lawyerCards = lawyers.length > 0
+                ? lawyers.map(l => `
+                    <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
+                        <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</h4>
+                        <p style="color: #64748b; font-size: 11px;">${escapeHtml(l.specialization || 'General Practice')}${l.phone ? ' • ' + escapeHtml(l.phone) : ''}</p>
+                    </div>
+                `).join('')
+                : '<p style="color:#64748b; text-align:center; padding:20px;">No active lawyers found.</p>';
+
+            listEl.innerHTML = `
+                ${lawyerCards}
+                <button onclick="document.getElementById('stat-details-modal').classList.add('hidden'); document.querySelector('.nav-links li[data-target=\\'manage-lawyers-view\\']').click();" style="padding:10px; border:1px solid #e2e8f0; background:white; border-radius:8px; cursor:pointer; font-weight:600; font-size:12px; color:#0f172a;">
+                    Manage Lawyers <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            `;
         }
     } catch (error) {
         console.error('Error loading stat details:', error);
@@ -1284,19 +1285,20 @@ async function getActiveClientsData() {
     const clients = Array.from(byId.values());
 
     // Lawyers only see their own clients, so a lawyer roster isn't relevant to them.
-    let lawyers = null;
-    if (globalUserRole !== 'lawyer') {
-        const { data: lawyerRows, error: lawyerError } = await supabaseClient
-            .from('profiles')
-            .select('id, full_name, specialization, phone')
-            .eq('role', 'lawyer')
-            .eq('status', 'active')
-            .order('full_name', { ascending: true });
-        if (lawyerError) throw lawyerError;
-        lawyers = lawyerRows || [];
-    }
+    return { clients };
+}
 
-    return { clients, lawyers };
+// The firm's active lawyer roster — administrators only. Independent of which
+// lawyers currently have active clients, so a lawyer with zero clients still counts.
+async function getActiveLawyersData() {
+    const { data: lawyerRows, error } = await supabaseClient
+        .from('profiles')
+        .select('id, full_name, specialization, phone')
+        .eq('role', 'lawyer')
+        .eq('status', 'active')
+        .order('full_name', { ascending: true });
+    if (error) throw error;
+    return lawyerRows || [];
 }
 
 async function updateScheduleStats() {
@@ -1347,12 +1349,22 @@ async function updateScheduleStats() {
             activeClientsCount = clients.length;
         } catch (e) {}
 
+        let activeLawyersCount = null;
+        if (globalUserRole !== 'lawyer') {
+            try {
+                activeLawyersCount = (await getActiveLawyersData()).length;
+            } catch (e) { activeLawyersCount = 0; }
+        }
+
         const statCards = document.querySelectorAll('.sched-stat-card h3');
         if (statCards.length >= 4) {
             statCards[0].textContent = activeCases || '0';
             statCards[1].textContent = deadlinesCount || '0';
             statCards[2].textContent = completedCount || '0';
             statCards[3].textContent = activeClientsCount || '0';
+        }
+        if (statCards.length >= 5 && activeLawyersCount !== null) {
+            statCards[4].textContent = activeLawyersCount || '0';
         }
     } catch (error) {
         console.error('Error updating schedule stats:', error);
