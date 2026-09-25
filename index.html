@@ -122,33 +122,33 @@
                 </div>
 
                 <div class="schedule-stats-row">
-                    <div class="sched-stat-card">
+                    <div class="sched-stat-card" id="stat-card-cases" style="cursor: pointer;">
                         <div>
                             <h3 style="color: #3b82f6;">0</h3>
                             <p>Active Cases</p>
                         </div>
                         <i class="fa-regular fa-file-lines" style="color: #94a3b8; font-size: 20px;"></i>
                     </div>
-                    <div class="sched-stat-card">
+                    <div class="sched-stat-card" id="stat-card-deadlines" style="cursor: pointer;">
                         <div>
                             <h3 style="color: #ef4444;">0</h3>
                             <p>Deadlines</p>
                         </div>
                         <i class="fa-solid fa-circle-exclamation" style="color: #fca5a5; font-size: 20px;"></i>
                     </div>
-                    <div class="sched-stat-card">
+                    <div class="sched-stat-card" id="stat-card-completed" style="cursor: pointer;">
                         <div>
                             <h3 style="color: #22c55e;">0</h3>
                             <p>Completed</p>
                         </div>
                         <i class="fa-regular fa-circle-check" style="color: #86efac; font-size: 20px;"></i>
                     </div>
-                    <div class="sched-stat-card">
+                    <div class="sched-stat-card" id="stat-card-clients" style="cursor: pointer;">
                         <div>
                             <h3 style="color: #a855f7;">0</h3>
-                            <p>Hours/Week</p>
+                            <p>Active Clients</p>
                         </div>
-                        <i class="fa-regular fa-clock" style="color: #d8b4fe; font-size: 20px;"></i>
+                        <i class="fa-solid fa-users" style="color: #d8b4fe; font-size: 20px;"></i>
                     </div>
                 </div>
 
@@ -159,37 +159,23 @@
                 </div>
 
                 <div id="sched-today" class="sched-tab-content">
-                    <div class="schedule-grid-layout">
-                        <div class="sched-left-col">
-                            <div class="content-card" style="margin-bottom: 25px;">
-                                <div class="card-title-flex">
-                                    <h3><i class="fa-regular fa-clock"></i> Today's Schedule</h3>
-                                </div>
-                                <div id="timeline-inject" class="timeline-container">
-                                    </div>
-                            </div>
-                            
-                            <div class="content-card">
-                                <div class="card-title-flex">
-                                    <h3><i class="fa-regular fa-file-lines"></i> Recent Documents</h3>
-                                </div>
-                                <div id="recent-docs-inject">
-                                    </div>
-                                <button id="btn-sched-view-docs" class="btn-full-width-outline">
-                                    View All Documents
-                                </button>
-                            </div>
+                    <div class="content-card" style="margin-bottom: 25px;">
+                        <div class="card-title-flex">
+                            <h3><i class="fa-regular fa-clock"></i> Today's Schedule</h3>
                         </div>
+                        <div id="timeline-inject" class="timeline-container">
+                            </div>
+                    </div>
 
-                        <div class="sched-right-col">
-                            <div class="content-card">
-                                <div class="card-title-flex">
-                                    <h3><i class="fa-solid fa-circle-exclamation"></i> Upcoming Deadlines</h3>
-                                </div>
-                                <div id="upcoming-dl-inject">
-                                    </div>
-                            </div>
+                    <div class="content-card">
+                        <div class="card-title-flex">
+                            <h3><i class="fa-regular fa-file-lines"></i> Recent Documents</h3>
                         </div>
+                        <div id="recent-docs-inject">
+                            </div>
+                        <button id="btn-sched-view-docs" class="btn-full-width-outline">
+                            View All Documents
+                        </button>
                     </div>
                 </div>
 
@@ -477,6 +463,17 @@
                     <button id="close-day-details-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div id="day-details-list" style="display: flex; flex-direction: column; gap: 15px;">
+                    </div>
+            </div>
+        </div>
+
+        <div id="stat-details-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 550px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
+                    <h2 id="stat-details-title" style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 0;">Details</h2>
+                    <button id="close-stat-details-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div id="stat-details-list" style="display: flex; flex-direction: column; gap: 12px;">
                     </div>
             </div>
         </div>

@@ -138,7 +138,6 @@ function setupRealtimeSubscriptions() {
             updateDashboardStats();
             renderActiveConflictsWidget();
             renderLawyerStatusWidget();
-            renderDeadlinesInSchedule();
             renderTimelineInSchedule();
             renderNotificationsList();
         })
@@ -171,6 +170,7 @@ async function initializeApp() {
     setupUploadModal(); 
     setupDocumentFilters();
     setupDayDetailsModal(); 
+    setupStatDetailsModal(); 
     
     setupAddLawyerModal(); 
     setupEditLawyerModal();
@@ -547,6 +547,179 @@ function setupDayDetailsModal() {
     }
 }
 
+function setupStatDetailsModal() {
+    const closeBtn = document.getElementById('close-stat-details-btn');
+    const modal = document.getElementById('stat-details-modal');
+
+    if (closeBtn && modal) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+        });
+    }
+
+    // Clicking a stat card opens the matching detail list.
+    const cardMap = {
+        'stat-card-cases': 'cases',
+        'stat-card-deadlines': 'deadlines',
+        'stat-card-completed': 'completed',
+        'stat-card-clients': 'clients'
+    };
+    Object.entries(cardMap).forEach(([id, type]) => {
+        const card = document.getElementById(id);
+        if (card) card.addEventListener('click', () => openStatDetails(type));
+    });
+}
+
+window.openStatDetails = async function(type) {
+    const modal = document.getElementById('stat-details-modal');
+    const titleEl = document.getElementById('stat-details-title');
+    const listEl = document.getElementById('stat-details-list');
+    if (!modal || !titleEl || !listEl || !currentUser) return;
+
+    const titles = {
+        cases: 'Active Cases',
+        deadlines: 'Upcoming Deadlines',
+        completed: 'Completed Events',
+        clients: 'Active Clients'
+    };
+    titleEl.textContent = titles[type] || 'Details';
+    listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading...</p>';
+    modal.classList.remove('hidden');
+
+    try {
+        if (type === 'cases') {
+            const { data: cases, error } = await supabaseClient
+                .from('cases')
+                .select('*, clients(client_name)')
+                .eq('status', 'active')
+                .eq('lawyer_id', currentUser.id)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+
+            listEl.innerHTML = (cases && cases.length > 0)
+                ? cases.map(c => {
+                    const clientName = c.clients ? c.clients.client_name : 'No Client';
+                    return `
+                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
+                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
+                            <p style="color: #64748b; font-size: 11px;">${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}Opened: ${formatDate(c.created_at)}</p>
+                        </div>
+                    `;
+                }).join('')
+                : '<p style="color:#64748b; text-align:center; padding:20px;">No active cases found.</p>';
+
+        } else if (type === 'deadlines') {
+            const localDate = new Date();
+            const todayStr = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
+
+            let deadlinesQuery = supabaseClient
+                .from('calendar_events')
+                .select('*, cases(case_number, clients(client_name))')
+                .eq('is_general', false)
+                .gte('start_date', todayStr)
+                .order('start_date', { ascending: true })
+                .limit(20);
+            if (globalUserRole === 'lawyer') {
+                deadlinesQuery = deadlinesQuery.eq('assigned_to', currentUser.id);
+            }
+            const { data: deadlines, error } = await deadlinesQuery;
+            if (error) throw error;
+
+            listEl.innerHTML = (deadlines && deadlines.length > 0)
+                ? deadlines.map(dl => {
+                    const dlDate = new Date(dl.start_date);
+                    const daysUntil = Math.ceil((dlDate - new Date(todayStr)) / (1000 * 60 * 60 * 24));
+                    const badgeColor = daysUntil <= 3 ? 'bg-red' : 'bg-gray';
+                    const clientName = dl.cases?.clients?.client_name || 'No Client';
+                    return `
+                        <div class="upcoming-dl-item" style="cursor:pointer;" onclick="openEventDetails('${dl.id}')" title="Click to view full event details">
+                            <div style="display:flex; justify-content:space-between;">
+                                <h4>${escapeHtml(dl.title)}</h4>
+                                <span class="badge-pill ${badgeColor}">${daysUntil}d</span>
+                            </div>
+                            <p>${escapeHtml(dl.location || 'Meeting')} • Client: ${escapeHtml(clientName)}</p>
+                            <small><i class="fa-regular fa-calendar"></i> ${formatDate(dl.start_date)} at ${formatEventTime(dl.start_date)}</small>
+                        </div>
+                    `;
+                }).join('')
+                : '<p style="color:#64748b; text-align:center; padding:20px;">No upcoming deadlines.</p>';
+
+        } else if (type === 'completed') {
+            const localDate = new Date();
+            const pastWindowDate = new Date(localDate);
+            pastWindowDate.setDate(pastWindowDate.getDate() - 60);
+            const pastWindowStr = pastWindowDate.toISOString().split('T')[0];
+
+            const { data: recentEvents, error } = await supabaseClient
+                .from('calendar_events')
+                .select('*, cases(case_number, clients(client_name))')
+                .gte('start_date', pastWindowStr)
+                .or(`assigned_to.eq.${currentUser.id},is_general.eq.true`)
+                .order('start_date', { ascending: false });
+            if (error) throw error;
+
+            const completed = (recentEvents || []).filter(ev => getEventStatusInfo(ev.start_date, ev.end_date).label === 'Completed');
+
+            listEl.innerHTML = completed.length > 0
+                ? completed.map(ev => {
+                    const clientName = ev.cases?.clients?.client_name || 'No Client';
+                    return `
+                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; cursor:pointer;" onclick="openEventDetails('${ev.id}')" title="Click to view full event details">
+                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(ev.title)}</h4>
+                            <p style="color: #64748b; font-size: 11px;">${escapeHtml(clientName)} • ${formatDate(ev.start_date)} at ${formatEventTime(ev.start_date)}</p>
+                        </div>
+                    `;
+                }).join('')
+                : '<p style="color:#64748b; text-align:center; padding:20px;">No completed events in the last 60 days.</p>';
+
+        } else if (type === 'clients') {
+            const { clients, lawyers } = await getActiveClientsData();
+
+            // lawyers is null for a lawyer's own view (they only see their own clients);
+            // it's an array (possibly empty) for an administrator, who sees everyone's.
+            if (lawyers !== null) titleEl.textContent = 'Active Clients & Lawyers';
+
+            const clientCards = clients.length > 0
+                ? clients.map(cl => {
+                    const handledBy = (lawyers !== null && cl.lawyerNames.size > 0)
+                        ? `<p style="color:#94a3b8; font-size:10px; margin-top:4px;"><i class="fa-solid fa-gavel"></i> ${Array.from(cl.lawyerNames).map(n => `Atty. ${escapeHtml(n)}`).join(', ')}</p>`
+                        : '';
+                    return `
+                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
+                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(cl.client_name || 'Unnamed Client')}</h4>
+                            <p style="color: #64748b; font-size: 11px;">${escapeHtml(cl.client_email || 'No email on file')}</p>
+                            ${handledBy}
+                        </div>
+                    `;
+                }).join('')
+                : '<p style="color:#64748b; text-align:center; padding:20px;">No active clients found.</p>';
+
+            if (lawyers === null) {
+                listEl.innerHTML = clientCards;
+            } else {
+                const lawyerCards = lawyers.length > 0
+                    ? lawyers.map(l => `
+                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
+                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</h4>
+                            <p style="color: #64748b; font-size: 11px;">${escapeHtml(l.specialization || 'General Practice')}${l.phone ? ' • ' + escapeHtml(l.phone) : ''}</p>
+                        </div>
+                    `).join('')
+                    : '<p style="color:#64748b; text-align:center; padding:20px;">No active lawyers found.</p>';
+
+                listEl.innerHTML = `
+                    <h4 style="margin:0; font-size:12px; color:#334155; text-transform:uppercase; letter-spacing:0.03em;">Clients</h4>
+                    ${clientCards}
+                    <h4 style="margin:6px 0 0 0; font-size:12px; color:#334155; text-transform:uppercase; letter-spacing:0.03em;">Lawyers</h4>
+                    ${lawyerCards}
+                `;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading stat details:', error);
+        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load details.</p>';
+    }
+}
+
 function getEventStatusInfo(startDateISO, endDateISO) {
     const start = new Date(startDateISO);
     const end = endDateISO ? new Date(endDateISO) : new Date(start.getTime() + 60 * 60 * 1000); // fallback: assume 1-hour duration
@@ -555,6 +728,62 @@ function getEventStatusInfo(startDateISO, endDateISO) {
     if (now >= end) return { label: 'Completed', color: '#16a34a', bg: '#dcfce7', icon: 'fa-circle-check' };
     if (now >= start && now < end) return { label: 'Ongoing', color: '#d97706', bg: '#fef3c7', icon: 'fa-hourglass-half' };
     return { label: 'Upcoming', color: '#2563eb', bg: '#dbeafe', icon: 'fa-clock' };
+}
+
+// Builds the same rich event card used in the day-details modal. Shared so a
+// single calendar event (from the Deadlines/Completed popups) renders identically
+// to how it looks when viewed via a day on the calendar.
+function buildEventDetailCard(ev) {
+    const lawyerName = ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'Unassigned');
+    const clientName = ev.cases?.clients?.client_name || 'No Client';
+    const statusInfo = getEventStatusInfo(ev.start_date, ev.end_date);
+    const isDone = statusInfo.label === 'Completed';
+    const borderColor = ev.is_conflict ? '#ef4444' : (ev.is_general ? '#8b5cf6' : '#3b82f6');
+    const bgColor = ev.is_conflict ? '#fef2f2' : (ev.is_general ? '#f5f3ff' : '#f8fafc');
+    const conflictStyle = `border-left: 4px solid ${borderColor}; background: ${bgColor}; ${isDone ? 'opacity: 0.65;' : ''}`;
+    const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red">High Priority</span>' : '';
+    const generalBadge = ev.is_general ? '<span style="background:#ede9fe; color:#7c3aed; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>' : '';
+    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
+
+    let caseDetailsHtml = '';
+    if (ev.cases) {
+        caseDetailsHtml = `
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 12px;">
+                <div style="display:flex; gap: 15px; margin-bottom: 6px;">
+                    <span style="color:#475569;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
+                    <span style="color:#475569;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
+                </div>
+                <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${ev.cases.case_description || 'No description provided.'}"</em></p>
+            </div>
+        `;
+    }
+
+    let attachmentHtml = '';
+    if (ev.documents) {
+        attachmentHtml = `
+            <div style="margin-top: 10px;">
+                <a href="${ev.documents.file_url}" target="_blank" rel="noopener" style="font-size:12px; color:#3b82f6; text-decoration:none;">
+                    <i class="fa-solid fa-paperclip"></i> ${ev.documents.title}
+                </a>
+            </div>
+        `;
+    }
+
+    return `
+        <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
+                <h4 style="margin:0; font-size:16px; color:#0f172a;">${ev.title} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
+                <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventTime(ev.start_date) || 'TBD'}${ev.end_date ? ' - ' + formatEventTime(ev.end_date) : ''}</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
+                <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${ev.location || 'Office'}</span>
+                <span><i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i> Client: <strong>${clientName}</strong></span>
+                <span><i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${lawyerName}`}</span>
+            </div>
+            ${caseDetailsHtml}
+            ${attachmentHtml}
+        </div>
+    `;
 }
 
 window.openDayDetails = async function(dateString) {
@@ -590,56 +819,7 @@ window.openDayDetails = async function(dateString) {
         if (events && events.length > 0) {
             let html = '';
             for (const ev of events) {
-                const lawyerName = ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'Unassigned');
-                const clientName = ev.cases?.clients?.client_name || 'No Client';
-                const statusInfo = getEventStatusInfo(ev.start_date, ev.end_date);
-                const isDone = statusInfo.label === 'Completed';
-                const borderColor = ev.is_conflict ? '#ef4444' : (ev.is_general ? '#8b5cf6' : '#3b82f6');
-                const bgColor = ev.is_conflict ? '#fef2f2' : (ev.is_general ? '#f5f3ff' : '#f8fafc');
-                const conflictStyle = `border-left: 4px solid ${borderColor}; background: ${bgColor}; ${isDone ? 'opacity: 0.65;' : ''}`;
-                const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red">High Priority</span>' : '';
-                const generalBadge = ev.is_general ? '<span style="background:#ede9fe; color:#7c3aed; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>' : '';
-                const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
-
-                let caseDetailsHtml = '';
-                if (ev.cases) {
-                    caseDetailsHtml = `
-                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 12px;">
-                            <div style="display:flex; gap: 15px; margin-bottom: 6px;">
-                                <span style="color:#475569;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
-                                <span style="color:#475569;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
-                            </div>
-                            <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${ev.cases.case_description || 'No description provided.'}"</em></p>
-                        </div>
-                    `;
-                }
-
-                let attachmentHtml = '';
-                if (ev.documents) {
-                    attachmentHtml = `
-                        <div style="margin-top: 10px;">
-                            <a href="${ev.documents.file_url}" target="_blank" rel="noopener" style="font-size:12px; color:#3b82f6; text-decoration:none;">
-                                <i class="fa-solid fa-paperclip"></i> ${ev.documents.title}
-                            </a>
-                        </div>
-                    `;
-                }
-
-                html += `
-                    <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
-                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
-                            <h4 style="margin:0; font-size:16px; color:#0f172a;">${ev.title} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
-                            <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventTime(ev.start_date) || 'TBD'}${ev.end_date ? ' - ' + formatEventTime(ev.end_date) : ''}</span>
-                        </div>
-                        <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
-                            <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${ev.location || 'Office'}</span>
-                            <span><i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i> Client: <strong>${clientName}</strong></span>
-                            <span><i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${lawyerName}`}</span>
-                        </div>
-                        ${caseDetailsHtml}
-                        ${attachmentHtml}
-                    </div>
-                `;
+                html += buildEventDetailCard(ev);
             }
             
             if (html === '') {
@@ -653,6 +833,38 @@ window.openDayDetails = async function(dateString) {
     } catch (error) {
         console.error("Error fetching day details:", error);
         listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load events.</p>';
+    }
+};
+
+// Opens one calendar event in the same rich card used by the calendar's day view.
+// Called from the Deadlines/Completed detail popups so those items are clickable.
+window.openEventDetails = async function(eventId) {
+    const statModal = document.getElementById('stat-details-modal');
+    if (statModal) statModal.classList.add('hidden');
+
+    const modal = document.getElementById('day-details-modal');
+    const titleEl = document.getElementById('day-details-title');
+    const listEl = document.getElementById('day-details-list');
+    if (!modal || !titleEl || !listEl) return;
+
+    titleEl.textContent = 'Event Details';
+    listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading event...</p>';
+    modal.classList.remove('hidden');
+
+    try {
+        const { data: ev, error } = await supabaseClient
+            .from('calendar_events')
+            .select('*, profiles(full_name, role), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
+            .eq('id', eventId)
+            .single();
+
+        if (error) throw error;
+
+        titleEl.textContent = ev.title || 'Event Details';
+        listEl.innerHTML = ev ? buildEventDetailCard(ev) : '<p style="color:#64748b; text-align:center; padding:30px;">Event not found.</p>';
+    } catch (error) {
+        console.error('Error fetching event details:', error);
+        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load this event.</p>';
     }
 };
 
@@ -968,7 +1180,6 @@ async function renderMyScheduleContent() {
     await updateScheduleProfileHeader();
     await renderTimelineInSchedule();
     await renderRecentDocumentsInSchedule();
-    await renderDeadlinesInSchedule();
     await updateScheduleStats();
     
     await renderMyCasesTab();
@@ -1037,6 +1248,57 @@ async function updateScheduleProfileHeader() {
     }
 }
 
+// A client counts as "active" when at least one of their cases has status = 'active'.
+// Lawyers only ever see their own clients (cases.lawyer_id = them); administrators
+// see every firm client, plus the roster of active lawyers. Nothing here is
+// hard-coded to a particular user or name — it all follows from globalUserRole,
+// which is read from the logged-in user's own profiles row.
+async function getActiveClientsData() {
+    let clientsQuery = supabaseClient
+        .from('clients')
+        .select('id, client_name, client_email, client_phone, cases!inner(status, lawyer_id, profiles(full_name))')
+        .eq('cases.status', 'active');
+
+    if (globalUserRole === 'lawyer' && currentUser) {
+        clientsQuery = clientsQuery.eq('cases.lawyer_id', currentUser.id);
+    }
+
+    const { data: rows, error } = await clientsQuery;
+    if (error) throw error;
+
+    const byId = new Map();
+    (rows || []).forEach(row => {
+        if (!byId.has(row.id)) {
+            byId.set(row.id, {
+                id: row.id,
+                client_name: row.client_name,
+                client_email: row.client_email,
+                client_phone: row.client_phone,
+                lawyerNames: new Set()
+            });
+        }
+        (row.cases || []).forEach(c => {
+            if (c.profiles?.full_name) byId.get(row.id).lawyerNames.add(c.profiles.full_name);
+        });
+    });
+    const clients = Array.from(byId.values());
+
+    // Lawyers only see their own clients, so a lawyer roster isn't relevant to them.
+    let lawyers = null;
+    if (globalUserRole !== 'lawyer') {
+        const { data: lawyerRows, error: lawyerError } = await supabaseClient
+            .from('profiles')
+            .select('id, full_name, specialization, phone')
+            .eq('role', 'lawyer')
+            .eq('status', 'active')
+            .order('full_name', { ascending: true });
+        if (lawyerError) throw lawyerError;
+        lawyers = lawyerRows || [];
+    }
+
+    return { clients, lawyers };
+}
+
 async function updateScheduleStats() {
     if (!currentUser) return;
 
@@ -1079,12 +1341,18 @@ async function updateScheduleStats() {
 
         const completedCount = (recentEvents || []).filter(ev => getEventStatusInfo(ev.start_date, ev.end_date).label === 'Completed').length;
 
+        let activeClientsCount = 0;
+        try {
+            const { clients } = await getActiveClientsData();
+            activeClientsCount = clients.length;
+        } catch (e) {}
+
         const statCards = document.querySelectorAll('.sched-stat-card h3');
         if (statCards.length >= 4) {
             statCards[0].textContent = activeCases || '0';
             statCards[1].textContent = deadlinesCount || '0';
             statCards[2].textContent = completedCount || '0';
-            statCards[3].textContent = (activeCases * 4) + 12 || '32'; 
+            statCards[3].textContent = activeClientsCount || '0';
         }
     } catch (error) {
         console.error('Error updating schedule stats:', error);
@@ -1173,58 +1441,6 @@ async function renderRecentDocumentsInSchedule() {
         }
     } catch (error) {
         console.error('Error rendering recent documents:', error);
-    }
-}
-
-async function renderDeadlinesInSchedule() {
-    const list = document.getElementById('upcoming-dl-inject');
-    if (!list || !currentUser) return;
-
-    try {
-        const localDate = new Date();
-        const year = localDate.getFullYear();
-        const month = String(localDate.getMonth() + 1).padStart(2, '0');
-        const day = String(localDate.getDate()).padStart(2, '0');
-        const todayStr = `${year}-${month}-${day}`;
-        
-        let deadlinesQuery = supabaseClient
-            .from('calendar_events')
-            .select('*, cases(case_number, clients(client_name))')
-            .eq('is_general', false)
-            .gte('start_date', todayStr)
-            .order('start_date', { ascending: true })
-            .limit(5);
-
-        if (globalUserRole === 'lawyer') {
-            deadlinesQuery = deadlinesQuery.eq('assigned_to', currentUser.id);
-        }
-
-        const { data: deadlines } = await deadlinesQuery;
-
-        if (deadlines && deadlines.length > 0) {
-            list.innerHTML = deadlines.map(dl => {
-                const dlDate = new Date(dl.start_date);
-                const daysUntil = Math.ceil((dlDate - new Date(todayStr)) / (1000 * 60 * 60 * 24));
-                const badgeColor = daysUntil <= 3 ? 'bg-red' : 'bg-gray';
-                
-                const clientName = dl.cases?.clients?.client_name || 'No Client';
-
-                return `
-                    <div class="upcoming-dl-item">
-                        <div style="display:flex; justify-content:space-between;">
-                            <h4>${dl.title}</h4>
-                            <span class="badge-pill ${badgeColor}">${daysUntil}d</span>
-                        </div>
-                        <p>${dl.location || 'Meeting'} • Client: ${clientName}</p>
-                        <small><i class="fa-regular fa-calendar"></i> ${formatDate(dl.start_date)} at ${formatEventTime(dl.start_date)}</small>
-                    </div>
-                `;
-            }).join('');
-        } else {
-            list.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No upcoming events</p>';
-        }
-    } catch (error) {
-        console.error('Error rendering deadlines:', error);
     }
 }
 
