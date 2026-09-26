@@ -76,10 +76,22 @@ async function updateSidebarUserInfo() {
             const userName = document.querySelector('.user-name');
             if (userName) userName.textContent = `Atty. ${globalUserName}`;
 
-            const userRole = document.querySelector('.user-role');
+const userRole = document.querySelector('.user-role');
             if (userRole) userRole.textContent = globalUserRole.charAt(0).toUpperCase() + globalUserRole.slice(1);
 
             const isLawyer = globalUserRole === 'lawyer';
+
+            const deadlinesCard = document.getElementById('stat-card-deadlines');
+            if (deadlinesCard) deadlinesCard.style.display = isLawyer ? 'flex' : 'none';
+
+            const completedCard = document.getElementById('stat-card-completed');
+            if (completedCard) completedCard.style.display = isLawyer ? 'flex' : 'none';
+
+            const lawyersStatCard = document.getElementById('stat-card-lawyers');
+            if (lawyersStatCard) lawyersStatCard.style.display = isLawyer ? 'none' : 'flex';
+
+            const myCasesTab = document.querySelector('button[data-scheduletab="sched-cases"]');
+            if (myCasesTab) myCasesTab.style.display = isLawyer ? 'inline-block' : 'none';
 
             const lawyersCountEl = document.getElementById('stat-lawyers-val');
             if (lawyersCountEl) {
@@ -103,9 +115,6 @@ async function updateSidebarUserInfo() {
 
             const manageLawyersNav = document.getElementById('nav-manage-lawyers');
             if (manageLawyersNav) manageLawyersNav.style.display = isLawyer ? 'none' : 'flex';
-
-            const lawyersStatCard = document.getElementById('stat-card-lawyers');
-            if (lawyersStatCard) lawyersStatCard.style.display = isLawyer ? 'none' : 'flex';
 
             const uploadDocBtn = document.getElementById('btn-upload-doc');
             if (uploadDocBtn) uploadDocBtn.style.display = (globalUserRole === 'administrator') ? 'none' : 'flex';
@@ -141,6 +150,7 @@ function setupRealtimeSubscriptions() {
             updateDashboardStats();
             renderActiveConflictsWidget();
             renderLawyerStatusWidget();
+            renderDeadlinesInSchedule();
             renderTimelineInSchedule();
             renderNotificationsList();
         })
@@ -173,7 +183,6 @@ async function initializeApp() {
     setupUploadModal(); 
     setupDocumentFilters();
     setupDayDetailsModal(); 
-    setupStatDetailsModal(); 
     
     setupAddLawyerModal(); 
     setupEditLawyerModal();
@@ -252,6 +261,22 @@ navItems.forEach(item => {
     });
 });
 
+async function getActiveClientsData() {
+    let clientsQuery = supabaseClient.from('clients').select('*');
+
+    if (globalUserRole === 'lawyer' && currentUser) {
+        clientsQuery = clientsQuery.eq('registered_by', currentUser.id);
+    }
+
+    const { data: rows, error } = await clientsQuery;
+    if (error) {
+        console.error('Error fetching clients:', error);
+        return { clients: [] };
+    }
+
+    return { clients: rows || [] };
+}
+
 async function updateDashboardStats() {
     try {
         const localDate = new Date();
@@ -302,14 +327,22 @@ async function updateDashboardStats() {
             .eq('status', 'active')
             .eq('role', 'lawyer');
 
-        const casesEl = document.getElementById('stat-cases-val');
-        const deadlinesEl = document.getElementById('stat-deadlines-val');
-        const conflictsEl = document.getElementById('stat-conflicts-val');
-        const lawyersEl = document.getElementById('stat-lawyers-val');
+        let activeClientsCount = 0;
+        try {
+            const { clients } = await getActiveClientsData();
+            activeClientsCount = clients.length;
+        } catch (e) {}
+
+        const casesEl = document.querySelector('#stat-card-cases h3');
+        const deadlinesEl = document.querySelector('#stat-card-deadlines h3');
+        const completedEl = document.querySelector('#stat-card-completed h3');
+        const clientsEl = document.querySelector('#stat-card-clients h3');
+        const lawyersEl = document.querySelector('#stat-card-lawyers h3');
 
         if (casesEl) casesEl.innerText = casesCount || 0;
         if (deadlinesEl) deadlinesEl.innerText = deadlinesCount;
-        if (conflictsEl) conflictsEl.innerText = conflictsCount;
+        if (completedEl) completedEl.innerText = conflictsCount || 0;
+        if (clientsEl) clientsEl.innerText = activeClientsCount || 0;
         if (lawyersEl) lawyersEl.innerText = lawyersCount || 0;
 
     } catch (error) {
@@ -550,177 +583,6 @@ function setupDayDetailsModal() {
     }
 }
 
-function setupStatDetailsModal() {
-    const closeBtn = document.getElementById('close-stat-details-btn');
-    const modal = document.getElementById('stat-details-modal');
-
-    if (closeBtn && modal) {
-        closeBtn.addEventListener('click', () => {
-            modal.classList.add('hidden');
-        });
-    }
-
-    // Clicking a stat card opens the matching detail list.
-    const cardMap = {
-        'stat-card-cases': 'cases',
-        'stat-card-deadlines': 'deadlines',
-        'stat-card-completed': 'completed',
-        'stat-card-clients': 'clients',
-        'stat-card-lawyers': 'lawyers'
-    };
-    Object.entries(cardMap).forEach(([id, type]) => {
-        const card = document.getElementById(id);
-        if (card) card.addEventListener('click', () => openStatDetails(type));
-    });
-}
-
-window.openStatDetails = async function(type) {
-    const modal = document.getElementById('stat-details-modal');
-    const titleEl = document.getElementById('stat-details-title');
-    const listEl = document.getElementById('stat-details-list');
-    if (!modal || !titleEl || !listEl || !currentUser) return;
-
-    const titles = {
-        cases: 'Active Cases',
-        deadlines: 'Upcoming Deadlines',
-        completed: 'Completed Events',
-        clients: 'Active Clients',
-        lawyers: 'Active Lawyers'
-    };
-    titleEl.textContent = titles[type] || 'Details';
-    listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading...</p>';
-    modal.classList.remove('hidden');
-
-    try {
-        if (type === 'cases') {
-            const { data: cases, error } = await supabaseClient
-                .from('cases')
-                .select('*, clients(client_name)')
-                .eq('status', 'active')
-                .eq('lawyer_id', currentUser.id)
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-
-            listEl.innerHTML = (cases && cases.length > 0)
-                ? cases.map(c => {
-                    const clientName = c.clients ? c.clients.client_name : 'No Client';
-                    return `
-                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
-                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
-                            <p style="color: #64748b; font-size: 11px;">${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}Opened: ${formatDate(c.created_at)}</p>
-                        </div>
-                    `;
-                }).join('')
-                : '<p style="color:#64748b; text-align:center; padding:20px;">No active cases found.</p>';
-
-        } else if (type === 'deadlines') {
-            const localDate = new Date();
-            const todayStr = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
-
-            let deadlinesQuery = supabaseClient
-                .from('calendar_events')
-                .select('*, cases(case_number, clients(client_name))')
-                .eq('is_general', false)
-                .gte('start_date', todayStr)
-                .order('start_date', { ascending: true })
-                .limit(20);
-            if (globalUserRole === 'lawyer') {
-                deadlinesQuery = deadlinesQuery.eq('assigned_to', currentUser.id);
-            }
-            const { data: deadlines, error } = await deadlinesQuery;
-            if (error) throw error;
-
-            listEl.innerHTML = (deadlines && deadlines.length > 0)
-                ? deadlines.map(dl => {
-                    const dlDate = new Date(dl.start_date);
-                    const daysUntil = Math.ceil((dlDate - new Date(todayStr)) / (1000 * 60 * 60 * 24));
-                    const badgeColor = daysUntil <= 3 ? 'bg-red' : 'bg-gray';
-                    const clientName = dl.cases?.clients?.client_name || 'No Client';
-                    return `
-                        <div class="upcoming-dl-item" style="cursor:pointer;" onclick="openEventDetails('${dl.id}')" title="Click to view full event details">
-                            <div style="display:flex; justify-content:space-between;">
-                                <h4>${escapeHtml(dl.title)}</h4>
-                                <span class="badge-pill ${badgeColor}">${daysUntil}d</span>
-                            </div>
-                            <p>${escapeHtml(dl.location || 'Meeting')} • Client: ${escapeHtml(clientName)}</p>
-                            <small><i class="fa-regular fa-calendar"></i> ${formatDate(dl.start_date)} at ${formatEventTime(dl.start_date)}</small>
-                        </div>
-                    `;
-                }).join('')
-                : '<p style="color:#64748b; text-align:center; padding:20px;">No upcoming deadlines.</p>';
-
-        } else if (type === 'completed') {
-            const localDate = new Date();
-            const pastWindowDate = new Date(localDate);
-            pastWindowDate.setDate(pastWindowDate.getDate() - 60);
-            const pastWindowStr = pastWindowDate.toISOString().split('T')[0];
-
-            const { data: recentEvents, error } = await supabaseClient
-                .from('calendar_events')
-                .select('*, cases(case_number, clients(client_name))')
-                .gte('start_date', pastWindowStr)
-                .or(`assigned_to.eq.${currentUser.id},is_general.eq.true`)
-                .order('start_date', { ascending: false });
-            if (error) throw error;
-
-            const completed = (recentEvents || []).filter(ev => getEventStatusInfo(ev.start_date, ev.end_date).label === 'Completed');
-
-            listEl.innerHTML = completed.length > 0
-                ? completed.map(ev => {
-                    const clientName = ev.cases?.clients?.client_name || 'No Client';
-                    return `
-                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; cursor:pointer;" onclick="openEventDetails('${ev.id}')" title="Click to view full event details">
-                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(ev.title)}</h4>
-                            <p style="color: #64748b; font-size: 11px;">${escapeHtml(clientName)} • ${formatDate(ev.start_date)} at ${formatEventTime(ev.start_date)}</p>
-                        </div>
-                    `;
-                }).join('')
-                : '<p style="color:#64748b; text-align:center; padding:20px;">No completed events in the last 60 days.</p>';
-
-        } else if (type === 'clients') {
-            const { clients } = await getActiveClientsData();
-            const isAdminView = globalUserRole !== 'lawyer';
-
-            listEl.innerHTML = clients.length > 0
-                ? clients.map(cl => {
-                    const handledBy = (isAdminView && cl.lawyerNames.size > 0)
-                        ? `<p style="color:#94a3b8; font-size:10px; margin-top:4px;"><i class="fa-solid fa-gavel"></i> ${Array.from(cl.lawyerNames).map(n => `Atty. ${escapeHtml(n)}`).join(', ')}</p>`
-                        : '';
-                    return `
-                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
-                            <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(cl.client_name || 'Unnamed Client')}</h4>
-                            <p style="color: #64748b; font-size: 11px;">${escapeHtml(cl.client_email || 'No email on file')}</p>
-                            ${handledBy}
-                        </div>
-                    `;
-                }).join('')
-                : '<p style="color:#64748b; text-align:center; padding:20px;">No active clients found.</p>';
-
-        } else if (type === 'lawyers') {
-            const lawyers = await getActiveLawyersData();
-
-            const lawyerCards = lawyers.length > 0
-                ? lawyers.map(l => `
-                    <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
-                        <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</h4>
-                        <p style="color: #64748b; font-size: 11px;">${escapeHtml(l.specialization || 'General Practice')}${l.phone ? ' • ' + escapeHtml(l.phone) : ''}</p>
-                    </div>
-                `).join('')
-                : '<p style="color:#64748b; text-align:center; padding:20px;">No active lawyers found.</p>';
-
-            listEl.innerHTML = `
-                ${lawyerCards}
-                <button onclick="document.getElementById('stat-details-modal').classList.add('hidden'); document.querySelector('.nav-links li[data-target=\\'manage-lawyers-view\\']').click();" style="padding:10px; border:1px solid #e2e8f0; background:white; border-radius:8px; cursor:pointer; font-weight:600; font-size:12px; color:#0f172a;">
-                    Manage Lawyers <i class="fa-solid fa-arrow-right"></i>
-                </button>
-            `;
-        }
-    } catch (error) {
-        console.error('Error loading stat details:', error);
-        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load details.</p>';
-    }
-}
-
 function getEventStatusInfo(startDateISO, endDateISO) {
     const start = new Date(startDateISO);
     const end = endDateISO ? new Date(endDateISO) : new Date(start.getTime() + 60 * 60 * 1000); // fallback: assume 1-hour duration
@@ -729,62 +591,6 @@ function getEventStatusInfo(startDateISO, endDateISO) {
     if (now >= end) return { label: 'Completed', color: '#16a34a', bg: '#dcfce7', icon: 'fa-circle-check' };
     if (now >= start && now < end) return { label: 'Ongoing', color: '#d97706', bg: '#fef3c7', icon: 'fa-hourglass-half' };
     return { label: 'Upcoming', color: '#2563eb', bg: '#dbeafe', icon: 'fa-clock' };
-}
-
-// Builds the same rich event card used in the day-details modal. Shared so a
-// single calendar event (from the Deadlines/Completed popups) renders identically
-// to how it looks when viewed via a day on the calendar.
-function buildEventDetailCard(ev) {
-    const lawyerName = ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'Unassigned');
-    const clientName = ev.cases?.clients?.client_name || 'No Client';
-    const statusInfo = getEventStatusInfo(ev.start_date, ev.end_date);
-    const isDone = statusInfo.label === 'Completed';
-    const borderColor = ev.is_conflict ? '#ef4444' : (ev.is_general ? '#8b5cf6' : '#3b82f6');
-    const bgColor = ev.is_conflict ? '#fef2f2' : (ev.is_general ? '#f5f3ff' : '#f8fafc');
-    const conflictStyle = `border-left: 4px solid ${borderColor}; background: ${bgColor}; ${isDone ? 'opacity: 0.65;' : ''}`;
-    const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red">High Priority</span>' : '';
-    const generalBadge = ev.is_general ? '<span style="background:#ede9fe; color:#7c3aed; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>' : '';
-    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
-
-    let caseDetailsHtml = '';
-    if (ev.cases) {
-        caseDetailsHtml = `
-            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 12px;">
-                <div style="display:flex; gap: 15px; margin-bottom: 6px;">
-                    <span style="color:#475569;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
-                    <span style="color:#475569;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
-                </div>
-                <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${ev.cases.case_description || 'No description provided.'}"</em></p>
-            </div>
-        `;
-    }
-
-    let attachmentHtml = '';
-    if (ev.documents) {
-        attachmentHtml = `
-            <div style="margin-top: 10px;">
-                <a href="${ev.documents.file_url}" target="_blank" rel="noopener" style="font-size:12px; color:#3b82f6; text-decoration:none;">
-                    <i class="fa-solid fa-paperclip"></i> ${ev.documents.title}
-                </a>
-            </div>
-        `;
-    }
-
-    return `
-        <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
-                <h4 style="margin:0; font-size:16px; color:#0f172a;">${ev.title} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
-                <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventTime(ev.start_date) || 'TBD'}${ev.end_date ? ' - ' + formatEventTime(ev.end_date) : ''}</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
-                <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${ev.location || 'Office'}</span>
-                <span><i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i> Client: <strong>${clientName}</strong></span>
-                <span><i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${lawyerName}`}</span>
-            </div>
-            ${caseDetailsHtml}
-            ${attachmentHtml}
-        </div>
-    `;
 }
 
 window.openDayDetails = async function(dateString) {
@@ -820,7 +626,56 @@ window.openDayDetails = async function(dateString) {
         if (events && events.length > 0) {
             let html = '';
             for (const ev of events) {
-                html += buildEventDetailCard(ev);
+                const lawyerName = ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'Unassigned');
+                const clientName = ev.cases?.clients?.client_name || 'No Client';
+                const statusInfo = getEventStatusInfo(ev.start_date, ev.end_date);
+                const isDone = statusInfo.label === 'Completed';
+                const borderColor = ev.is_conflict ? '#ef4444' : (ev.is_general ? '#8b5cf6' : '#3b82f6');
+                const bgColor = ev.is_conflict ? '#fef2f2' : (ev.is_general ? '#f5f3ff' : '#f8fafc');
+                const conflictStyle = `border-left: 4px solid ${borderColor}; background: ${bgColor}; ${isDone ? 'opacity: 0.65;' : ''}`;
+                const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red">High Priority</span>' : '';
+                const generalBadge = ev.is_general ? '<span style="background:#ede9fe; color:#7c3aed; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>' : '';
+                const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
+
+                let caseDetailsHtml = '';
+                if (ev.cases) {
+                    caseDetailsHtml = `
+                        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 12px;">
+                            <div style="display:flex; gap: 15px; margin-bottom: 6px;">
+                                <span style="color:#475569;"><strong>Case No:</strong> ${ev.cases.case_number || 'N/A'}</span>
+                                <span style="color:#475569;"><strong>Type:</strong> ${ev.cases.case_type || 'N/A'}</span>
+                            </div>
+                            <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${ev.cases.case_description || 'No description provided.'}"</em></p>
+                        </div>
+                    `;
+                }
+
+                let attachmentHtml = '';
+                if (ev.documents) {
+                    attachmentHtml = `
+                        <div style="margin-top: 10px;">
+                            <a href="${ev.documents.file_url}" target="_blank" rel="noopener" style="font-size:12px; color:#3b82f6; text-decoration:none;">
+                                <i class="fa-solid fa-paperclip"></i> ${ev.documents.title}
+                            </a>
+                        </div>
+                    `;
+                }
+
+                html += `
+                    <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
+                            <h4 style="margin:0; font-size:16px; color:#0f172a;">${ev.title} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
+                            <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventTime(ev.start_date) || 'TBD'}${ev.end_date ? ' - ' + formatEventTime(ev.end_date) : ''}</span>
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
+                            <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${ev.location || 'Office'}</span>
+                            <span><i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i> Client: <strong>${clientName}</strong></span>
+                            <span><i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${lawyerName}`}</span>
+                        </div>
+                        ${caseDetailsHtml}
+                        ${attachmentHtml}
+                    </div>
+                `;
             }
             
             if (html === '') {
@@ -834,38 +689,6 @@ window.openDayDetails = async function(dateString) {
     } catch (error) {
         console.error("Error fetching day details:", error);
         listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load events.</p>';
-    }
-};
-
-// Opens one calendar event in the same rich card used by the calendar's day view.
-// Called from the Deadlines/Completed detail popups so those items are clickable.
-window.openEventDetails = async function(eventId) {
-    const statModal = document.getElementById('stat-details-modal');
-    if (statModal) statModal.classList.add('hidden');
-
-    const modal = document.getElementById('day-details-modal');
-    const titleEl = document.getElementById('day-details-title');
-    const listEl = document.getElementById('day-details-list');
-    if (!modal || !titleEl || !listEl) return;
-
-    titleEl.textContent = 'Event Details';
-    listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading event...</p>';
-    modal.classList.remove('hidden');
-
-    try {
-        const { data: ev, error } = await supabaseClient
-            .from('calendar_events')
-            .select('*, profiles(full_name, role), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
-            .eq('id', eventId)
-            .single();
-
-        if (error) throw error;
-
-        titleEl.textContent = ev.title || 'Event Details';
-        listEl.innerHTML = ev ? buildEventDetailCard(ev) : '<p style="color:#64748b; text-align:center; padding:30px;">Event not found.</p>';
-    } catch (error) {
-        console.error('Error fetching event details:', error);
-        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load this event.</p>';
     }
 };
 
@@ -1010,29 +833,6 @@ function setupDocumentFilters() {
     }
 }
 
-// Escapes user-entered text before it is placed inside innerHTML templates.
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
-// Title to save for an uploaded file: the (possibly edited) File Name box,
-// falling back to the original name, and always keeping the original extension.
-function resolveDocumentTitle(customName, file) {
-    const original = file ? file.name : '';
-    const typed = (customName || '').trim();
-    if (!typed) return original;
-
-    const dot = original.lastIndexOf('.');
-    const ext = dot > 0 ? original.slice(dot) : '';
-    if (ext && !typed.toLowerCase().endsWith(ext.toLowerCase())) return typed + ext;
-    return typed;
-}
-
 function getCategoryColor(type) {
     const t = (type || '').toLowerCase();
     if (t === 'motion') return { bg: '#e0e7ff', text: '#2563eb' }; 
@@ -1048,7 +848,7 @@ function getCategoryColor(type) {
 function generateTagsHtml(tagsStr) {
     if (!tagsStr) return '';
     const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t);
-    return tags.map(t => `<span style="border: 1px solid #e2e8f0; padding: 2px 10px; border-radius: 99px; font-size: 11px; color: #475569; font-weight: 500;">${escapeHtml(t)}</span>`).join('');
+    return tags.map(t => `<span style="border: 1px solid #e2e8f0; padding: 2px 10px; border-radius: 99px; font-size: 11px; color: #475569; font-weight: 500;">${t}</span>`).join('');
 }
 
 async function renderDocumentList(searchQuery = '', filterType = 'all') {
@@ -1059,7 +859,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     try {
         let query = supabaseClient
             .from('documents')
-            .select('*, profiles(full_name), cases(case_number)')
+            .select('*, profiles(full_name)')
             .order('created_at', { ascending: false })
             .limit(50); 
 
@@ -1081,13 +881,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (documents && documents.length > 0) {
             container.innerHTML = documents.map(doc => {
-                // JSON.stringify + escapeHtml keeps quotes in URLs/titles from breaking the inline handler.
+                const actualUrl = doc.file_url ? doc.file_url : '#';
                 const onBtnClick = doc.file_url 
-                    ? `window.open(${escapeHtml(JSON.stringify(doc.file_url))}, '_blank')` 
+                    ? `window.open('${doc.file_url}', '_blank')` 
                     : `alert('No file attached to this record in the database.')`;
                 
                 const onDownloadClick = doc.file_url 
-                    ? `forceDownload(${escapeHtml(JSON.stringify(doc.file_url))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))})` 
+                    ? `forceDownload('${doc.file_url}', '${doc.title.replace(/'/g, "\\'")}')` 
                     : `alert('No file attached to this record in the database.')`;
 
                 const typeColor = getCategoryColor(doc.type);
@@ -1099,9 +899,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                             <i class="fa-solid fa-file-lines" style="font-size: 18px;"></i>
                         </div>
                         <div>
-                            <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
+                            <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${doc.title || 'Untitled Document'}</h4>
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>
+                                <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${doc.type || 'document'}</span>
                                 <span style="font-size: 11px; color: #64748b;">${doc.size || '0 KB'}</span>
                             </div>
                         </div>
@@ -1110,11 +910,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     <div style="font-size: 12px; color: #475569; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <i class="fa-solid fa-tag" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
-                            ${escapeHtml(doc.cases?.case_number || 'No Case Number')}
+                            ${doc.case_number || 'No Case Number'}
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <i class="fa-regular fa-user" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
-                            ${escapeHtml(doc.profiles?.full_name || 'System')}
+                            ${doc.profiles?.full_name || 'System'}
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <i class="fa-regular fa-calendar" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
@@ -1181,6 +981,7 @@ async function renderMyScheduleContent() {
     await updateScheduleProfileHeader();
     await renderTimelineInSchedule();
     await renderRecentDocumentsInSchedule();
+    await renderDeadlinesInSchedule();
     await updateScheduleStats();
     
     await renderMyCasesTab();
@@ -1249,69 +1050,22 @@ async function updateScheduleProfileHeader() {
     }
 }
 
-// A client counts as "active" when at least one of their cases has status = 'active'.
-// Lawyers only ever see their own clients (cases.lawyer_id = them); administrators
-// see every firm client, plus the roster of active lawyers. Nothing here is
-// hard-coded to a particular user or name — it all follows from globalUserRole,
-// which is read from the logged-in user's own profiles row.
-async function getActiveClientsData() {
-    let clientsQuery = supabaseClient
-        .from('clients')
-        .select('id, client_name, client_email, client_phone, cases!inner(status, lawyer_id, profiles(full_name))')
-        .eq('cases.status', 'active');
-
-    if (globalUserRole === 'lawyer' && currentUser) {
-        clientsQuery = clientsQuery.eq('cases.lawyer_id', currentUser.id);
-    }
-
-    const { data: rows, error } = await clientsQuery;
-    if (error) throw error;
-
-    const byId = new Map();
-    (rows || []).forEach(row => {
-        if (!byId.has(row.id)) {
-            byId.set(row.id, {
-                id: row.id,
-                client_name: row.client_name,
-                client_email: row.client_email,
-                client_phone: row.client_phone,
-                lawyerNames: new Set()
-            });
-        }
-        (row.cases || []).forEach(c => {
-            if (c.profiles?.full_name) byId.get(row.id).lawyerNames.add(c.profiles.full_name);
-        });
-    });
-    const clients = Array.from(byId.values());
-
-    // Lawyers only see their own clients, so a lawyer roster isn't relevant to them.
-    return { clients };
-}
-
-// The firm's active lawyer roster — administrators only. Independent of which
-// lawyers currently have active clients, so a lawyer with zero clients still counts.
-async function getActiveLawyersData() {
-    const { data: lawyerRows, error } = await supabaseClient
-        .from('profiles')
-        .select('id, full_name, specialization, phone')
-        .eq('role', 'lawyer')
-        .eq('status', 'active')
-        .order('full_name', { ascending: true });
-    if (error) throw error;
-    return lawyerRows || [];
-}
-
 async function updateScheduleStats() {
     if (!currentUser) return;
 
     try {
         let activeCases = 0;
         try {
-            const { count, error } = await supabaseClient
+            let casesQuery = supabaseClient
                 .from('cases')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'active')
-                .eq('lawyer_id', currentUser.id);
+                .eq('status', 'active');
+            
+            if (globalUserRole === 'lawyer') {
+                casesQuery = casesQuery.eq('lawyer_id', currentUser.id);
+            }
+
+            const { count, error } = await casesQuery;
             if (!error) activeCases = count;
         } catch (e) {}
 
@@ -1343,18 +1097,23 @@ async function updateScheduleStats() {
 
         const completedCount = (recentEvents || []).filter(ev => getEventStatusInfo(ev.start_date, ev.end_date).label === 'Completed').length;
 
+        let lawyersCount = 0;
+        if (globalUserRole === 'administrator') {
+            try {
+                const { count: lCount } = await supabaseClient
+                    .from('profiles')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('status', 'active')
+                    .eq('role', 'lawyer');
+                lawyersCount = lCount || 0;
+            } catch(e) {}
+        }
+        
         let activeClientsCount = 0;
         try {
             const { clients } = await getActiveClientsData();
             activeClientsCount = clients.length;
         } catch (e) {}
-
-        let activeLawyersCount = null;
-        if (globalUserRole !== 'lawyer') {
-            try {
-                activeLawyersCount = (await getActiveLawyersData()).length;
-            } catch (e) { activeLawyersCount = 0; }
-        }
 
         const statCards = document.querySelectorAll('.sched-stat-card h3');
         if (statCards.length >= 4) {
@@ -1363,8 +1122,14 @@ async function updateScheduleStats() {
             statCards[2].textContent = completedCount || '0';
             statCards[3].textContent = activeClientsCount || '0';
         }
-        if (statCards.length >= 5 && activeLawyersCount !== null) {
-            statCards[4].textContent = activeLawyersCount || '0';
+        
+        if (statCards.length >= 5 && globalUserRole === 'administrator') {
+            statCards[4].textContent = lawyersCount || '0';
+            
+            const lawyerCardContainer = document.getElementById('stat-card-lawyers');
+            if (lawyerCardContainer) {
+                lawyerCardContainer.style.cursor = 'default';
+            }
         }
     } catch (error) {
         console.error('Error updating schedule stats:', error);
@@ -1443,7 +1208,7 @@ async function renderRecentDocumentsInSchedule() {
                         <i class="fa-solid fa-file-lines"></i>
                     </div>
                     <div>
-                        <h4 style="font-size:13px; color:#1e293b; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
+                        <h4 style="font-size:13px; color:#1e293b; margin-bottom:4px;">${doc.title}</h4>
                         <p style="font-size:11px; color:#64748b; text-transform:capitalize;">${doc.type || 'Doc'}</p>
                     </div>
                 </div>
@@ -1453,6 +1218,58 @@ async function renderRecentDocumentsInSchedule() {
         }
     } catch (error) {
         console.error('Error rendering recent documents:', error);
+    }
+}
+
+async function renderDeadlinesInSchedule() {
+    const list = document.getElementById('upcoming-dl-inject');
+    if (!list || !currentUser) return;
+
+    try {
+        const localDate = new Date();
+        const year = localDate.getFullYear();
+        const month = String(localDate.getMonth() + 1).padStart(2, '0');
+        const day = String(localDate.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+        
+        let deadlinesQuery = supabaseClient
+            .from('calendar_events')
+            .select('*, cases(case_number, clients(client_name))')
+            .eq('is_general', false)
+            .gte('start_date', todayStr)
+            .order('start_date', { ascending: true })
+            .limit(5);
+
+        if (globalUserRole === 'lawyer') {
+            deadlinesQuery = deadlinesQuery.eq('assigned_to', currentUser.id);
+        }
+
+        const { data: deadlines } = await deadlinesQuery;
+
+        if (deadlines && deadlines.length > 0) {
+            list.innerHTML = deadlines.map(dl => {
+                const dlDate = new Date(dl.start_date);
+                const daysUntil = Math.ceil((dlDate - new Date(todayStr)) / (1000 * 60 * 60 * 24));
+                const badgeColor = daysUntil <= 3 ? 'bg-red' : 'bg-gray';
+                
+                const clientName = dl.cases?.clients?.client_name || 'No Client';
+
+                return `
+                    <div class="upcoming-dl-item">
+                        <div style="display:flex; justify-content:space-between;">
+                            <h4>${dl.title}</h4>
+                            <span class="badge-pill ${badgeColor}">${daysUntil}d</span>
+                        </div>
+                        <p>${dl.location || 'Meeting'} • Client: ${clientName}</p>
+                        <small><i class="fa-regular fa-calendar"></i> ${formatDate(dl.start_date)} at ${formatEventTime(dl.start_date)}</small>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            list.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No upcoming events</p>';
+        }
+    } catch (error) {
+        console.error('Error rendering deadlines:', error);
     }
 }
 
@@ -2120,18 +1937,18 @@ function handleEventClientSelectChange() {
 // --- Case selection: once a client is picked, show that client's pending
 // cases so the lawyer can attach the event to an existing one instead of
 // always creating a new case. ---
-// The case number box is always read-only (it is generated by the database),
-// so only the case type and description are locked/unlocked here.
 function setCaseFieldsDisabled(disabled) {
-    const typeEl = document.getElementById('case-type-input');
+    const numEl = document.getElementById('case-number-input');
+    const typeEl = document.getElementById('case-type-select');
     const descEl = document.getElementById('case-desc-input');
-    [typeEl, descEl].forEach(el => {
+    [numEl, descEl].forEach(el => {
         if (!el) return;
         el.disabled = disabled;
         el.style.background = disabled ? '#e2e8f0' : '#ffffff';
         el.style.color = disabled ? '#64748b' : '#0f172a';
         el.style.cursor = disabled ? 'not-allowed' : 'text';
     });
+    if (typeEl) typeEl.disabled = disabled;
 }
 
 async function populateCasesForClient(clientId) {
@@ -2143,13 +1960,12 @@ async function populateCasesForClient(clientId) {
     caseSelect.value = '';
     setCaseFieldsDisabled(false);
     document.getElementById('case-number-input').value = '';
-    document.getElementById('case-type-input').value = '';
     document.getElementById('case-desc-input').value = '';
 
     if (!clientId || !currentUser) {
         caseSelect.innerHTML = '<option value="">+ New Case</option>';
         caseSelect.disabled = true;
-        if (hint) hint.textContent = 'Pick a client above to see their existing cases here. A case number is assigned automatically for new cases.';
+        if (hint) hint.textContent = 'Pick a client above to see their pending cases here, or type a case number below to look one up.';
         return;
     }
 
@@ -2184,12 +2000,11 @@ function handleEventCaseSelectChange() {
 
     const selectedId = select.value;
     const numEl = document.getElementById('case-number-input');
-    const typeEl = document.getElementById('case-type-input');
+    const typeEl = document.getElementById('case-type-select');
     const descEl = document.getElementById('case-desc-input');
 
     if (!selectedId) {
         if (numEl) numEl.value = '';
-        if (typeEl) typeEl.value = '';
         if (descEl) descEl.value = '';
         setCaseFieldsDisabled(false);
         return;
@@ -2199,10 +2014,48 @@ function handleEventCaseSelectChange() {
     if (!c) return;
 
     if (numEl) numEl.value = c.case_number || '';
-    if (typeEl) typeEl.value = c.case_type || '';
+    if (typeEl && c.case_type) typeEl.value = c.case_type;
     if (descEl) descEl.value = c.case_description || '';
 
     setCaseFieldsDisabled(true);
+}
+
+// --- Secondary flow: typing an existing case number auto-fills the client too. ---
+async function handleCaseNumberLookup() {
+    const numEl = document.getElementById('case-number-input');
+    const caseSelect = document.getElementById('event-existing-case');
+    if (!numEl || !currentUser) return;
+
+    const typedNumber = numEl.value.trim();
+    if (!typedNumber || (caseSelect && caseSelect.disabled === false && caseSelect.value)) return;
+
+    try {
+        const { data: match } = await supabaseClient
+            .from('cases')
+            .select('id, case_number, case_type, case_description, title, status, client_id')
+            .eq('lawyer_id', currentUser.id)
+            .ilike('case_number', typedNumber)
+            .maybeSingle();
+
+        if (!match || !match.client_id) return;
+
+        const clientSelect = document.getElementById('event-existing-client');
+        if (clientSelect && (window.__eventClientsMap || {})[match.client_id]) {
+            clientSelect.value = match.client_id;
+            handleEventClientSelectChange();
+
+            // populateCasesForClient runs async and resets the case dropdown —
+            // wait for it, then select this specific case once its options exist.
+            setTimeout(() => {
+                if (caseSelect) {
+                    caseSelect.value = match.id;
+                    handleEventCaseSelectChange();
+                }
+            }, 300);
+        }
+    } catch (e) {
+        console.error('Case number lookup error:', e);
+    }
 }
 
 async function prepareEventModal() {
@@ -2279,6 +2132,11 @@ async function prepareEventModal() {
                     setCaseFieldsDisabled(false);
                     populateCasesForClient(null);
 
+                    const caseNumberInput = document.getElementById('case-number-input');
+                    if (caseNumberInput) {
+                        caseNumberInput.onblur = handleCaseNumberLookup;
+                    }
+
                     if (newClientFields) newClientFields.style.display = 'block';
                 } catch (e) {
                     console.error('Error loading clients for event modal:', e);
@@ -2293,7 +2151,7 @@ async function prepareEventModal() {
 // Shared helper: upload a file to the 'documents' storage bucket and log it
 // in the documents table, optionally linked to a case/client. Returns the
 // inserted document row ({id, title, file_url, ...}) or null if no file.
-async function uploadCaseDocument(file, { caseId = null, clientId = null, category = 'Attachment', tag = '', title = null } = {}) {
+async function uploadCaseDocument(file, { caseId = null, clientId = null, category = 'Attachment', tag = '' } = {}) {
     if (!file) return null;
 
     const uniqueFileName = `${Date.now()}_${file.name}`;
@@ -2316,7 +2174,7 @@ async function uploadCaseDocument(file, { caseId = null, clientId = null, catego
     const fileSizeMb = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
 
     const docData = {
-        title: title || file.name,
+        title: file.name,
         type: category.toLowerCase(),
         size: fileSizeMb,
         file_url: fileUrl,
@@ -2355,15 +2213,6 @@ function setupAddEventModal() {
     const caseIcon = document.getElementById('case-toggle-icon');
 
     if (!modal) return;
-
-    // Choosing an attachment auto-fills the (editable) File Name box.
-    const attachInput = document.getElementById('event-attachment');
-    const attachNameInput = document.getElementById('event-attachment-name');
-    if (attachInput && attachNameInput) {
-        attachInput.addEventListener('change', () => {
-            attachNameInput.value = attachInput.files.length > 0 ? attachInput.files[0].name : '';
-        });
-    }
 
     // Puts the whole event form back to a blank state (fields, dropdowns, collapsible sections).
     function resetEventForm() {
@@ -2566,7 +2415,7 @@ function setupAddEventModal() {
             }
 
             const caseNum = document.getElementById('case-number-input').value.trim();
-            const caseType = document.getElementById('case-type-input').value.trim();
+            const caseType = document.getElementById('case-type-select').value;
             const caseDesc = document.getElementById('case-desc-input').value.trim();
 
             let formattedTime = timeInput; 
@@ -2741,20 +2590,17 @@ function setupAddEventModal() {
                 }
 
                 let newCaseId = null;
-                let finalCaseNumber = caseNum;   // for an existing case this is its current number
-                let caseWasCreated = false;
 
                 if (!isGeneral) {
                     if (selectedExistingCaseId) {
                         // A case was picked from the dropdown — reuse it, never insert a copy.
                         newCaseId = selectedExistingCaseId;
                     } else {
-                        // case_number is intentionally NOT sent: the database trigger
-                        // (assign_case_number) generates it atomically on insert.
                         const caseData = { 
                             title: title, 
                             status: 'active',
-                            case_type: caseType || null,
+                            case_number: caseNum,
+                            case_type: caseType,
                             case_description: caseDesc,
                             lawyer_id: assignedLawyerId
                         };
@@ -2764,15 +2610,11 @@ function setupAddEventModal() {
                         const { data: insertedCase, error: caseError } = await supabaseClient
                             .from('cases')
                             .insert([caseData])
-                            .select('id, case_number')
+                            .select('id')
                             .single();
 
                         if (caseError) throw new Error(caseError.message);
-                        if (insertedCase) {
-                            newCaseId = insertedCase.id;
-                            finalCaseNumber = insertedCase.case_number || '';
-                            caseWasCreated = true;
-                        }
+                        if (insertedCase) newCaseId = insertedCase.id;
                     }
                 }
 
@@ -2785,11 +2627,7 @@ function setupAddEventModal() {
                         caseId: newCaseId,
                         clientId: newClientId,
                         category: 'Event Attachment',
-                        tag: finalCaseNumber ? `Case #${finalCaseNumber}` : '',
-                        title: resolveDocumentTitle(
-                            document.getElementById('event-attachment-name')?.value,
-                            attachmentFile
-                        )
+                        tag: caseNum ? `Case #${caseNum}` : ''
                     });
                 }
 
@@ -2814,9 +2652,7 @@ function setupAddEventModal() {
                 const { error: eventError } = await supabaseClient.from('calendar_events').insert([eventData]);
                 if (eventError) throw new Error(eventError.message);
 
-                alert(isGeneral
-                    ? 'Firm-wide event successfully added!'
-                    : 'Event, Client, and Case successfully added!' + (caseWasCreated && finalCaseNumber ? `\n\nCase Number: ${finalCaseNumber}` : ''));
+                alert(isGeneral ? 'Firm-wide event successfully added!' : 'Event, Client, and Case successfully added!');
                 
                 form.reset(); 
                 setClientFieldsDisabled(false);
@@ -3037,7 +2873,7 @@ async function renderCasesTabView() {
                                 <span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; text-transform:capitalize; ${statusStyle}">${c.status || 'active'}</span>
                             </div>
                             <p style="margin:0; font-size:12px; color:#64748b;">
-                                ${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}${escapeHtml(c.case_type || 'General')} 
+                                ${c.case_number ? `#${c.case_number} • ` : ''}${c.case_type || 'General'} 
                                 • <i class="fa-solid fa-user" style="font-size:10px;"></i> ${clientName}
                                 ${globalUserRole !== 'lawyer' ? `• <i class="fa-solid fa-gavel" style="font-size:10px;"></i> ${lawyerName}` : ''}
                             </p>
@@ -3375,41 +3211,9 @@ function setupUploadModal() {
     const dropArea = document.getElementById('drag-drop-area');
     const fileInput = document.getElementById('doc-file-input');
     const dropText = document.getElementById('drag-drop-text');
-    const fileNameInput = document.getElementById('doc-file-name');
     let selectedFile = null;
 
     if (!modal) return;
-
-    // Lists the lawyer's own cases so a document can be linked without typing a number.
-    async function populateDocCaseSelect() {
-        const sel = document.getElementById('doc-case-select');
-        if (!sel || !currentUser) return;
-        sel.innerHTML = '';
-        const none = document.createElement('option');
-        none.value = '';
-        none.textContent = 'No case (general document)';
-        sel.appendChild(none);
-
-        try {
-            const { data: myCases, error } = await supabaseClient
-                .from('cases')
-                .select('id, case_number, title, client_id')
-                .eq('lawyer_id', currentUser.id)
-                .order('created_at', { ascending: false });
-            if (error) throw error;
-
-            (myCases || []).forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.id;
-                opt.textContent = `${c.case_number ? c.case_number + ' — ' : ''}${c.title || 'Untitled case'}`;
-                opt.dataset.caseNumber = c.case_number || '';
-                opt.dataset.clientId = c.client_id || '';
-                sel.appendChild(opt);
-            });
-        } catch (e) {
-            console.error('Error loading cases for upload modal:', e);
-        }
-    }
 
     // Clears the text fields, the chosen file and the drag-and-drop box.
     function resetUploadForm() {
@@ -3421,7 +3225,6 @@ function setupUploadModal() {
             dropText.innerText = "Drag and drop files here, or click to browse";
         }
         selectedFile = null;
-        if (fileNameInput) fileNameInput.value = '';
     }
 
     if (openBtn) {
@@ -3431,7 +3234,6 @@ function setupUploadModal() {
                 return;
             }
             resetUploadForm();
-            populateDocCaseSelect();
             modal.classList.remove('hidden');
         });
     }
@@ -3452,7 +3254,6 @@ function setupUploadModal() {
             if (e.target.files.length > 0) {
                 selectedFile = e.target.files[0];
                 dropText.innerText = selectedFile.name; 
-                if (fileNameInput) fileNameInput.value = selectedFile.name;
                 dropArea.style.borderColor = '#3b82f6'; 
                 dropArea.style.backgroundColor = '#eff6ff'; 
             }
@@ -3478,7 +3279,6 @@ function setupUploadModal() {
                 fileInput.files = e.dataTransfer.files; 
                 
                 dropText.innerText = selectedFile.name; 
-                if (fileNameInput) fileNameInput.value = selectedFile.name;
                 dropArea.style.borderColor = '#3b82f6';
                 dropArea.style.backgroundColor = '#eff6ff';
             }
@@ -3505,19 +3305,15 @@ function setupUploadModal() {
                 submitBtn.innerText = "Uploading & Processing...";
             }
 
-            const caseSel = document.getElementById('doc-case-select');
-            const selectedCaseOpt = caseSel && caseSel.value ? caseSel.selectedOptions[0] : null;
-            const matchedCaseId = selectedCaseOpt ? selectedCaseOpt.value : null;
-            const matchedClientId = selectedCaseOpt && selectedCaseOpt.dataset.clientId ? selectedCaseOpt.dataset.clientId : null;
-            const caseNum = selectedCaseOpt ? (selectedCaseOpt.dataset.caseNumber || '') : '';
+            const caseNum = document.getElementById('doc-case-num').value || '';
             const category = document.getElementById('doc-category').value || 'Document';
             const tagsInput = document.getElementById('doc-tags').value || '';
             
-            const finalTitle = resolveDocumentTitle(fileNameInput ? fileNameInput.value : '', selectedFile);
+            const finalTitle = selectedFile.name;
             const fileSizeMb = (selectedFile.size / (1024 * 1024)).toFixed(2) + ' MB';
 
             try {
-                const uniqueFileName = `${Date.now()}_${selectedFile.name}`;
+                const uniqueFileName = `${Date.now()}_${finalTitle}`;
                 const { data: uploadData, error: uploadError } = await supabaseClient
                     .storage
                     .from('documents') 
@@ -3535,13 +3331,23 @@ function setupUploadModal() {
                 
                 const fileUrl = publicUrlData.publicUrl;
 
+                let matchedCaseId = null;
+                if (caseNum) {
+                    const { data: matchedCase } = await supabaseClient
+                        .from('cases')
+                        .select('id')
+                        .eq('case_number', caseNum)
+                        .limit(1)
+                        .maybeSingle();
+                    if (matchedCase) matchedCaseId = matchedCase.id;
+                }
+
                 const docData = { 
                     title: finalTitle, 
                     type: category.toLowerCase(), 
                     size: fileSizeMb,
                     file_url: fileUrl, 
                     case_id: matchedCaseId,
-                    client_id: matchedClientId,
                     tags: caseNum ? `${tagsInput}${tagsInput ? ', ' : ''}Case #${caseNum}` : tagsInput,
                     uploaded_by: currentUser ? currentUser.id : null
                 };
