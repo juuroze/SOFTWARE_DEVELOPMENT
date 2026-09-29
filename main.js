@@ -139,7 +139,7 @@ function setupRealtimeSubscriptions() {
             generateCalendarGrid();
             renderDashboardContent();
             updateDashboardStats();
-            renderActiveConflictsWidget();
+            renderScheduleSummaryWidget();
             renderLawyerStatusWidget();
             renderTimelineInSchedule();
             renderNotificationsList();
@@ -186,7 +186,7 @@ async function initializeApp() {
 
     await renderResourcesWidget();
     setupRoomBookingModal();
-    await renderActiveConflictsWidget();
+    await renderScheduleSummaryWidget();
     await renderLawyerStatusWidget(); 
     
     setupScheduleTabs();
@@ -222,7 +222,7 @@ navItems.forEach(item => {
 
         if (target === 'calendar-view') {
             generateCalendarGrid();
-            await renderActiveConflictsWidget();
+            await renderScheduleSummaryWidget();
             await renderLawyerStatusWidget();
             await renderResourcesWidget(); 
         }
@@ -430,6 +430,7 @@ function setupCalendarControls() {
                 currentYear--;
             }
             generateCalendarGrid();
+            renderScheduleSummaryWidget();
         });
     }
 
@@ -441,6 +442,7 @@ function setupCalendarControls() {
                 currentYear++;
             }
             generateCalendarGrid();
+            renderScheduleSummaryWidget();
         });
     }
 }
@@ -869,53 +871,93 @@ window.openEventDetails = async function(eventId) {
     }
 };
 
-async function renderActiveConflictsWidget() {
-    const conflictsWidget = document.getElementById('widget-conflicts-list');
-    if (!conflictsWidget) return;
+async function renderScheduleSummaryWidget() {
+    const summaryWidget = document.getElementById('widget-schedule-summary');
+    if (!summaryWidget) return;
+
+    const titleEl = document.getElementById('schedule-summary-title');
+    const isLawyerView = (globalUserRole === 'lawyer' && currentUser);
 
     try {
-        const startDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+        const pad = n => String(n).padStart(2, '0');
+        const startDate = `${currentYear}-${pad(currentMonth + 1)}-01`;
         const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-        const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${daysInMonth}`;
+        const endDate = `${currentYear}-${pad(currentMonth + 1)}-${pad(daysInMonth)}T23:59:59`;
+        const monthLabel = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-        let evQuery = supabaseClient.from('calendar_events').select('*, profiles(role)').gte('start_date', startDate).lte('start_date', endDate).eq('is_conflict', true);
-        if (globalUserRole === 'lawyer' && currentUser) {
-            evQuery = evQuery.or(`assigned_to.eq.${currentUser.id},is_general.eq.true`);
+        let evQuery = supabaseClient
+            .from('calendar_events')
+            .select('id, title, start_date, end_date, assigned_to, is_general, profiles(full_name)')
+            .gte('start_date', startDate)
+            .lte('start_date', endDate)
+            .order('start_date', { ascending: true });
+
+        // Lawyers only ever see their own schedule.
+        if (isLawyerView) {
+            evQuery = evQuery.eq('assigned_to', currentUser.id);
         }
 
-        const { data: events } = await evQuery;
+        const { data: events, error } = await evQuery;
+        if (error) throw error;
+
+        if (titleEl) titleEl.textContent = isLawyerView ? 'My Schedule Summary' : 'Lawyer Schedule Summary';
 
         if (!events || events.length === 0) {
-            conflictsWidget.innerHTML = '<p style="color:#64748b; padding:10px;">No active conflicts</p>';
+            summaryWidget.innerHTML = `<p style="color:#64748b; padding:10px; font-size:13px;">No scheduled events for ${escapeHtml(monthLabel)}.</p>`;
             return;
         }
 
-        let conflictsHtml = '';
-        let conflictCount = 0;
+        const timeRange = ev => {
+            const start = formatEventTime(ev.start_date);
+            const end = ev.end_date ? formatEventTime(ev.end_date) : '';
+            return end ? `${start} - ${end}` : start;
+        };
 
-        events.forEach(ev => {
-            if (conflictCount < 4) {
-                conflictCount++;
-                conflictsHtml += `
-                    <div style="background:#fff5f5; border:1px solid #fed7d7; padding:15px; border-radius:10px; margin-bottom:12px;">
-                        <h5 style="font-size:13px; color:#1e293b; margin-bottom:4px;">Double Booking!</h5>
-                        <p style="font-size:11px; color:#64748b; margin-bottom:8px;">Conflict on ${formatDate(ev.start_date)} at ${formatEventTime(ev.start_date)}.</p>
-                        <span style="background:#ef4444; color:white; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:bold;">
-                            Needs Resolution
-                        </span>
-                    </div>
-                `;
-            }
-        });
-
-        if (conflictCount > 0) {
-            conflictsWidget.innerHTML = conflictsHtml;
-        } else {
-            conflictsWidget.innerHTML = '<p style="color:#64748b; padding:10px;">No active conflicts</p>';
+        if (isLawyerView) {
+            // Lawyer side: simple list of their own events.
+            const rows = events.map(ev => `
+                <div style="padding:10px 0; border-bottom:1px solid #f1f5f9;">
+                    <div style="font-size:13px; font-weight:600; color:#1e293b;">${escapeHtml(ev.title)}</div>
+                    <div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(formatDate(ev.start_date))} &middot; ${escapeHtml(timeRange(ev))}</div>
+                </div>
+            `).join('');
+            summaryWidget.innerHTML = `
+                <div style="font-size:11px; color:#64748b; margin-bottom:6px;">${escapeHtml(monthLabel)} &middot; ${events.length} event${events.length === 1 ? '' : 's'}</div>
+                <div style="max-height:360px; overflow-y:auto;">${rows}</div>
+            `;
+            return;
         }
 
+        // Admin side: formal table showing the lawyer, the date/time, and the event.
+        const rows = events.map(ev => {
+            const lawyerName = ev.profiles?.full_name || (ev.is_general ? 'Firm-wide' : 'Unassigned');
+            return `
+                <tr>
+                    <td style="padding:8px 6px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#1e293b; vertical-align:top;">${escapeHtml(lawyerName)}</td>
+                    <td style="padding:8px 6px; border-bottom:1px solid #e2e8f0; color:#475569; white-space:nowrap; vertical-align:top;">${escapeHtml(formatDate(ev.start_date))}<br><span style="color:#64748b;">${escapeHtml(timeRange(ev))}</span></td>
+                    <td style="padding:8px 6px; border-bottom:1px solid #e2e8f0; color:#334155; vertical-align:top;">${escapeHtml(ev.title)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        summaryWidget.innerHTML = `
+            <div style="font-size:11px; color:#64748b; margin-bottom:8px;">${escapeHtml(monthLabel)} &middot; ${events.length} scheduled event${events.length === 1 ? '' : 's'}</div>
+            <div style="max-height:420px; overflow:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:11.5px; text-align:left;">
+                    <thead>
+                        <tr style="background:#f8fafc;">
+                            <th style="padding:8px 6px; border-bottom:2px solid #cbd5e1; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Lawyer</th>
+                            <th style="padding:8px 6px; border-bottom:2px solid #cbd5e1; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Date &amp; Time</th>
+                            <th style="padding:8px 6px; border-bottom:2px solid #cbd5e1; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Event</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
     } catch (error) {
-        console.error('Error rendering conflicts:', error);
+        console.error('Error rendering schedule summary:', error);
+        summaryWidget.innerHTML = '<p style="color:#ef4444; padding:10px; font-size:13px;">Unable to load the schedule summary.</p>';
     }
 }
 
@@ -2841,7 +2883,7 @@ function setupAddEventModal() {
                 
                 generateCalendarGrid(); 
                 renderResourcesWidget();
-                renderActiveConflictsWidget();
+                renderScheduleSummaryWidget();
                 renderLawyerStatusWidget();
                 
                 updateDashboardStats();
