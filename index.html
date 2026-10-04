@@ -49,7 +49,7 @@
 
                 <li data-target="cases-view">
                     <i class="fa-solid fa-briefcase"></i>
-                    <span>Cases</span>
+                    <span>Cases and Clients</span>
                 </li>
                 
                 <li data-target="notifications-view">
@@ -60,6 +60,11 @@
                 <li id="nav-manage-lawyers" data-target="manage-lawyers-view" style="display: none;">
                     <i class="fa-solid fa-users-gear"></i>
                     <span>Manage Lawyers</span>
+                </li>
+
+                <li id="nav-manage-clients" data-target="manage-clients-view" style="display: none;">
+                    <i class="fa-solid fa-address-book"></i>
+                    <span>Manage Clients</span>
                 </li>
             </ul>
 
@@ -206,7 +211,7 @@
                         <p>Intelligent tracking for hearings, deadlines, and meetings.</p>
                     </div>
                     <button class="btn-primary-black btn-add-event" id="btn-add-event-header" style="display: none;">
-                        <i class="fa-solid fa-plus"></i> Add Event
+                        <i class="fa-solid fa-plus"></i> New Docket Entry
                     </button>
                 </header>
 
@@ -307,25 +312,50 @@
             </section>
 
             <section id="cases-view" class="view-section hidden">
-                <header class="view-header flex-between">
+                <header class="view-header">
                     <div>
-                        <h1>Cases</h1>
+                        <h1>Cases and Clients</h1>
                         <p>Case status, client records, and lawyer-client messaging.</p>
                     </div>
-                    <button class="btn-primary-black" id="btn-add-client">
-                        <i class="fa-solid fa-user-plus"></i> Add Client
-                    </button>
                 </header>
 
-                <div id="cases-list-inject" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 35px;">
+                <div class="cases-tabs" role="tablist">
+                    <button type="button" class="cases-tab-btn active" role="tab" aria-selected="true" data-casestab="cases-tab-details">
+                        <i class="fa-solid fa-scale-balanced"></i> Case Details
+                    </button>
+                    <button type="button" class="cases-tab-btn" role="tab" aria-selected="false" data-casestab="cases-tab-clients">
+                        <i class="fa-solid fa-address-book"></i> Client Details
+                    </button>
+                </div>
+
+                <div id="cases-tab-details" class="cases-tab-content" role="tabpanel">
+                    <div class="cases-toolbar">
+                        <div class="cases-date-field">
+                            <label for="cases-date-from">Opened from</label>
+                            <input type="date" id="cases-date-from">
+                        </div>
+                        <div class="cases-date-field">
+                            <label for="cases-date-to">Opened to</label>
+                            <input type="date" id="cases-date-to">
+                        </div>
+                        <button type="button" id="cases-date-clear" class="cases-clear-btn hidden">Clear dates</button>
+                        <span id="cases-count" class="cases-count"></span>
                     </div>
 
-                <div class="content-card" style="margin-top: 10px;">
-                    <div class="card-title-flex">
-                        <h3><i class="fa-solid fa-address-book"></i> Client Directory</h3>
+                    <div id="cases-list-inject" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 35px;">
                     </div>
-                    <div id="clients-list-inject">
+                </div>
+
+                <div id="cases-tab-clients" class="cases-tab-content hidden" role="tabpanel">
+                    <div class="content-card">
+                        <div class="card-title-flex">
+                            <h3><i class="fa-solid fa-address-book"></i> Client Directory</h3>
+                            <span id="clients-count" class="cases-count"></span>
                         </div>
+                        <input type="search" id="clients-search" class="mc-search" placeholder="Search by name, email, phone or case">
+                        <div id="clients-list-inject">
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -450,6 +480,108 @@
                 </div>
             </section>
 
+            <section id="manage-clients-view" class="view-section hidden">
+                <header class="view-header">
+                    <div>
+                        <h1>Manage Clients</h1>
+                        <p>Register new clients and tag the lawyer who will handle their case.</p>
+                    </div>
+                </header>
+
+                <div class="manage-clients-grid">
+
+                    <div class="content-card">
+                        <div class="card-header-basic mc-card-head">
+                            <h3><i class="fa-solid fa-user-plus"></i> New Client</h3>
+                        </div>
+
+                        <form id="admin-add-client-form" class="mc-form" autocomplete="off">
+                            <div class="mc-row">
+                                <div class="mc-field mc-grow-2">
+                                    <label for="mc-fname">First name</label>
+                                    <input type="text" id="mc-fname" required>
+                                </div>
+                                <div class="mc-field mc-grow-0">
+                                    <label for="mc-mi">M.I.</label>
+                                    <input type="text" id="mc-mi" maxlength="2">
+                                </div>
+                                <div class="mc-field mc-grow-2">
+                                    <label for="mc-lname">Last name</label>
+                                    <input type="text" id="mc-lname" required>
+                                </div>
+                            </div>
+
+                            <div class="mc-row">
+                                <div class="mc-field">
+                                    <label for="mc-email">Email</label>
+                                    <input type="email" id="mc-email" required placeholder="client@email.com">
+                                </div>
+                                <div class="mc-field">
+                                    <label for="mc-phone">Phone</label>
+                                    <input type="tel" id="mc-phone" required placeholder="09123456789">
+                                </div>
+                            </div>
+
+                            <div class="mc-field">
+                                <label for="mc-address">Address <span class="mc-optional">(optional)</span></label>
+                                <input type="text" id="mc-address">
+                            </div>
+
+                            <div class="mc-divider"><span><i class="fa-solid fa-scale-balanced"></i> Case and assigned lawyer</span></div>
+
+                            <div class="mc-field">
+                                <label for="mc-lawyer">Tag lawyer</label>
+                                <div class="mc-select-wrap">
+                                    <select id="mc-lawyer" required>
+                                        <option value="">Loading lawyers...</option>
+                                    </select>
+                                    <i class="fa-solid fa-chevron-down"></i>
+                                </div>
+                            </div>
+
+                            <div class="mc-row">
+                                <div class="mc-field mc-grow-2">
+                                    <label for="mc-case-title">Case title</label>
+                                    <input type="text" id="mc-case-title" required maxlength="150" placeholder="e.g., Dela Cruz vs. Santos">
+                                </div>
+                                <div class="mc-field mc-grow-2">
+                                    <label for="mc-case-type">Case type <span class="mc-optional">(optional)</span></label>
+                                    <input type="text" id="mc-case-type" maxlength="60" placeholder="e.g., Civil, Labor, Annulment">
+                                </div>
+                            </div>
+
+                            <div class="mc-field">
+                                <label for="mc-case-desc">Case description <span class="mc-optional">(optional)</span></label>
+                                <textarea id="mc-case-desc" rows="3"></textarea>
+                                <p class="mc-hint">The case number is generated automatically when you save.</p>
+                            </div>
+
+                            <label class="mc-portal-box" for="mc-create-portal">
+                                <input type="checkbox" id="mc-create-portal">
+                                <span>
+                                    <strong>Send portal access invite</strong>
+                                    Emails the client a login link so they can view their case and message their lawyer.
+                                </span>
+                            </label>
+
+                            <button type="submit" class="mc-submit">Add client and open case</button>
+                        </form>
+                    </div>
+
+                    <div class="content-card">
+                        <div class="card-header-basic mc-card-head mc-card-head-flex">
+                            <h3><i class="fa-solid fa-address-book"></i> Client Directory</h3>
+                            <span id="mc-clients-count" class="mc-count">Loading...</span>
+                        </div>
+                        <input type="search" id="mc-client-search" class="mc-search" placeholder="Search by name, email or lawyer">
+                        <div id="mc-clients-list-inject">
+                            <p class="mc-empty">Loading clients...</p>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
         </main>
         
         <div id="logout-modal" class="modal-overlay hidden">
@@ -568,7 +700,7 @@
 
                     <div style="margin-bottom: 16px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                         <button type="button" id="btn-toggle-client" style="width: 100%; padding: 12px; background: #f8fafc; border: none; text-align: left; font-weight: 600; color: #0f172a; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-family: inherit; font-size: 13px;">
-                            <span><i class="fa-solid fa-user-plus" style="margin-right: 8px; color: #3b82f6;"></i> Add Client Details</span>
+                            <span><i class="fa-solid fa-user" style="margin-right: 8px; color: #3b82f6;"></i> Client Details</span>
                             <i class="fa-solid fa-chevron-down" id="client-toggle-icon"></i>
                         </button>
                         
@@ -576,10 +708,10 @@
                             <div class="form-group" style="margin-bottom: 14px;">
                                 <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Client</label>
                                 <select id="event-existing-client" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; background: white;">
-                                    <option value="">+ Add New Client</option>
+                                    <option value="">Select a client</option>
                                 </select>
                             </div>
-                            <div id="event-new-client-fields">
+                            <div id="event-new-client-fields" style="display: none;">
                             <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 12px;">
                                 <div class="form-group" style="flex: 2; margin-bottom: 0;">
                                     <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">First Name</label>
@@ -852,44 +984,49 @@
             </div>
         </div>
 
-        <div id="add-client-modal" class="modal-overlay hidden">
-            <div class="modal-content" style="max-width: 480px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
-                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
-                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Add Client</h2>
-                    <button id="close-add-client-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+        <div id="tag-lawyer-modal" class="modal-overlay hidden">
+            <div class="modal-content mc-modal">
+                <div class="modal-header mc-modal-head">
+                    <div>
+                        <h2>Tag Lawyer</h2>
+                        <p id="tag-lawyer-client-name"></p>
+                    </div>
+                    <button id="close-tag-lawyer-btn" type="button" class="btn-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">New clients are checked against existing records to avoid duplicates.</p>
 
-                <form id="add-client-form">
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Full Name</label>
-                        <input type="text" id="client-name-input" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
+                <form id="tag-lawyer-form" class="mc-form" autocomplete="off">
+                    <input type="hidden" id="tag-lawyer-client-id">
+
+                    <div class="mc-field">
+                        <label for="tag-lawyer-case">Case</label>
+                        <div class="mc-select-wrap">
+                            <select id="tag-lawyer-case"></select>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
                     </div>
 
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Email</label>
-                        <input type="email" id="client-email-input" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
+                    <div id="tag-lawyer-new-case" class="hidden">
+                        <div class="mc-row">
+                            <div class="mc-field mc-grow-2">
+                                <label for="tag-lawyer-new-title">Case title</label>
+                                <input type="text" id="tag-lawyer-new-title" maxlength="150">
+                            </div>
+                            <div class="mc-field mc-grow-2">
+                                <label for="tag-lawyer-new-type">Case type <span class="mc-optional">(optional)</span></label>
+                                <input type="text" id="tag-lawyer-new-type" maxlength="60">
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Phone Number</label>
-                        <input type="tel" id="client-phone-input" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
+                    <div class="mc-field">
+                        <label for="tag-lawyer-select">Lawyer</label>
+                        <div class="mc-select-wrap">
+                            <select id="tag-lawyer-select" required></select>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
                     </div>
 
-                    <div class="form-group" style="margin-bottom: 20px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Address</label>
-                        <input type="text" id="client-address-input" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; box-sizing: border-box;">
-                    </div>
-
-                    <div class="form-group" style="margin-bottom: 20px; display: flex; align-items: flex-start; gap: 10px; background: #f0f9ff; padding: 12px; border-radius: 8px;">
-                        <input type="checkbox" id="client-create-portal" style="margin-top: 3px;">
-                        <label for="client-create-portal" style="font-size: 12px; color: #334155; line-height: 1.4;">
-                            <strong>Send portal access invite</strong><br>
-                            Emails the client a login link so they can view their case and message their lawyer directly.
-                        </label>
-                    </div>
-
-                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Add Client</button>
+                    <button type="submit" class="mc-submit">Tag lawyer</button>
                 </form>
             </div>
         </div>
