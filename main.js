@@ -1,4 +1,4 @@
-    const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
+const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5'; 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -12,6 +12,56 @@
     let currentYear = new Date().getFullYear();
     let globalUserRole = '';
     let globalUserName = '';
+    let globalRoleName = '';
+
+    function roleLabel(name) {
+        const n = (name || '').toLowerCase();
+        if (n === 'admin' || n === 'administrator') return 'Administrator';
+        if (n === 'secretary') return 'Secretary';
+        return 'Lawyer';
+    }
+
+    function casesSelect(base, onlyMine) {
+        const embed = (onlyMine ? 'case_lawyers!inner' : 'case_lawyers') + '(lawyer_id, is_lead, profiles(full_name))';
+        return base ? `${base}, ${embed}` : embed;
+    }
+    function filterMyCases(query) {
+        return query.eq('case_lawyers.lawyer_id', currentUser.id);
+    }
+    function getLeadLawyer(c) {
+        const rows = (c && c.case_lawyers) || [];
+        return rows.find(r => r.is_lead) || rows[0] || null;
+    }
+    function getLeadLawyerId(c) {
+        const l = getLeadLawyer(c);
+        return l ? l.lawyer_id : null;
+    }
+    function getLeadLawyerName(c) {
+        const l = getLeadLawyer(c);
+        return (l && l.profiles && l.profiles.full_name) || '';
+    }
+    function getCaseLawyerNames(c) {
+        return ((c && c.case_lawyers) || [])
+            .slice()
+            .sort((a, b) => (b.is_lead ? 1 : 0) - (a.is_lead ? 1 : 0))
+            .map(r => r.profiles && r.profiles.full_name)
+            .filter(Boolean);
+    }
+    function caseHasLawyer(c, lawyerId) {
+        return ((c && c.case_lawyers) || []).some(r => r.lawyer_id === lawyerId);
+    }
+    async function createCase({ title, caseType, description, clientId, dateFiled, leadLawyerId }) {
+        const { data, error } = await supabaseClient.rpc('create_case', {
+            p_title: title,
+            p_case_type: caseType || null,
+            p_description: description || null,
+            p_client_id: clientId ? Number(clientId) : null,
+            p_date_filed: dateFiled || null,
+            p_lead_lawyer: leadLawyerId || null
+        });
+        const row = Array.isArray(data) ? data[0] : data;
+        return { data: row || null, error };
+    }
 
     const monthNames = [
         "January", "February", "March", "April", "May", "June", 
@@ -49,7 +99,7 @@
         try {
             const { data: profile, error } = await supabaseClient
                 .from('profiles')
-                .select('*')
+                .select('*, roles(name)')
                 .eq('id', currentUser.id)
                 .single();
 
@@ -60,8 +110,8 @@
 
             if (profile) {
                 globalUserName = profile.full_name || 'User';
-                globalUserRole = (profile.role || 'lawyer').toLowerCase();
-                if (globalUserRole === 'secretary') globalUserRole = 'administrator';
+                globalRoleName = ((profile.roles && profile.roles.name) || 'lawyer').toLowerCase();
+                globalUserRole = (globalRoleName === 'lawyer') ? 'lawyer' : 'administrator';
 
                 const avatarSmall = document.querySelector('.avatar-small');
                 if (avatarSmall) {
@@ -77,7 +127,7 @@
                 if (userName) userName.textContent = `Atty. ${globalUserName}`;
 
                 const userRole = document.querySelector('.user-role');
-                if (userRole) userRole.textContent = globalUserRole.charAt(0).toUpperCase() + globalUserRole.slice(1);
+                if (userRole) userRole.textContent = roleLabel(globalRoleName);
 
                 const isLawyer = globalUserRole === 'lawyer';
 
@@ -106,6 +156,28 @@
 
                 const manageClientsNav = document.getElementById('nav-manage-clients');
                 if (manageClientsNav) manageClientsNav.style.display = (globalUserRole === 'administrator') ? 'flex' : 'none';
+
+                const isAdminRole = globalRoleName === 'admin';
+                const addLawyerBtnEl = document.getElementById('btn-open-add-lawyer-modal');
+                if (addLawyerBtnEl) addLawyerBtnEl.style.display = isAdminRole ? '' : 'none';
+                const archivedTabBtnEl = document.querySelector('[data-managetab="manage-archived-lawyers"]');
+                if (archivedTabBtnEl) archivedTabBtnEl.style.display = isAdminRole ? '' : 'none';
+                const secretariesTabBtnEl = document.querySelector('[data-managetab="manage-secretaries"]');
+                if (secretariesTabBtnEl) secretariesTabBtnEl.style.display = isAdminRole ? '' : 'none';
+
+                const isStaffRole = globalRoleName === 'admin' || globalRoleName === 'secretary';
+                const addClientBtnEl = document.getElementById('btn-add-client');
+                if (addClientBtnEl) addClientBtnEl.style.display = isStaffRole ? '' : 'none';
+                const clientsFilterEl = document.getElementById('clients-status-filter');
+                if (clientsFilterEl) clientsFilterEl.style.display = isStaffRole ? '' : 'none';
+                const portalWrapEl = document.getElementById('mc-portal-wrap');
+                if (portalWrapEl) portalWrapEl.style.display = isAdminRole ? '' : 'none';
+                const approvalNoteEl = document.getElementById('mc-approval-note');
+                if (approvalNoteEl) approvalNoteEl.textContent = isAdminRole
+                    ? 'Clients you add are approved right away.'
+                    : 'The client is saved as pending until an administrator approves it.';
+                const newCaseBtnEl = document.getElementById('btn-new-case');
+                if (newCaseBtnEl) newCaseBtnEl.style.display = (isAdminRole || globalRoleName === 'lawyer') ? '' : 'none';
 
                 const lawyersStatCard = document.getElementById('stat-card-lawyers');
                 if (lawyersStatCard) lawyersStatCard.style.display = isLawyer ? 'none' : 'flex';
@@ -273,8 +345,8 @@
                 await renderManageLawyersList();
             }
 
-            if (target === 'manage-clients-view') {
-                await renderManageClientsView();
+            if (target === 'clients-view') {
+                await renderClientsView();
             }
         });
     });
@@ -294,12 +366,13 @@
             const nwDay = String(nextWeekDate.getDate()).padStart(2, '0');
             const nextWeekStr = `${nwYear}-${nwMonth}-${nwDay}`;
 
-            let casesQuery = supabaseClient.from('cases').select('*', { count: 'exact', head: true }).eq('status', 'active');
-            let eventsQuery = supabaseClient.from('calendar_events').select('*, profiles(role)').gte('start_date', todayStr).lte('start_date', nextWeekStr);
-            let conflictsQuery = supabaseClient.from('calendar_events').select('*, profiles(role)').gte('start_date', todayStr);
+            const myCasesOnly = globalUserRole === 'lawyer' && !!currentUser;
+            let casesQuery = supabaseClient.from('cases').select(casesSelect('*', myCasesOnly), { count: 'exact', head: true }).eq('status', 'active');
+            let eventsQuery = supabaseClient.from('calendar_events').select('*, profiles(full_name)').gte('start_date', todayStr).lte('start_date', nextWeekStr);
+            let conflictsQuery = supabaseClient.from('calendar_events').select('*, profiles(full_name)').gte('start_date', todayStr);
 
             if (globalUserRole === 'lawyer' && currentUser) {
-                casesQuery = casesQuery.eq('lawyer_id', currentUser.id);
+                casesQuery = filterMyCases(casesQuery);
                 eventsQuery = eventsQuery.or(`assigned_to.eq.${currentUser.id},is_general.eq.true`);
                 conflictsQuery = conflictsQuery.or(`assigned_to.eq.${currentUser.id},is_general.eq.true`);
             }
@@ -325,9 +398,9 @@
 
             const { count: lawyersCount } = await supabaseClient
                 .from('profiles')
-                .select('*', { count: 'exact', head: true })
+                .select('*, roles!inner(name)', { count: 'exact', head: true })
                 .eq('status', 'active')
-                .eq('role', 'lawyer');
+                .eq('roles.name', 'lawyer');
 
             const casesEl = document.getElementById('stat-cases-val');
             const deadlinesEl = document.getElementById('stat-deadlines-val');
@@ -359,7 +432,7 @@
 
             let dlQuery = supabaseClient
                 .from('calendar_events')
-                .select('*, profiles(full_name, role), cases(case_number, case_type, clients(client_name))')
+                .select('*, profiles(full_name), cases(case_number, case_type, clients(client_name))')
                 .eq('is_general', false)
                 .gte('start_date', todayStr)
                 .order('start_date', { ascending: true })
@@ -492,7 +565,7 @@
 
         let eventsQuery = supabaseClient
             .from('calendar_events')
-            .select('*, profiles(full_name, role), cases(case_number, case_type, clients(client_name))') 
+            .select('*, profiles(full_name), cases(case_number, case_type, clients(client_name))') 
             .gte('start_date', startDate)
             .lte('start_date', endDate);
 
@@ -589,7 +662,7 @@
             });
         }
 
-        // Clicking a stat card opens the matching detail list.
+
         const cardMap = {
             'stat-card-cases': 'cases',
             'stat-card-deadlines': 'deadlines',
@@ -625,10 +698,10 @@
                 const isAdminView = globalUserRole !== 'lawyer';
                 let casesListQuery = supabaseClient
                     .from('cases')
-                    .select('*, clients(client_name), profiles(full_name)')
+                    .select(casesSelect('*, clients(client_name)', !isAdminView))
                     .eq('status', 'active')
                     .order('created_at', { ascending: false });
-                if (!isAdminView) casesListQuery = casesListQuery.eq('lawyer_id', currentUser.id);
+                if (!isAdminView) casesListQuery = filterMyCases(casesListQuery);
                 const { data: cases, error } = await casesListQuery;
                 if (error) throw error;
 
@@ -638,7 +711,7 @@
                         return `
                             <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc;">
                                 <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
-                                <p style="color: #64748b; font-size: 11px;">${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}Opened: ${formatDate(c.created_at)}${isAdminView && c.profiles?.full_name ? ` • Atty. ${escapeHtml(c.profiles.full_name)}` : ''}</p>
+                                <p style="color: #64748b; font-size: 11px;">${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}Filed: ${formatDate(c.date_filed || c.created_at)}${isAdminView && getLeadLawyerName(c) ? ` • Atty. ${escapeHtml(getLeadLawyerName(c))}` : ''}</p>
                             </div>
                         `;
                     }).join('')
@@ -692,7 +765,6 @@
                     .select('*, cases(case_number, clients(client_name))')
                     .order('start_date', { ascending: false });
                 if (isAdminView) {
-                    // Firm-wide, all time (most recent 200 shown in the popup).
                     completedQuery = completedQuery.lte('start_date', new Date().toISOString()).limit(200);
                 } else {
                     completedQuery = completedQuery
@@ -762,7 +834,7 @@
 
     function getEventStatusInfo(startDateISO, endDateISO) {
         const start = new Date(startDateISO);
-        const end = endDateISO ? new Date(endDateISO) : new Date(start.getTime() + 60 * 60 * 1000); // fallback: assume 1-hour duration
+        const end = endDateISO ? new Date(endDateISO) : new Date(start.getTime() + 60 * 60 * 1000);
         const now = new Date();
 
         if (now >= end) return { label: 'Completed', color: '#16a34a', bg: '#dcfce7', icon: 'fa-circle-check' };
@@ -770,9 +842,7 @@
         return { label: 'Upcoming', color: '#2563eb', bg: '#dbeafe', icon: 'fa-clock' };
     }
 
-    // Builds the same rich event card used in the day-details modal. Shared so a
-    // single calendar event (from the Deadlines/Completed popups) renders identically
-    // to how it looks when viewed via a day on the calendar.
+   
     function buildEventDetailCard(ev) {
         const lawyerName = ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'Unassigned');
         const clientName = ev.cases?.clients?.client_name || 'No Client';
@@ -843,7 +913,7 @@
             const { startISO: dayStart, endISO: dayEnd } = getDayRange(dateString);
             let eventsQuery = supabaseClient
                 .from('calendar_events')
-                .select('*, profiles(full_name, role), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
+                .select('*, profiles(full_name), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
                 .gte('start_date', dayStart)
                 .lte('start_date', dayEnd)
                 .order('start_date', { ascending: true });
@@ -876,8 +946,7 @@
         }
     };
 
-    // Opens one calendar event in the same rich card used by the calendar's day view.
-    // Called from the Deadlines/Completed detail popups so those items are clickable.
+
     window.openEventDetails = async function(eventId) {
         const statModal = document.getElementById('stat-details-modal');
         if (statModal) statModal.classList.add('hidden');
@@ -894,7 +963,7 @@
         try {
             const { data: ev, error } = await supabaseClient
                 .from('calendar_events')
-                .select('*, profiles(full_name, role), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
+                .select('*, profiles(full_name), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
                 .eq('id', eventId)
                 .single();
 
@@ -929,7 +998,7 @@
                 .lte('start_date', endDate)
                 .order('start_date', { ascending: true });
 
-            // Lawyers only ever see their own schedule.
+
             if (isLawyerView) {
                 evQuery = evQuery.eq('assigned_to', currentUser.id);
             }
@@ -951,7 +1020,7 @@
             };
 
             if (isLawyerView) {
-                // Lawyer side: simple list of their own events.
+  
                 const rows = events.map(ev => `
                     <div style="padding:10px 0; border-bottom:1px solid #f1f5f9;">
                         <div style="font-size:13px; font-weight:600; color:#1e293b;">${escapeHtml(ev.title)}</div>
@@ -965,7 +1034,6 @@
                 return;
             }
 
-            // Admin side: formal table showing the lawyer, the date/time, and the event.
             const rows = events.map(ev => {
                 const lawyerName = ev.profiles?.full_name || (ev.is_general ? 'Firm-wide' : 'Unassigned');
                 return `
@@ -1008,8 +1076,8 @@
         try {
             const { data: lawyers } = await supabaseClient
                 .from('profiles')
-                .select('*')
-                .eq('role', 'lawyer')
+                .select('*, roles!inner(name)')
+                .eq('roles.name', 'lawyer')
                 .eq('status', 'active');
 
             if (!lawyers || lawyers.length === 0) return;
@@ -1089,7 +1157,7 @@
         }
     }
 
-    // Escapes user-entered text before it is placed inside innerHTML templates.
+    
     function escapeHtml(value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -1099,8 +1167,7 @@
             .replace(/'/g, '&#39;');
     }
 
-    // Title to save for an uploaded file: the (possibly edited) File Name box,
-    // falling back to the original name, and always keeping the original extension.
+
     function resolveDocumentTitle(customName, file) {
         const original = file ? file.name : '';
         const typed = (customName || '').trim();
@@ -1295,22 +1362,19 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             const { data: profile } = await supabaseClient
                 .from('profiles')
-                .select('*')
+                .select('*, roles(name)')
                 .eq('id', currentUser.id)
                 .single();
 
             if (profile) {
                 if (profile.full_name) displayName = profile.full_name;
-                if (profile.role) role = profile.role.toLowerCase() === 'secretary' ? 'Administrator' : profile.role;
+                if (profile.roles && profile.roles.name) role = roleLabel(profile.roles.name);
                 if (profile.specialization) specialization = profile.specialization;
                 
                 const phoneEl = document.querySelector('.contact-text span:last-child');
                 if (phoneEl) phoneEl.innerHTML = `<i class="fa-solid fa-phone"></i> ${profile.phone || '(555) 000-0000'}`;
             } else if (currentUser.user_metadata) {
                 if (currentUser.user_metadata.full_name) displayName = currentUser.user_metadata.full_name;
-                if (currentUser.user_metadata.role) {
-                    role = currentUser.user_metadata.role.toLowerCase() === 'secretary' ? 'Administrator' : currentUser.user_metadata.role;
-                }
             }
 
             const avatarLarge = document.querySelector('.avatar-large');
@@ -1336,19 +1400,15 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    // A client counts as "active" when at least one of their cases has status = 'active'.
-    // Lawyers only ever see their own clients (cases.lawyer_id = them); administrators
-    // see every firm client, plus the roster of active lawyers. Nothing here is
-    // hard-coded to a particular user or name — it all follows from globalUserRole,
-    // which is read from the logged-in user's own profiles row.
+
     async function getActiveClientsData() {
         let clientsQuery = supabaseClient
             .from('clients')
-            .select('id, client_name, client_email, client_phone, cases!inner(status, lawyer_id, profiles(full_name))')
+            .select(`id, client_name, client_email, client_phone, cases!inner(status, ${(globalUserRole === 'lawyer' && currentUser) ? 'case_lawyers!inner' : 'case_lawyers'}(lawyer_id, is_lead, profiles(full_name)))`)
             .eq('cases.status', 'active');
 
         if (globalUserRole === 'lawyer' && currentUser) {
-            clientsQuery = clientsQuery.eq('cases.lawyer_id', currentUser.id);
+            clientsQuery = clientsQuery.eq('cases.case_lawyers.lawyer_id', currentUser.id);
         }
 
         const { data: rows, error } = await clientsQuery;
@@ -1366,22 +1426,22 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 });
             }
             (row.cases || []).forEach(c => {
-                if (c.profiles?.full_name) byId.get(row.id).lawyerNames.add(c.profiles.full_name);
+                (c.case_lawyers || []).forEach(cl => {
+                    if (cl.profiles?.full_name) byId.get(row.id).lawyerNames.add(cl.profiles.full_name);
+                });
             });
         });
         const clients = Array.from(byId.values());
 
-        // Lawyers only see their own clients, so a lawyer roster isn't relevant to them.
+
         return { clients };
     }
 
-    // The firm's active lawyer roster — administrators only. Independent of which
-    // lawyers currently have active clients, so a lawyer with zero clients still counts.
     async function getActiveLawyersData() {
         const { data: lawyerRows, error } = await supabaseClient
             .from('profiles')
-            .select('id, full_name, specialization, phone')
-            .eq('role', 'lawyer')
+            .select('id, full_name, specialization, phone, roles!inner(name)')
+            .eq('roles.name', 'lawyer')
             .eq('status', 'active')
             .order('full_name', { ascending: true });
         if (error) throw error;
@@ -1392,16 +1452,16 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (!currentUser) return;
 
         try {
-            // Administrators see firm-wide numbers; lawyers only see their own.
+
             const isAdminView = globalUserRole !== 'lawyer';
 
             let activeCases = 0;
             try {
                 let casesCountQuery = supabaseClient
                     .from('cases')
-                    .select('*', { count: 'exact', head: true })
+                    .select(casesSelect('*', !isAdminView), { count: 'exact', head: true })
                     .eq('status', 'active');
-                if (!isAdminView) casesCountQuery = casesCountQuery.eq('lawyer_id', currentUser.id);
+                if (!isAdminView) casesCountQuery = filterMyCases(casesCountQuery);
                 const { count, error } = await casesCountQuery;
                 if (!error) activeCases = count;
             } catch (e) {}
@@ -1429,7 +1489,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             let completedCount = 0;
             if (isAdminView) {
-                // Every completed event in the system: ended already, or (no end_date) started over 1 hour ago.
+
                 const nowISO = new Date().toISOString();
                 const oneHourAgoISO = new Date(Date.now() - 60 * 60 * 1000).toISOString();
                 const { count: completedTotal, error: completedErr } = await supabaseClient
@@ -1567,8 +1627,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             const { data: cases, error } = await supabaseClient
                 .from('cases')
-                .select('*, clients(client_name)')
-                .eq('lawyer_id', currentUser.id)
+                .select(casesSelect('*, clients(client_name)', true))
+                .eq('case_lawyers.lawyer_id', currentUser.id)
                 .order('created_at', { ascending: false });
 
             if (error) {
@@ -1587,7 +1647,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #fafbfc;">
                             <div>
                                 <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${c.title} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${clientName})</span></h4>
-                                <p style="color: #64748b; font-size: 11px;"><i class="fa-regular fa-clock"></i> Opened: ${formatDate(c.created_at)}</p>
+                                <p style="color: #64748b; font-size: 11px;"><i class="fa-regular fa-clock"></i> Filed: ${formatDate(c.date_filed || c.created_at)}</p>
                             </div>
                             <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 99px; font-size: 10px; font-weight: bold; text-transform: uppercase;">
                                 ${c.status}
@@ -2001,14 +2061,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         return new Date(`${dateStr}T${timeStr}:00`).toISOString();
     }
 
-    // --- Client scheduling rule: a client can only have ONE event per day. ---
+
     function toLocalDateKey(dateLike) {
         const d = new Date(dateLike);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    // Works out which existing client (if any) the event form is pointing at:
-    // either the one picked in the dropdown, or one that matches the typed email/phone.
+
     async function resolveExistingClientId(selectedClientId, email, phone) {
         if (selectedClientId) return selectedClientId;
 
@@ -2029,12 +2088,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         return data && data.length > 0 ? data[0].id : null;
     }
 
-    // Returns null if the client is free on dateStr (YYYY-MM-DD, local time).
-    // Otherwise returns the clashing event and the next day the client is free.
     async function checkClientDayConflict(clientId, dateStr) {
         const { startISO } = getDayRange(dateStr);
 
-        // Include events linked through the client's cases, in case older events have no client_id.
+
         const { data: clientCases } = await supabaseClient
             .from('cases')
             .select('id')
@@ -2044,7 +2101,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const caseIds = (clientCases || []).map(c => c.id);
         if (caseIds.length > 0) orFilter += `,case_id.in.(${caseIds.join(',')})`;
 
-        // Everything from that day onward, so we can also find the next open day.
+
         const { data: events, error } = await supabaseClient
             .from('calendar_events')
             .select('id, title, start_date')
@@ -2131,7 +2188,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    // --- Best-effort split of a stored "Last, First M." style name back into parts ---
+
     function parseClientNameParts(fullName) {
         const result = { first: '', mi: '', last: '' };
         if (!fullName) return result;
@@ -2173,148 +2230,64 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         return result;
     }
 
-    function setClientFieldsDisabled(disabled) {
-        ['client-fname', 'client-mi', 'client-lname', 'client-email', 'client-phone'].forEach(id => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.disabled = disabled;
-            el.style.background = disabled ? '#e2e8f0' : '#ffffff';
-            el.style.color = disabled ? '#64748b' : '#0f172a';
-            el.style.cursor = disabled ? 'not-allowed' : 'text';
-        });
-    }
-
-    function handleEventClientSelectChange() {
-        const select = document.getElementById('event-existing-client');
-        if (!select) return;
-
-        const selectedId = select.value;
-        const fnameEl = document.getElementById('client-fname');
-        const miEl = document.getElementById('client-mi');
-        const lnameEl = document.getElementById('client-lname');
-        const emailEl = document.getElementById('client-email');
-        const phoneEl = document.getElementById('client-phone');
-
-        if (!selectedId) {
-            // No client selected — clear the mirrored fields
-            if (fnameEl) fnameEl.value = '';
-            if (miEl) miEl.value = '';
-            if (lnameEl) lnameEl.value = '';
-            if (emailEl) emailEl.value = '';
-            if (phoneEl) phoneEl.value = '';
-            setClientFieldsDisabled(false);
-            populateCasesForClient(null);
-            return;
-        }
-
-        const client = (window.__eventClientsMap || {})[selectedId];
-        if (!client) return;
-
-        const parts = parseClientNameParts(client.client_name);
-        if (fnameEl) fnameEl.value = parts.first;
-        if (miEl) miEl.value = parts.mi;
-        if (lnameEl) lnameEl.value = parts.last;
-        if (emailEl) emailEl.value = client.client_email || '';
-        if (phoneEl) phoneEl.value = client.client_phone || '';
-
-        setClientFieldsDisabled(true);
-        populateCasesForClient(selectedId);
-    }
-
-    // --- Case selection: once a client is picked, show that client's pending
-    // cases so the lawyer can attach the event to an existing one instead of
-    // always creating a new case. ---
-    // The case number box is always read-only (it is generated by the database),
-    // so only the case type and description are locked/unlocked here.
-    function setCaseFieldsDisabled(disabled) {
-        const typeEl = document.getElementById('case-type-input');
-        const descEl = document.getElementById('case-desc-input');
-        [typeEl, descEl].forEach(el => {
-            if (!el) return;
-            el.disabled = disabled;
-            el.style.background = disabled ? '#e2e8f0' : '#ffffff';
-            el.style.color = disabled ? '#64748b' : '#0f172a';
-            el.style.cursor = disabled ? 'not-allowed' : 'text';
-        });
-    }
-
-    async function populateCasesForClient(clientId) {
+    async function loadEventCasesForLawyer() {
         const caseSelect = document.getElementById('event-existing-case');
         const hint = document.getElementById('event-case-hint');
-        if (!caseSelect) return;
+        if (!caseSelect || !currentUser) return;
 
-        // Reset to "+ New Case" and unlock manual fields whenever the client changes.
-        caseSelect.value = '';
-        setCaseFieldsDisabled(false);
-        document.getElementById('case-number-input').value = '';
-        document.getElementById('case-type-input').value = '';
-        document.getElementById('case-desc-input').value = '';
-
-        if (!clientId || !currentUser) {
-            caseSelect.innerHTML = '<option value="">+ New Case</option>';
-            caseSelect.disabled = true;
-            if (hint) hint.textContent = 'Pick a client above to see their existing cases here. A case number is assigned automatically for new cases.';
-            return;
-        }
+        window.__eventCasesMap = {};
+        caseSelect.innerHTML = '<option value="">Loading your cases...</option>';
 
         try {
-            const { data: clientCases } = await supabaseClient
+            const { data: cases, error } = await supabaseClient
                 .from('cases')
-                .select('id, case_number, case_type, case_description, title, status')
-                .eq('client_id', clientId)
-                .eq('lawyer_id', currentUser.id)
+                .select(casesSelect('id, case_number, case_type, case_description, title, status, client_id, date_filed, clients(client_name)', true))
+                .eq('status', 'active')
+                .eq('case_lawyers.lawyer_id', currentUser.id)
                 .order('created_at', { ascending: false });
+            if (error) throw error;
 
-            window.__eventCasesMap = {};
-            (clientCases || []).forEach(c => { window.__eventCasesMap[c.id] = c; });
+            (cases || []).forEach(c => { window.__eventCasesMap[c.id] = c; });
 
-            caseSelect.disabled = false;
-            caseSelect.innerHTML = '<option value="">+ New Case</option>' +
-                (clientCases || []).map(c => `<option value="${c.id}">${c.case_number ? '#' + c.case_number + ' — ' : ''}${c.title} (${c.status})</option>`).join('');
-
+            const hasCases = (cases || []).length > 0;
+            caseSelect.innerHTML = `<option value="">${hasCases ? 'Select a case' : 'No active cases yet'}</option>` +
+                (cases || []).map(c => {
+                    const label = `${c.case_number ? '#' + c.case_number + ' — ' : ''}${c.title}${c.clients?.client_name ? ' (' + c.clients.client_name + ')' : ''}`;
+                    return `<option value="${c.id}">${escapeHtml(label)}</option>`;
+                }).join('');
             if (hint) {
-                hint.textContent = (clientCases && clientCases.length > 0)
-                    ? `This client has ${clientCases.length} case(s) on file — pick one, or leave "+ New Case" to start a new one.`
-                    : 'This client has no cases yet — a new one will be created.';
+                hint.textContent = hasCases
+                    ? 'Choose one of the cases you entered. New cases are added on the Cases page.'
+                    : 'You have no active cases. Add one on the Cases page first.';
             }
-        } catch (e) {
-            console.error('Error loading cases for client:', e);
+        } catch (err) {
+            console.error('Error loading cases for the event form:', err);
+            caseSelect.innerHTML = '<option value="">Could not load cases</option>';
         }
+        handleEventCaseSelectChange();
     }
 
     function handleEventCaseSelectChange() {
-        const select = document.getElementById('event-existing-case');
-        if (!select) return;
-
-        const selectedId = select.value;
-        const numEl = document.getElementById('case-number-input');
-        const typeEl = document.getElementById('case-type-input');
-        const descEl = document.getElementById('case-desc-input');
-
-        if (!selectedId) {
-            if (numEl) numEl.value = '';
-            if (typeEl) typeEl.value = '';
-            if (descEl) descEl.value = '';
-            setCaseFieldsDisabled(false);
+        const caseSelect = document.getElementById('event-existing-case');
+        const info = document.getElementById('event-case-info');
+        if (!info) return;
+        const c = caseSelect ? (window.__eventCasesMap || {})[caseSelect.value] : null;
+        if (!c) {
+            info.classList.add('hidden');
+            info.innerHTML = '';
             return;
         }
-
-        const c = (window.__eventCasesMap || {})[selectedId];
-        if (!c) return;
-
-        if (numEl) numEl.value = c.case_number || '';
-        if (typeEl) typeEl.value = c.case_type || '';
-        if (descEl) descEl.value = c.case_description || '';
-
-        setCaseFieldsDisabled(true);
+        info.innerHTML = `
+            <div><strong>Client:</strong> ${escapeHtml(c.clients?.client_name || 'No client')}</div>
+            <div><strong>Type:</strong> ${escapeHtml(c.case_type || 'General')} • <strong>Filed:</strong> ${formatDate(c.date_filed || new Date().toISOString())}</div>
+            ${c.case_description ? `<div><strong>Details:</strong> ${escapeHtml(c.case_description)}</div>` : ''}
+        `;
+        info.classList.remove('hidden');
     }
 
     async function prepareEventModal() {
         const lawyerSelect = document.getElementById('event-lawyer');
-        const toggleClientBtn = document.getElementById('btn-toggle-client');
-        const toggleCaseBtn = document.getElementById('btn-toggle-case');
-        const clientSection = document.getElementById('client-details-section');
-        const caseSection = document.getElementById('case-details-section');
+        const lawyerOnlySection = document.getElementById('event-lawyer-only');
 
         const eventDateInput = document.getElementById('event-date');
         const eventEndDateInput = document.getElementById('event-end-date');
@@ -2328,88 +2301,25 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             if (globalUserRole === 'administrator') {
                 if (lawyerSelect) {
-                    lawyerSelect.innerHTML = `<option value="">All Lawyers (Firm-wide Event)</option>`;
+                    lawyerSelect.innerHTML = '<option value="all">All Lawyers (Firm-wide Event)</option>';
                     lawyerSelect.disabled = true;
-                    lawyerSelect.style.backgroundColor = '#e2e8f0';
                 }
-                if (toggleClientBtn) toggleClientBtn.style.display = 'none';
-                if (toggleCaseBtn) toggleCaseBtn.style.display = 'none';
-                if (clientSection) clientSection.classList.add('hidden');
-                if (caseSection) caseSection.classList.add('hidden');
-
+                if (lawyerOnlySection) lawyerOnlySection.style.display = 'none';
             } else if (globalUserRole === 'lawyer' && currentUser) {
                 if (lawyerSelect) {
-                    lawyerSelect.innerHTML = `<option value="${currentUser.id}">Atty. ${globalUserName}</option>`;
+                    lawyerSelect.innerHTML = `<option value="${currentUser.id}">${escapeHtml(globalUserName || 'Me')}</option>`;
                     lawyerSelect.disabled = true;
-                    lawyerSelect.style.backgroundColor = '#e2e8f0';
                 }
-                if (toggleClientBtn) toggleClientBtn.style.display = 'block';
-                if (toggleCaseBtn) toggleCaseBtn.style.display = 'block';
-
-                // Clients are registered by the administrator, who tags the lawyer on the
-                // client's case. So a lawyer sees the clients on their own cases, plus any
-                // they registered themselves before this change. Their full records are
-                // remembered so selecting one can auto-fill the fields below.
-                const existingClientSelect = document.getElementById('event-existing-client');
-                const newClientFields = document.getElementById('event-new-client-fields');
-                if (existingClientSelect) {
-                    try {
-                        const { data: myCaseRows } = await supabaseClient
-                            .from('cases')
-                            .select('client_id')
-                            .eq('lawyer_id', currentUser.id)
-                            .not('client_id', 'is', null);
-                        const linkedClientIds = [...new Set((myCaseRows || []).map(r => r.client_id))];
-
-                        let myClientsQuery = supabaseClient
-                            .from('clients')
-                            .select('id, client_name, client_email, client_phone')
-                            .order('client_name', { ascending: true });
-                        myClientsQuery = linkedClientIds.length > 0
-                            ? myClientsQuery.or(`registered_by.eq.${currentUser.id},id.in.(${linkedClientIds.join(',')})`)
-                            : myClientsQuery.eq('registered_by', currentUser.id);
-                        const { data: myClients } = await myClientsQuery;
-
-                        window.__eventClientsMap = {};
-                        (myClients || []).forEach(c => { window.__eventClientsMap[c.id] = c; });
-
-                        existingClientSelect.innerHTML = `<option value="">${(myClients || []).length > 0 ? 'Select a client' : 'No clients assigned yet. Ask your administrator.'}</option>` +
-                            (myClients || []).map(c => `<option value="${c.id}">${c.client_name}${c.client_email ? ' (' + c.client_email + ')' : ''}</option>`).join('');
-
-                        existingClientSelect.value = '';
-                        // Reset the manual fields to a clean, editable state every time the modal opens
-                        setClientFieldsDisabled(false);
-                        ['client-fname', 'client-mi', 'client-lname', 'client-email', 'client-phone'].forEach(id => {
-                            const el = document.getElementById(id);
-                            if (el) el.value = '';
-                        });
-
-                        // Re-bind (not add-on-top) the change handler so autofill always works
-                        existingClientSelect.onchange = handleEventClientSelectChange;
-
-                        // Case dropdown starts empty/disabled until a client is picked
-                        const existingCaseSelect = document.getElementById('event-existing-case');
-                        if (existingCaseSelect) {
-                            existingCaseSelect.onchange = handleEventCaseSelectChange;
-                        }
-                        setCaseFieldsDisabled(false);
-                        populateCasesForClient(null);
-
-                        // Lawyers no longer type in new clients; the fields only mirror the picked client.
-                        if (newClientFields) newClientFields.style.display = 'none';
-                    } catch (e) {
-                        console.error('Error loading clients for event modal:', e);
-                    }
-                }
+                if (lawyerOnlySection) lawyerOnlySection.style.display = 'block';
+                const caseSelect = document.getElementById('event-existing-case');
+                if (caseSelect) caseSelect.onchange = handleEventCaseSelectChange;
+                await loadEventCasesForLawyer();
             }
         } catch (error) {
             console.error('Error loading modal:', error);
         }
     }
 
-    // Shared helper: upload a file to the 'documents' storage bucket and log it
-    // in the documents table, optionally linked to a case/client. Returns the
-    // inserted document row ({id, title, file_url, ...}) or null if no file.
     async function uploadCaseDocument(file, { caseId = null, clientId = null, category = 'Attachment', tag = '', title = null } = {}) {
         if (!file) return null;
 
@@ -2473,7 +2383,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (!modal) return;
 
-        // Choosing an attachment auto-fills the (editable) File Name box.
+        
         const attachInput = document.getElementById('event-attachment');
         const attachNameInput = document.getElementById('event-attachment-name');
         if (attachInput && attachNameInput) {
@@ -2482,16 +2392,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             });
         }
 
-        // Puts the whole event form back to a blank state (fields, dropdowns, collapsible sections).
+       
         function resetEventForm() {
             if (form) form.reset();
             clearEventFieldErrors();
 
-            const existingClientSelect = document.getElementById('event-existing-client');
-            if (existingClientSelect) existingClientSelect.value = '';
-            setClientFieldsDisabled(false);
-            setCaseFieldsDisabled(false);
-            populateCasesForClient(null);
+            const existingCaseSelectReset = document.getElementById('event-existing-case');
+            if (existingCaseSelectReset) existingCaseSelectReset.value = '';
+            handleEventCaseSelectChange();
 
             [[clientSection, clientIcon], [caseSection, caseIcon]].forEach(([section, icon]) => {
                 if (section && !section.classList.contains('hidden')) {
@@ -2504,9 +2412,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             });
         }
 
-        // ---------- Required-field validation for the event form ----------
-        // We validate in JS (instead of the browser's built-in `required` bubbles) because the
-        // client fields live inside a collapsible section that may be closed.
+  
         if (form) form.setAttribute('novalidate', '');
 
         function clearEventFieldErrors() {
@@ -2528,7 +2434,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             note.textContent = message;
             note.style.cssText = 'color:#ef4444; font-size:11px; margin-top:4px;';
 
-            // Selects are wrapped in a positioned div (for the chevron icon) - put the note after the wrapper.
+    
             const wrapper = el.parentElement;
             const anchor = (el.tagName === 'SELECT' && wrapper && !wrapper.classList.contains('form-group')) ? wrapper : el;
             anchor.insertAdjacentElement('afterend', note);
@@ -2544,8 +2450,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             el.addEventListener('change', clear);
         }
 
-        // Returns true if the event form is complete. Case details, the attached file and the
-        // optional end date/time are intentionally NOT required.
+      
         function validateEventForm() {
             clearEventFieldErrors();
             const problems = [];
@@ -2560,15 +2465,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             need('event-priority', 'Please choose a priority.');
             need('event-location', 'Please select a location.');
 
-            // Firm-wide events made by administrators have no client section at all.
+         
             const isAdmin = (typeof globalUserRole !== 'undefined' && globalUserRole === 'administrator');
             if (!isAdmin) {
-                const pickedClient = document.getElementById('event-existing-client')?.value;
-                if (!pickedClient) {
-                    // Clients are registered by the administrator, so one must be picked from the list.
+                const pickedCase = document.getElementById('event-existing-case')?.value;
+                if (!pickedCase) {
                     problems.push({
-                        el: document.getElementById('event-existing-client'),
-                        message: 'Select a client. New clients are registered by your administrator.'
+                        el: document.getElementById('event-existing-case'),
+                        message: 'Select the case this event is for. Add cases on the Cases page.'
                     });
                 }
             }
@@ -2577,7 +2481,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             problems.forEach(p => { if (p.el) markEventFieldInvalid(p.el, p.message); });
 
-            // If any missing field is inside the collapsed client section, open it so it is visible.
+            
             const first = problems.find(p => p.el)?.el;
             if (clientSection && clientSection.classList.contains('hidden') &&
                 problems.some(p => p.el && clientSection.contains(p.el))) {
@@ -2640,7 +2544,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             form.addEventListener('submit', async (e) => {
                 e.preventDefault(); 
 
-                // Stop here (and highlight what's missing) if any required field is empty.
+                
                 if (!validateEventForm()) return;
                 
                 const submitBtn = form.querySelector('button[type="submit"]');
@@ -2660,26 +2564,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 let isGeneral = (globalUserRole === 'administrator');
                 let assignedLawyerId = isGeneral ? null : currentUser.id;
 
-                const existingClientSelect = document.getElementById('event-existing-client');
-                const selectedExistingClientId = existingClientSelect ? existingClientSelect.value : '';
-
                 const existingCaseSelect = document.getElementById('event-existing-case');
                 const selectedExistingCaseId = existingCaseSelect ? existingCaseSelect.value : '';
-                
-                const fname = document.getElementById('client-fname').value.trim();
-                const mi = document.getElementById('client-mi').value.trim();
-                const lname = document.getElementById('client-lname').value.trim();
-                const cEmail = document.getElementById('client-email').value.trim();
-                const cPhone = document.getElementById('client-phone').value.trim();
-
-                let formattedClientName = '';
-                if (lname || fname) {
-                    formattedClientName = `${lname ? lname + ', ' : ''}${fname} ${mi ? mi + '.' : ''}`.trim();
-                }
-
-                const caseNum = document.getElementById('case-number-input').value.trim();
-                const caseType = document.getElementById('case-type-input').value.trim();
-                const caseDesc = document.getElementById('case-desc-input').value.trim();
+                const linkedCase = (window.__eventCasesMap || {})[selectedExistingCaseId] || null;
 
                 let formattedTime = timeInput; 
                 if(timeInput) {
@@ -2692,7 +2579,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 const eventDateTimeISO = combineDateAndTime(date, timeInput);
 
-                // --- Compute end_date: explicit end date/time if given, else default to +1 hour ---
+                
                 let eventEndDateTimeISO = null;
                 if (eventDateTimeISO) {
                     if (endDateInput || endTimeInput) {
@@ -2713,7 +2600,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-                // --- Block past dates entirely ---
+           
                 if (eventDateTimeISO) {
                     const now = new Date();
                     const todayAtMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2730,15 +2617,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-                // --- One event per client per day (runs BEFORE anything is saved) ---
+               
                 if (date) {
                     try {
-                        const existingClientId = await resolveExistingClientId(selectedExistingClientId, cEmail, cPhone);
+                        const existingClientId = linkedCase ? linkedCase.client_id : null;
                         if (existingClientId) {
                             const clash = await checkClientDayConflict(existingClientId, date);
                             if (clash) {
-                                const knownName = (window.__eventClientsMap || {})[existingClientId]?.client_name;
-                                const who = formattedClientName || knownName || 'This client';
+                                const who = (linkedCase && linkedCase.clients && linkedCase.clients.client_name) || 'This client';
                                 alert(`Cannot schedule this event: ${who} already has "${clash.conflictEvent.title}" at ${formatEventTime(clash.conflictEvent.start_date)} on ${formatDate(clash.conflictEvent.start_date)}. A client can only have one event per day.\n\nThe earliest day you can schedule this client is ${formatDate(clash.nextFreeDate.toISOString())}.`);
                                 if (submitBtn) {
                                     submitBtn.disabled = false;
@@ -2752,7 +2638,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-                // --- Minimum buffer validation for the assigned lawyer, based on actual event duration (runs BEFORE anything is saved) ---
+              
                 if (!isGeneral && assignedLawyerId && eventDateTimeISO) {
                     const bufferMs = eventEndDateTimeISO ? (new Date(eventEndDateTimeISO) - new Date(eventDateTimeISO)) : (60 * 60 * 1000);
                     const newStart = new Date(eventDateTimeISO);
@@ -2779,7 +2665,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-                // --- Minimum buffer validation for the booked conference room / location, based on actual event duration (runs BEFORE anything is saved) ---
+                
                 if (location && location.trim() !== '' && eventDateTimeISO) {
                     const bufferMs = eventEndDateTimeISO ? (new Date(eventEndDateTimeISO) - new Date(eventDateTimeISO)) : (60 * 60 * 1000);
                     const newStart = new Date(eventDateTimeISO);
@@ -2807,86 +2693,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 }
 
                 try {
-                    let newClientId = null;
-
-                    if (formattedClientName) {
-                        if (selectedExistingClientId) {
-                            // A client was picked from the dropdown — reuse it, never insert a copy.
-                            newClientId = selectedExistingClientId;
-                        } else {
-                            // --- Duplicate validation: reuse an existing client instead of creating a copy ---
-                            let matchedClient = null;
-                            const dupFilters = [];
-                            if (cEmail) dupFilters.push(`client_email.ilike.${cEmail}`);
-                            if (cPhone) dupFilters.push(`client_phone.eq.${cPhone}`);
-
-                            if (dupFilters.length > 0) {
-                                const { data: existingMatches, error: dupError } = await supabaseClient
-                                    .from('clients')
-                                    .select('id, client_name, client_email, client_phone')
-                                    .or(dupFilters.join(','));
-
-                                if (dupError) throw new Error(dupError.message);
-                                if (existingMatches && existingMatches.length > 0) {
-                                    matchedClient = existingMatches[0];
-                                }
-                            }
-
-                            if (matchedClient) {
-                                newClientId = matchedClient.id;
-                            } else {
-                                const { data: clientData, error: clientErr } = await supabaseClient
-                                    .from('clients')
-                                    .insert([{
-                                        client_name: formattedClientName,
-                                        client_email: cEmail,
-                                        client_phone: cPhone,
-                                        registered_by: currentUser ? currentUser.id : null
-                                    }])
-                                    .select('id')
-                                    .single();
-
-                                if (clientErr) throw new Error(clientErr.message);
-                                if (clientData) newClientId = clientData.id;
-                            }
-                        }
-                    }
-
-                    let newCaseId = null;
-                    let finalCaseNumber = caseNum;   // for an existing case this is its current number
-                    let caseWasCreated = false;
-
-                    if (!isGeneral) {
-                        if (selectedExistingCaseId) {
-                            // A case was picked from the dropdown — reuse it, never insert a copy.
-                            newCaseId = selectedExistingCaseId;
-                        } else {
-                            // case_number is intentionally NOT sent: the database trigger
-                            // (assign_case_number) generates it atomically on insert.
-                            const caseData = { 
-                                title: title, 
-                                status: 'active',
-                                case_type: caseType || null,
-                                case_description: caseDesc,
-                                lawyer_id: assignedLawyerId
-                            };
-                            
-                            if (newClientId) caseData.client_id = newClientId;
-
-                            const { data: insertedCase, error: caseError } = await supabaseClient
-                                .from('cases')
-                                .insert([caseData])
-                                .select('id, case_number')
-                                .single();
-
-                            if (caseError) throw new Error(caseError.message);
-                            if (insertedCase) {
-                                newCaseId = insertedCase.id;
-                                finalCaseNumber = insertedCase.case_number || '';
-                                caseWasCreated = true;
-                            }
-                        }
-                    }
+                    const newClientId = linkedCase ? linkedCase.client_id : null;
+                    const newCaseId = linkedCase ? linkedCase.id : null;
+                    const finalCaseNumber = linkedCase ? (linkedCase.case_number || '') : '';
 
                     const attachmentInput = document.getElementById('event-attachment');
                     const attachmentFile = attachmentInput && attachmentInput.files.length > 0 ? attachmentInput.files[0] : null;
@@ -2928,11 +2737,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                     alert(isGeneral
                         ? 'Firm-wide event successfully added!'
-                        : 'Event, Client, and Case successfully added!' + (caseWasCreated && finalCaseNumber ? `\n\nCase Number: ${finalCaseNumber}` : ''));
+                        : 'Event successfully added' + (finalCaseNumber ? ` and linked to case #${finalCaseNumber}.` : '.'));
                     
                     form.reset(); 
-                    setClientFieldsDisabled(false);
-                    if (existingClientSelect) existingClientSelect.value = '';
+                    handleEventCaseSelectChange();
                     
                     if (clientSection && !clientSection.classList.contains('hidden')) {
                         clientSection.classList.add('hidden');
@@ -3000,7 +2808,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             const allRooms = ["Conference Room A", "Conference Room B", "Courtroom 3B"];
             const now = new Date();
-            const roomBufferMs = 60 * 60 * 1000; // assume each booking occupies the room for 1 hour
+            const roomBufferMs = 60 * 60 * 1000;
 
             window.__roomEventsRegistry = {};
 
@@ -3107,12 +2915,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         });
     }
 
-    // Cases tab: data is fetched once per visit (renderCasesTabView) and then
-    // filtered in the browser by the date pickers and the client search box.
+  
     async function renderCasesTabView() {
         const casesList = document.getElementById('cases-list-inject');
-        const clientsList = document.getElementById('clients-list-inject');
-        if (!casesList) return;
+                if (!casesList) return;
 
         casesList.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading cases...</p>';
 
@@ -3121,10 +2927,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             let casesQuery = supabaseClient
                 .from('cases')
-                .select('*, clients(id, client_name, client_email, client_phone), profiles(full_name)')
+                .select(casesSelect('*, clients(id, client_name, client_email, client_phone)', !!isLawyer))
                 .order('created_at', { ascending: false });
 
-            if (isLawyer) casesQuery = casesQuery.eq('lawyer_id', currentUser.id);
+            if (isLawyer) casesQuery = filterMyCases(casesQuery);
 
             const { data: cases, error } = await casesQuery;
             if (error) throw error;
@@ -3133,26 +2939,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             (cases || []).forEach(c => { window.__casesRegistry[c.id] = c; });
             paintCasesList();
 
-            if (clientsList) {
-                const { data: clients, error: clientsError } = await supabaseClient
-                    .from('clients')
-                    .select('*, cases(id, title, case_number, status, lawyer_id)')
-                    .order('created_at', { ascending: false });
-
-                if (clientsError) throw clientsError;
-
-                // A lawyer's directory is the clients on their own cases, plus any they
-                // registered themselves. Administrators see every client.
-                window.__clientsDirectory = (clients || []).filter(cl => {
-                    if (!isLawyer) return true;
-                    const onMyCase = (cl.cases || []).some(cs => cs.lawyer_id === currentUser.id);
-                    return onMyCase || cl.registered_by === currentUser.id;
-                }).map(cl => ({
-                    ...cl,
-                    cases: isLawyer ? (cl.cases || []).filter(cs => cs.lawyer_id === currentUser.id) : (cl.cases || [])
-                }));
-                paintClientsDirectory();
-            }
         } catch (error) {
             console.error('Error loading cases tab:', error);
             casesList.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load cases. Make sure supabase_setup.sql has been run.</p>';
@@ -3171,9 +2957,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         const all = Object.values(window.__casesRegistry || {});
 
-        // Dates compare as YYYY-MM-DD strings in local time, so "to" includes the whole day.
+  
         const cases = all.filter(c => {
-            const opened = toLocalDateKey(c.created_at);
+            const opened = toLocalDateKey(c.date_filed || c.created_at);
             if (from && opened < from) return false;
             if (to && opened > to) return false;
             return true;
@@ -3196,10 +2982,24 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 ? 'background:#f1f5f9; color:#64748b;'
                 : 'background:#dcfce7; color:#16a34a;';
             const clientName = escapeHtml(c.clients?.client_name || 'No Client');
-            const lawyerName = c.profiles?.full_name ? `Atty. ${escapeHtml(c.profiles.full_name)}` : 'Unassigned';
+            const canEditCase = globalRoleName === 'admin' || globalRoleName === 'lawyer';
+            const outline = 'padding:8px 14px; border:1px solid #e2e8f0; background:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;';
+
+            const buttons = [];
+            if (globalRoleName === 'admin') {
+                buttons.push(`<button onclick="openCaseTeam('${c.id}')" style="${outline}"><i class="fa-solid fa-gavel"></i> Lawyers</button>`);
+            }
+            if (canEditCase) {
+                buttons.push(`<button onclick="openCaseForm('${c.id}')" style="${outline}"><i class="fa-solid fa-pen"></i> Edit</button>`);
+                buttons.push(`<button onclick="toggleCaseStatus('${c.id}', '${c.status || 'active'}')" style="${outline}">${isClosed ? 'Reopen' : 'Mark Closed'}</button>`);
+            }
+            buttons.push(`<button onclick="openCaseDetail('${c.id}')" style="padding:8px 14px; border:none; background:#0f172a; color:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-envelope"></i> Emails</button>`);
+            if (globalRoleName === 'admin') {
+                buttons.push(`<button onclick="deleteCase('${c.id}')" style="${outline} color:#dc2626;"><i class="fa-solid fa-trash"></i></button>`);
+            }
 
             return `
-                <div class="content-card" style="padding: 18px 20px; display:flex; justify-content:space-between; align-items:center; margin-bottom: 0;">
+                <div class="content-card" style="padding: 18px 20px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom: 0;">
                     <div>
                         <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
                             <h4 style="margin:0; font-size:15px; color:#0f172a;">${escapeHtml(c.title)}</h4>
@@ -3208,68 +3008,17 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         <p style="margin:0; font-size:12px; color:#64748b;">
                             ${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}${escapeHtml(c.case_type || 'General')}
                             • <i class="fa-solid fa-user" style="font-size:10px;"></i> ${clientName}
-                            ${globalUserRole !== 'lawyer' ? `• <i class="fa-solid fa-gavel" style="font-size:10px;"></i> ${lawyerName}` : ''}
-                            • Opened ${formatDate(c.created_at)}
+                            • Filed ${formatDate(c.date_filed || c.created_at)}
                         </p>
+                        <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${teamChipsHtml(c.case_lawyers)}</div>
+                        ${c.case_description ? `<p style="margin:8px 0 0 0; font-size:12px; color:#475569;">${escapeHtml(c.case_description)}</p>` : ''}
                     </div>
-                    <div style="display:flex; gap:8px; flex-shrink:0;">
-                        <button onclick="toggleCaseStatus('${c.id}', '${c.status || 'active'}')" style="padding:8px 14px; border:1px solid #e2e8f0; background:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;">
-                            ${isClosed ? 'Reopen' : 'Mark Closed'}
-                        </button>
-                        <button onclick="openCaseDetail('${c.id}')" style="padding:8px 14px; border:none; background:#0f172a; color:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600;">
-                            <i class="fa-solid fa-envelope"></i> Emails
-                        </button>
-                    </div>
+                    <div style="display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end;">${buttons.join('')}</div>
                 </div>
             `;
         }).join('');
     }
 
-    function paintClientsDirectory() {
-        const clientsList = document.getElementById('clients-list-inject');
-        const countEl = document.getElementById('clients-count');
-        if (!clientsList) return;
-
-        const term = (document.getElementById('clients-search')?.value || '').trim().toLowerCase();
-        const all = window.__clientsDirectory || [];
-
-        const clients = all.filter(cl => {
-            if (!term) return true;
-            const haystack = [
-                cl.client_name, cl.client_email, cl.client_phone,
-                ...(cl.cases || []).map(cs => `${cs.title || ''} ${cs.case_number || ''}`)
-            ].join(' ').toLowerCase();
-            return haystack.includes(term);
-        });
-
-        if (countEl) countEl.textContent = term ? `${clients.length} of ${all.length} clients` : `Total: ${all.length}`;
-
-        if (all.length === 0) {
-            clientsList.innerHTML = '<p style="color:#64748b; text-align:center; padding:15px;">No clients yet.</p>';
-            return;
-        }
-        if (clients.length === 0) {
-            clientsList.innerHTML = '<p style="color:#64748b; text-align:center; padding:15px;">No clients match your search.</p>';
-            return;
-        }
-
-        clientsList.innerHTML = clients.map(cl => {
-            const caseCount = (cl.cases || []).length;
-            return `
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                    <div>
-                        <strong style="color:#0f172a;">${escapeHtml(cl.client_name || 'Unnamed client')}</strong>
-                        <p style="margin:2px 0 0 0; color:#64748b; font-size:12px;">${escapeHtml(cl.client_email || 'No email')}${cl.client_phone ? ' • ' + escapeHtml(cl.client_phone) : ''}${caseCount > 0 ? ' • ' + caseCount + (caseCount === 1 ? ' case' : ' cases') : ''}</p>
-                    </div>
-                    <span style="font-size:11px; padding:3px 10px; border-radius:99px; font-weight:600; ${cl.auth_user_id ? 'background:#dbeafe; color:#2563eb;' : 'background:#f1f5f9; color:#94a3b8;'}">
-                        ${cl.auth_user_id ? 'Portal Active' : 'No Portal Access'}
-                    </span>
-                </div>
-            `;
-        }).join('');
-    }
-
-    // Wires the Case Details / Client Details tabs, the date pickers and the client search.
     function setupCasesTabControls() {
         const tabs = document.querySelectorAll('.cases-tab-btn');
         tabs.forEach(tab => {
@@ -3290,7 +3039,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const clearBtn = document.getElementById('cases-date-clear');
 
         const onDateChange = () => {
-            // Keep the range valid: the end date can't be before the start date.
             if (toEl && fromEl) toEl.min = fromEl.value || '';
             if (fromEl && toEl) fromEl.max = toEl.value || '';
             paintCasesList();
@@ -3304,9 +3052,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 paintCasesList();
             });
         }
-
-        const searchEl = document.getElementById('clients-search');
-        if (searchEl) searchEl.addEventListener('input', paintClientsDirectory);
     }
 
     window.toggleCaseStatus = async function(caseId, currentStatus) {
@@ -3324,8 +3069,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     };
 
-    // Browsers remember what was typed into forms and offer it back as a suggestion
-    // (or re-fill it). Turn that off for the app's data-entry forms.
+   
     function disableBrowserAutofill() {
         ['add-event-form', 'upload-doc-form', 'add-lawyer-form', 'admin-add-client-form', 'tag-lawyer-form', 'case-email-form']
             .forEach(id => {
@@ -3337,18 +3081,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (tempPw) tempPw.setAttribute('autocomplete', 'new-password');
     }
 
-    // ---------------------------------------------------------------------------
-    // Manage Clients (administrator only)
-    // The administrator registers clients, opens their case and tags the lawyer who
-    // handles it (cases.lawyer_id). Lawyers no longer create clients themselves; they
-    // pick from the clients tagged to them when scheduling an event.
-    // ---------------------------------------------------------------------------
+   
     function formatClientFullName(fname, mi, lname) {
         const initial = (mi || '').replace(/\./g, '').trim();
         return `${lname ? lname + ', ' : ''}${fname} ${initial ? initial + '.' : ''}`.trim();
     }
 
-    // Escapes % and _ so email addresses like john_doe@mail.com match literally in ilike().
+    
     function escapeLikePattern(value) {
         return String(value).replace(/[\\%_]/g, '\\$&');
     }
@@ -3366,356 +3105,590 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         return lawyers;
     }
 
-    async function renderManageClientsView() {
-        if (globalUserRole !== 'administrator') return;
+    function isAdminUser() { return globalRoleName === 'admin'; }
+    function isStaffUser() { return globalRoleName === 'admin' || globalRoleName === 'secretary'; }
 
-        const listEl = document.getElementById('mc-clients-list-inject');
-        const countEl = document.getElementById('mc-clients-count');
-        const lawyerSelect = document.getElementById('mc-lawyer');
+    function rowIsLead(r) { return r.lawyer_role ? r.lawyer_role === 'lead' : !!r.is_lead; }
+    function rowName(r) { const p = r.lawyer || r.profiles; return (p && p.full_name) || ''; }
+
+    function teamChipsHtml(rows) {
+        const list = rows || [];
+        if (list.length === 0) return '<span class="mc-tag mc-tag-unassigned">No lawyer assigned</span>';
+        const chip = (r, label) => `<span class="mc-tag"><i class="fa-solid fa-gavel"></i> ${label}: Atty. ${escapeHtml(rowName(r) || 'Unknown')}</span>`;
+        return list.filter(rowIsLead).map(r => chip(r, 'Lead')).join('') +
+               list.filter(r => !rowIsLead(r)).map(r => chip(r, 'Co-lawyer')).join('');
+    }
+
+    function approvalBadge(status) {
+        const styles = {
+            pending: 'background:#fef3c7; color:#b45309;',
+            approved: 'background:#dcfce7; color:#16a34a;',
+            rejected: 'background:#fee2e2; color:#dc2626;'
+        };
+        const labels = { pending: 'Pending approval', approved: 'Approved', rejected: 'Rejected' };
+        return `<span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; margin-left:8px; vertical-align:middle; ${styles[status] || ''}">${labels[status] || escapeHtml(status || '')}</span>`;
+    }
+
+    async function renderClientsView() {
+        const listEl = document.getElementById('clients-list-inject');
         if (!listEl) return;
+        listEl.innerHTML = '<p class="mc-empty">Loading clients...</p>';
 
-        // Keep whatever the administrator had already picked while the lists refresh.
-        const previousLawyer = lawyerSelect ? lawyerSelect.value : '';
-        try {
-            await fillLawyerSelect(lawyerSelect, 'Select a lawyer');
-            if (lawyerSelect && previousLawyer) lawyerSelect.value = previousLawyer;
-        } catch (err) {
-            console.error('Error loading lawyers for Manage Clients:', err);
-            if (lawyerSelect) lawyerSelect.innerHTML = '<option value="">Could not load lawyers</option>';
+        const subtitle = document.getElementById('clients-subtitle');
+        if (subtitle) {
+            subtitle.textContent = globalRoleName === 'lawyer'
+                ? 'Clients assigned to you by the administrator.'
+                : (isAdminUser() ? 'Approve new clients, assign lawyers and manage client records.'
+                                 : 'Add new clients. The administrator approves them and assigns a lawyer.');
         }
 
         try {
+            const select = 'id, client_name, client_email, client_phone, full_address, auth_user_id, created_at, registered_by, approval_status, rejection_reason, ' +
+                'client_lawyers(lawyer_id, lawyer_role, lawyer:profiles!client_lawyers_lawyer_id_fkey(full_name)), ' +
+                'cases(id, title, case_number, status, created_at)';
             const { data: clients, error } = await supabaseClient
                 .from('clients')
-                .select('id, client_name, client_email, client_phone, full_address, auth_user_id, created_at, cases(id, title, case_number, status, lawyer_id, created_at, profiles(full_name))')
+                .select(select)
                 .order('created_at', { ascending: false });
-
             if (error) throw error;
 
-            window.__mcClients = {};
-            (clients || []).forEach(c => { window.__mcClients[c.id] = c; });
-            paintManageClientsList();
+            window.__clientsDirectory = clients || [];
+            paintClientsDirectory();
         } catch (err) {
-            console.error('Error loading clients for Manage Clients:', err);
+            console.error('Error loading clients:', err);
+            const countEl = document.getElementById('clients-count');
             if (countEl) countEl.textContent = '';
             listEl.innerHTML = '<p class="mc-empty" style="color:#ef4444;">Could not load clients. Check your connection and database permissions.</p>';
         }
     }
 
-    function paintManageClientsList() {
-        const listEl = document.getElementById('mc-clients-list-inject');
-        const countEl = document.getElementById('mc-clients-count');
-        const searchEl = document.getElementById('mc-client-search');
+    function paintClientsDirectory() {
+        const listEl = document.getElementById('clients-list-inject');
+        const countEl = document.getElementById('clients-count');
         if (!listEl) return;
 
-        const term = (searchEl ? searchEl.value : '').trim().toLowerCase();
-        const all = Object.values(window.__mcClients || {});
+        const term = (document.getElementById('clients-search')?.value || '').trim().toLowerCase();
+        const statusFilter = isStaffUser() ? (document.getElementById('clients-status-filter')?.value || 'all') : 'all';
+        const all = window.__clientsDirectory || [];
 
         const clients = all.filter(c => {
+            if (statusFilter !== 'all' && c.approval_status !== statusFilter) return false;
             if (!term) return true;
             const haystack = [
                 c.client_name, c.client_email, c.client_phone,
-                ...(c.cases || []).map(cs => cs.profiles?.full_name || '')
+                ...(c.client_lawyers || []).map(rowName),
+                ...(c.cases || []).map(cs => `${cs.title || ''} ${cs.case_number || ''}`)
             ].join(' ').toLowerCase();
             return haystack.includes(term);
         });
 
-        if (countEl) countEl.textContent = term ? `${clients.length} of ${all.length}` : `Total: ${all.length}`;
+        const pending = all.filter(c => c.approval_status === 'pending').length;
+        if (countEl) {
+            const base = (term || statusFilter !== 'all') ? `${clients.length} of ${all.length}` : `Total: ${all.length}`;
+            countEl.textContent = (isAdminUser() && pending > 0) ? `${base} • ${pending} pending approval` : base;
+        }
 
         if (all.length === 0) {
-            listEl.innerHTML = '<p class="mc-empty">No clients yet. Use the form to register the first one.</p>';
+            listEl.innerHTML = `<p class="mc-empty">${globalRoleName === 'lawyer' ? 'No clients have been assigned to you yet.' : 'No clients yet.'}</p>`;
             return;
         }
         if (clients.length === 0) {
-            listEl.innerHTML = '<p class="mc-empty">No clients match your search.</p>';
+            listEl.innerHTML = '<p class="mc-empty">No clients match your filters.</p>';
             return;
         }
 
+        const btn = (action, id, icon, label, style = '') =>
+            `<button type="button" class="mc-tag-btn" data-client-action="${action}" data-client-id="${id}" style="${style}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
+
         listEl.innerHTML = clients.map(c => {
             const cases = (c.cases || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-            const caseLines = cases.length > 0 ? cases.map(cs => {
-                const lawyerName = cs.profiles?.full_name;
-                const lawyerTag = lawyerName
-                    ? `<span class="mc-tag"><i class="fa-solid fa-gavel"></i> Atty. ${escapeHtml(lawyerName)}</span>`
-                    : '<span class="mc-tag mc-tag-unassigned">No lawyer tagged</span>';
+            const caseLines = cases.map(cs => {
                 const closedTag = cs.status === 'closed' ? '<span class="mc-tag mc-tag-closed">Closed</span>' : '';
                 const caseNo = cs.case_number ? `<span class="mc-case-no">#${escapeHtml(cs.case_number)}</span>` : '';
-                return `<div class="mc-case-line"><strong>${escapeHtml(cs.title)}</strong>${caseNo}${lawyerTag}${closedTag}</div>`;
-            }).join('') : '<div class="mc-case-line"><span class="mc-tag mc-tag-unassigned">No case yet</span></div>';
+                return `<div class="mc-case-line"><strong>${escapeHtml(cs.title)}</strong>${caseNo}${closedTag}</div>`;
+            }).join('');
+
+            const rejectedNote = (c.approval_status === 'rejected' && c.rejection_reason)
+                ? `<div class="mc-case-line" style="color:#dc2626;">Reason: ${escapeHtml(c.rejection_reason)}</div>` : '';
+
+            const actions = [];
+            if (isAdminUser()) {
+                if (c.approval_status !== 'approved') actions.push(btn('approve', c.id, 'fa-check', 'Approve', 'color:#16a34a; border-color:#bbf7d0;'));
+                if (c.approval_status === 'pending') actions.push(btn('reject', c.id, 'fa-xmark', 'Reject', 'color:#dc2626; border-color:#fecaca;'));
+                if (c.approval_status === 'approved') actions.push(btn('assign', c.id, 'fa-gavel', 'Assign lawyers'));
+                actions.push(btn('edit', c.id, 'fa-pen', 'Edit'));
+                actions.push(btn('delete', c.id, 'fa-trash', 'Delete', 'color:#dc2626;'));
+            }
 
             return `
                 <div class="mc-client-row">
                     <div>
-                        <h4 class="mc-client-name">${escapeHtml(c.client_name || 'Unnamed client')}</h4>
-                        <p class="mc-client-meta">${escapeHtml(c.client_email || 'No email')}${c.client_phone ? ' • ' + escapeHtml(c.client_phone) : ''}</p>
-                        <div class="mc-case-list">${caseLines}</div>
+                        <h4 class="mc-client-name">${escapeHtml(c.client_name || 'Unnamed client')}${isStaffUser() ? approvalBadge(c.approval_status) : ''}</h4>
+                        <p class="mc-client-meta">${escapeHtml(c.client_email || 'No email')}${c.client_phone ? ' • ' + escapeHtml(c.client_phone) : ''}${c.full_address ? ' • ' + escapeHtml(c.full_address) : ''}</p>
+                        <div class="mc-case-list">
+                            <div class="mc-case-line">${c.approval_status === 'approved' || globalRoleName === 'lawyer' ? teamChipsHtml(c.client_lawyers) : ''}</div>
+                            ${rejectedNote}
+                            ${caseLines}
+                        </div>
                     </div>
-                    <button type="button" class="mc-tag-btn" data-tag-client="${c.id}">
-                        <i class="fa-solid fa-gavel"></i> Tag Lawyer
-                    </button>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-content:flex-start;">${actions.join('')}</div>
                 </div>
             `;
         }).join('');
     }
 
-    function setupManageClients() {
-        if (globalUserRole !== 'administrator') return;
-
-        const form = document.getElementById('admin-add-client-form');
-        const listEl = document.getElementById('mc-clients-list-inject');
-        const searchEl = document.getElementById('mc-client-search');
-        if (!form) return;
-
-        if (searchEl) searchEl.addEventListener('input', paintManageClientsList);
-
-        if (listEl) {
-            listEl.addEventListener('click', (e) => {
-                const btn = e.target.closest('[data-tag-client]');
-                if (btn) openTagLawyerModal(btn.getAttribute('data-tag-client'));
-            });
-        }
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const submitBtn = form.querySelector('button[type="submit"]');
-            const idleLabel = 'Add client and open case';
-            const setBusy = (label) => { submitBtn.disabled = true; submitBtn.textContent = label; };
-            const val = id => (document.getElementById(id)?.value || '').trim();
-
-            const fname = val('mc-fname');
-            const mi = val('mc-mi');
-            const lname = val('mc-lname');
-            const email = val('mc-email');
-            const phone = val('mc-phone');
-            const address = val('mc-address');
-            const lawyerId = val('mc-lawyer');
-            const caseTitle = val('mc-case-title');
-            const caseType = val('mc-case-type');
-            const caseDesc = val('mc-case-desc');
-            const wantsPortal = document.getElementById('mc-create-portal').checked;
-
-            if (!lawyerId) {
-                alert('Tag a lawyer before saving. The lawyer is what links this client to their case.');
-                return;
-            }
-
-            const clientName = formatClientFullName(fname, mi, lname);
-            const lawyerName = window.__mcLawyers?.[lawyerId]?.full_name || 'the selected lawyer';
-
-            setBusy('Checking...');
-            try {
-                // --- Duplicate validation: same email, phone or full name ---
-                const dupSelect = 'id, client_name, client_email';
-                const [byEmail, byPhone, byName] = await Promise.all([
-                    supabaseClient.from('clients').select(dupSelect).ilike('client_email', escapeLikePattern(email)),
-                    supabaseClient.from('clients').select(dupSelect).eq('client_phone', phone),
-                    supabaseClient.from('clients').select(dupSelect).ilike('client_name', escapeLikePattern(clientName))
-                ]);
-                [byEmail, byPhone, byName].forEach(r => { if (r.error) throw r.error; });
-
-                const dup = byEmail.data?.[0] || byPhone.data?.[0] || byName.data?.[0];
-                if (dup) {
-                    alert(`A client with this name, email or phone already exists: "${dup.client_name}" (${dup.client_email || 'no email'}). Find them in the Client Directory and use Tag Lawyer instead of adding a duplicate.`);
-                    return;
-                }
-
-                setBusy('Saving client...');
-                const { data: newClient, error: clientError } = await supabaseClient
-                    .from('clients')
-                    .insert([{
-                        client_name: clientName,
-                        client_email: email,
-                        client_phone: phone,
-                        full_address: address || null,
-                        registered_by: currentUser ? currentUser.id : null
-                    }])
-                    .select('id')
-                    .single();
-                if (clientError) throw clientError;
-
-                setBusy('Opening case...');
-                // case_number is intentionally NOT sent: the database trigger
-                // (assign_case_number) generates it atomically on insert.
-                const { data: newCase, error: caseError } = await supabaseClient
-                    .from('cases')
-                    .insert([{
-                        title: caseTitle,
-                        status: 'active',
-                        case_type: caseType || null,
-                        case_description: caseDesc || null,
-                        lawyer_id: lawyerId,
-                        client_id: newClient.id
-                    }])
-                    .select('id, case_number')
-                    .single();
-
-                if (caseError) {
-                    console.error('Case creation error after client insert:', caseError);
-                    alert(`${clientName} was saved, but the case could not be opened: ${caseError.message}\n\nFind the client in the directory and use Tag Lawyer to try again.`);
-                    form.reset();
-                    await renderManageClientsView();
-                    return;
-                }
-
-                let message = `${clientName} was added. Case${newCase.case_number ? ' #' + newCase.case_number : ''} is tagged to Atty. ${lawyerName}.`;
-
-                if (wantsPortal && email) {
-                    setBusy('Sending invite...');
-                    const { error: otpError } = await supabaseAdminActionsClient.auth.signInWithOtp({
-                        email: email,
-                        options: {
-                            emailRedirectTo: window.location.origin + window.location.pathname.replace('index.html', '') + 'client-portal.html',
-                            shouldCreateUser: true
-                        }
-                    });
-
-                    if (otpError) {
-                        console.error('Portal invite error:', otpError);
-                        message += `\n\nThe portal invite email could not be sent: ${otpError.message}`;
-                    } else {
-                        message += `\n\nA portal login link was emailed to ${email}.`;
-                    }
-                }
-
-                alert(message);
-                form.reset();
-                await renderManageClientsView();
-            } catch (error) {
-                console.error('Error adding client:', error);
-                alert('Error adding client: ' + error.message);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = idleLabel;
-            }
-        });
-
-        setupTagLawyerModal();
-    }
-
-    // --- Tag Lawyer: link (or re-link) a lawyer to one of a client's cases, or open a new case ---
-    async function openTagLawyerModal(clientId) {
-        const client = (window.__mcClients || {})[clientId];
-        const modal = document.getElementById('tag-lawyer-modal');
-        if (!client || !modal) return;
-
-        const form = document.getElementById('tag-lawyer-form');
-        const caseSelect = document.getElementById('tag-lawyer-case');
-        const lawyerSelect = document.getElementById('tag-lawyer-select');
-        const newCaseBox = document.getElementById('tag-lawyer-new-case');
-
-        form.reset();
-        document.getElementById('tag-lawyer-client-id').value = client.id;
-        document.getElementById('tag-lawyer-client-name').textContent = client.client_name || '';
-
-        const cases = (client.cases || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        caseSelect.innerHTML = cases.map(cs =>
-            `<option value="${cs.id}">${cs.case_number ? '#' + escapeHtml(cs.case_number) + ' — ' : ''}${escapeHtml(cs.title)}${cs.status === 'closed' ? ' (closed)' : ''}</option>`
-        ).join('') + '<option value="new">+ New case for this client</option>';
-
-        // Start on the first case that still has no lawyer, otherwise the newest case.
-        const preferred = cases.find(cs => !cs.lawyer_id) || cases[0];
-        caseSelect.value = preferred ? preferred.id : 'new';
-        newCaseBox.classList.toggle('hidden', caseSelect.value !== 'new');
+    async function handleClientAction(action, clientId) {
+        if (!isAdminUser()) return;
+        const client = (window.__clientsDirectory || []).find(c => String(c.id) === String(clientId));
+        if (!client) return;
 
         try {
-            await fillLawyerSelect(lawyerSelect, 'Select a lawyer');
-            if (preferred && preferred.lawyer_id) lawyerSelect.value = preferred.lawyer_id;
+            if (action === 'approve' || action === 'assign') {
+                await openTeamModal('client', client.id, { approve: action === 'approve' });
+            } else if (action === 'reject') {
+                const reason = prompt(`Reject ${client.client_name}?\n\nReason (optional):`);
+                if (reason === null) return;
+                const { error } = await supabaseClient
+                    .from('clients')
+                    .update({ approval_status: 'rejected', rejection_reason: reason.trim() || null })
+                    .eq('id', client.id);
+                if (error) throw error;
+                await renderClientsView();
+            } else if (action === 'edit') {
+                openEditClientModal(client);
+            } else if (action === 'delete') {
+                if (!confirm(`Delete ${client.client_name}? This cannot be undone.`)) return;
+                const { error } = await supabaseClient.from('clients').delete().eq('id', client.id);
+                if (error) {
+                    throw new Error(error.message + '\n\nA client that still has cases, documents or events cannot be deleted. Remove or reassign those first.');
+                }
+                await renderClientsView();
+            }
         } catch (err) {
-            console.error('Error loading lawyers for Tag Lawyer:', err);
-            lawyerSelect.innerHTML = '<option value="">Could not load lawyers</option>';
+            console.error('Client action failed:', err);
+            alert('Action failed: ' + err.message);
         }
+    }
 
+    function openEditClientModal(client) {
+        const modal = document.getElementById('edit-client-modal');
+        if (!modal) return;
+        document.getElementById('ec-id').value = client.id;
+        document.getElementById('ec-name').value = client.client_name || '';
+        document.getElementById('ec-email').value = client.client_email || '';
+        document.getElementById('ec-phone').value = client.client_phone || '';
+        document.getElementById('ec-address').value = client.full_address || '';
         modal.classList.remove('hidden');
     }
 
-    function setupTagLawyerModal() {
-        const modal = document.getElementById('tag-lawyer-modal');
-        const closeBtn = document.getElementById('close-tag-lawyer-btn');
-        const form = document.getElementById('tag-lawyer-form');
-        const caseSelect = document.getElementById('tag-lawyer-case');
-        const lawyerSelect = document.getElementById('tag-lawyer-select');
-        const newCaseBox = document.getElementById('tag-lawyer-new-case');
+    async function openTeamModal(kind, id, { approve = false } = {}) {
+        if (!isAdminUser()) return;
+        const modal = document.getElementById('team-modal');
+        const leadSel = document.getElementById('team-lead');
+        const coList = document.getElementById('team-co-list');
+        if (!modal || !leadSel || !coList) return;
+
+        let rows = [];
+        let subtitle = '';
+        if (kind === 'client') {
+            const rec = (window.__clientsDirectory || []).find(c => String(c.id) === String(id));
+            rows = (rec && rec.client_lawyers) || [];
+            subtitle = rec ? rec.client_name : '';
+        } else {
+            const rec = (window.__casesRegistry || {})[id];
+            rows = (rec && rec.case_lawyers) || [];
+            subtitle = rec ? `${rec.case_number ? '#' + rec.case_number + ' — ' : ''}${rec.title}` : '';
+        }
+
+        let lawyers = [];
+        try {
+            lawyers = await getActiveLawyersData();
+        } catch (err) {
+            alert('Could not load lawyers: ' + err.message);
+            return;
+        }
+
+        const currentLead = (rows.find(rowIsLead) || {}).lawyer_id || '';
+        const currentCo = rows.filter(r => !rowIsLead(r)).map(r => r.lawyer_id);
+        const label = l => `Atty. ${escapeHtml(l.full_name || 'Unnamed')}${l.specialization ? ' — ' + escapeHtml(l.specialization) : ''}`;
+
+        leadSel.innerHTML = '<option value="">— No lead lawyer —</option>' +
+            lawyers.map(l => `<option value="${l.id}">${label(l)}</option>`).join('');
+        leadSel.value = currentLead;
+
+        coList.innerHTML = lawyers.length > 0
+            ? lawyers.map(l => `
+                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155; cursor:pointer;">
+                    <input type="checkbox" value="${l.id}" ${currentCo.includes(l.id) ? 'checked' : ''}> ${label(l)}
+                </label>`).join('')
+            : '<p style="color:#94a3b8; font-size:12px; margin:0;">No active lawyers. Add one in Manage Lawyers first.</p>';
+
+        const syncCo = () => {
+            coList.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                const isLead = cb.value === leadSel.value;
+                if (isLead) cb.checked = false;
+                cb.disabled = isLead;
+            });
+        };
+        leadSel.onchange = syncCo;
+        syncCo();
+
+        document.getElementById('team-kind').value = kind;
+        document.getElementById('team-target-id').value = id;
+        document.getElementById('team-approve').value = approve ? '1' : '';
+        document.getElementById('team-modal-title').textContent =
+            approve ? 'Approve client' : (kind === 'client' ? 'Assign lawyers' : 'Case lawyers');
+        document.getElementById('team-modal-subtitle').textContent = subtitle;
+        document.getElementById('team-submit-btn').textContent = approve ? 'Approve & assign' : 'Save';
+        modal.classList.remove('hidden');
+    }
+
+    function setupTeamModal() {
+        const modal = document.getElementById('team-modal');
+        const form = document.getElementById('team-form');
+        const closeBtn = document.getElementById('close-team-modal-btn');
         if (!modal || !form) return;
 
-        const close = () => {
-            modal.classList.add('hidden');
-            form.reset();
-            newCaseBox.classList.add('hidden');
-        };
-
-        if (closeBtn) closeBtn.addEventListener('click', close);
-
-        caseSelect.addEventListener('change', () => {
-            newCaseBox.classList.toggle('hidden', caseSelect.value !== 'new');
-
-            // Preselect the lawyer already tagged on the chosen case.
-            const client = (window.__mcClients || {})[document.getElementById('tag-lawyer-client-id').value];
-            const chosen = client && (client.cases || []).find(cs => cs.id === caseSelect.value);
-            lawyerSelect.value = (chosen && chosen.lawyer_id) ? chosen.lawyer_id : '';
-        });
+        if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            const kind = document.getElementById('team-kind').value;
+            const id = document.getElementById('team-target-id').value;
+            const approve = !!document.getElementById('team-approve').value;
+            const lead = document.getElementById('team-lead').value || null;
+            const co = [...document.querySelectorAll('#team-co-list input[type="checkbox"]:checked')]
+                .map(cb => cb.value)
+                .filter(v => v !== lead);
 
-            const submitBtn = form.querySelector('button[type="submit"]');
-            const clientId = document.getElementById('tag-lawyer-client-id').value;
-            const client = (window.__mcClients || {})[clientId];
-            const lawyerId = lawyerSelect.value;
-            const caseChoice = caseSelect.value;
-            const lawyerName = window.__mcLawyers?.[lawyerId]?.full_name || 'the selected lawyer';
-
-            if (!lawyerId) {
-                alert('Select a lawyer to tag.');
+            if (approve && !lead) {
+                alert('Choose a lead lawyer before approving. The lead lawyer is who the client is assigned to.');
                 return;
             }
 
+            const submitBtn = document.getElementById('team-submit-btn');
+            const idle = submitBtn.textContent;
             submitBtn.disabled = true;
             submitBtn.textContent = 'Saving...';
-
             try {
-                if (caseChoice === 'new') {
-                    const title = document.getElementById('tag-lawyer-new-title').value.trim();
-                    const type = document.getElementById('tag-lawyer-new-type').value.trim();
-                    if (!title) {
-                        alert('Enter a title for the new case.');
+                if (kind === 'client') {
+                    const { error } = await supabaseClient.rpc('set_client_team', {
+                        p_client_id: Number(id), p_lead: lead, p_co: co
+                    });
+                    if (error) throw error;
+                    if (approve) {
+                        const { error: approveError } = await supabaseClient
+                            .from('clients')
+                            .update({ approval_status: 'approved' })
+                            .eq('id', Number(id));
+                        if (approveError) throw approveError;
+                    }
+                } else {
+                    const { error } = await supabaseClient.rpc('set_case_team', {
+                        p_case_id: id, p_lead: lead, p_co: co
+                    });
+                    if (error) throw error;
+                }
+
+                modal.classList.add('hidden');
+                if (kind === 'client') await renderClientsView();
+                else await renderCasesTabView();
+                updateDashboardStats();
+            } catch (err) {
+                console.error('Error saving lawyer team:', err);
+                alert('Could not save: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = idle;
+            }
+        });
+    }
+
+    async function openCaseForm(caseId = null) {
+        const modal = document.getElementById('case-form-modal');
+        const form = document.getElementById('case-form');
+        if (!modal || !form) return;
+
+        const isEdit = !!caseId;
+        const record = isEdit ? (window.__casesRegistry || {})[caseId] : null;
+
+        form.reset();
+        document.getElementById('cf-id').value = caseId || '';
+        document.getElementById('cf-heading').textContent = isEdit ? 'Edit Case' : 'New Case';
+        document.getElementById('cf-submit-btn').textContent = isEdit ? 'Save changes' : 'Save case';
+
+        const clientSel = document.getElementById('cf-client');
+        clientSel.innerHTML = '<option value="">Loading clients...</option>';
+        modal.classList.remove('hidden');
+
+        try {
+            const { data: clients, error } = await supabaseClient
+                .from('clients')
+                .select('id, client_name')
+                .eq('approval_status', 'approved')
+                .order('client_name', { ascending: true });
+            if (error) throw error;
+
+            const placeholder = (clients || []).length > 0
+                ? 'Select a client'
+                : (isAdminUser() ? 'No approved clients yet' : 'No clients assigned to you yet');
+            clientSel.innerHTML = `<option value="">${placeholder}</option>` +
+                (clients || []).map(c => `<option value="${c.id}">${escapeHtml(c.client_name)}</option>`).join('');
+        } catch (err) {
+            console.error('Error loading clients for case form:', err);
+            clientSel.innerHTML = '<option value="">Could not load clients</option>';
+        }
+
+        const leadWrap = document.getElementById('cf-lead-wrap');
+        const leadSel = document.getElementById('cf-lead');
+        const showLead = isAdminUser() && !isEdit;
+        if (leadWrap) leadWrap.style.display = showLead ? '' : 'none';
+        if (showLead && leadSel) {
+            try {
+                const lawyers = await getActiveLawyersData();
+                leadSel.innerHTML = '<option value="">Use the client\'s assigned lawyers</option>' +
+                    lawyers.map(l => `<option value="${l.id}">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</option>`).join('');
+            } catch (err) {
+                leadSel.innerHTML = '<option value="">Could not load lawyers</option>';
+            }
+        }
+
+        if (record) {
+            clientSel.value = String(record.client_id || '');
+            clientSel.disabled = !isAdminUser();
+            document.getElementById('cf-title').value = record.title || '';
+            document.getElementById('cf-type').value = record.case_type || '';
+            document.getElementById('cf-desc').value = record.case_description || '';
+            document.getElementById('cf-date').value = toLocalDateKey(record.date_filed || record.created_at);
+        } else {
+            clientSel.disabled = false;
+            document.getElementById('cf-date').value = toLocalDateKey(new Date().toISOString());
+        }
+    }
+
+    function setupCaseForm() {
+        const modal = document.getElementById('case-form-modal');
+        const form = document.getElementById('case-form');
+        const closeBtn = document.getElementById('close-case-form-btn');
+        const newBtn = document.getElementById('btn-new-case');
+        if (!modal || !form) return;
+
+        if (newBtn) newBtn.addEventListener('click', () => { if (globalRoleName !== 'secretary') openCaseForm(null); });
+        if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const val = id => (document.getElementById(id)?.value || '').trim();
+            const caseId = val('cf-id');
+            const clientId = val('cf-client');
+            const title = val('cf-title');
+            const type = val('cf-type');
+            const desc = val('cf-desc');
+            const dateVal = val('cf-date');
+            const lead = val('cf-lead');
+            const dateIso = dateVal ? new Date(dateVal + 'T00:00:00').toISOString() : null;
+
+            if (!clientId) { alert('Select a client for this case.'); return; }
+
+            const submitBtn = document.getElementById('cf-submit-btn');
+            const idle = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Saving...';
+            try {
+                if (caseId) {
+                    const patch = { title: title, case_type: type || null, case_description: desc || null };
+                    if (dateIso) patch.date_filed = dateIso;
+                    if (isAdminUser()) patch.client_id = Number(clientId);
+                    const { data: updated, error } = await supabaseClient
+                        .from('cases').update(patch).eq('id', caseId).select('id');
+                    if (error) throw error;
+                    if (!updated || updated.length === 0) {
+                        throw new Error('The case was not updated. You may not have permission to edit it.');
+                    }
+                } else {
+                    const { data, error } = await createCase({
+                        title: title, caseType: type, description: desc,
+                        clientId: clientId, dateFiled: dateIso, leadLawyerId: lead || null
+                    });
+                    if (error) throw error;
+                    alert('Case saved.' + (data && data.case_number ? `\n\nCase Number: ${data.case_number}` : ''));
+                }
+
+                modal.classList.add('hidden');
+                await renderCasesTabView();
+                updateDashboardStats();
+                renderMyCasesTab();
+            } catch (err) {
+                console.error('Error saving case:', err);
+                alert('Could not save the case: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = idle;
+            }
+        });
+    }
+
+    window.openCaseForm = openCaseForm;
+    window.openCaseTeam = function(caseId) { openTeamModal('case', caseId); };
+    window.deleteCase = async function(caseId) {
+        if (!isAdminUser()) return;
+        const c = (window.__casesRegistry || {})[caseId];
+        if (!confirm(`Delete case "${c ? c.title : ''}"? This cannot be undone.`)) return;
+        const { error } = await supabaseClient.from('cases').delete().eq('id', caseId);
+        if (error) {
+            alert('Could not delete the case: ' + error.message + '\n\nA case that still has documents or events linked to it cannot be deleted.');
+            return;
+        }
+        await renderCasesTabView();
+        updateDashboardStats();
+    };
+
+    function setupManageClients() {
+        const listEl = document.getElementById('clients-list-inject');
+        const searchEl = document.getElementById('clients-search');
+        const filterEl = document.getElementById('clients-status-filter');
+        const openBtn = document.getElementById('btn-add-client');
+        const addModal = document.getElementById('add-client-modal');
+        const closeAddBtn = document.getElementById('close-add-client-btn');
+        const form = document.getElementById('admin-add-client-form');
+        const editModal = document.getElementById('edit-client-modal');
+        const closeEditBtn = document.getElementById('close-edit-client-btn');
+        const editForm = document.getElementById('edit-client-form');
+
+        if (searchEl) searchEl.addEventListener('input', paintClientsDirectory);
+        if (filterEl) filterEl.addEventListener('change', paintClientsDirectory);
+
+        if (listEl) {
+            listEl.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-client-action]');
+                if (btn) handleClientAction(btn.getAttribute('data-client-action'), btn.getAttribute('data-client-id'));
+            });
+        }
+
+        if (openBtn && addModal) {
+            openBtn.addEventListener('click', () => {
+                if (!isStaffUser()) return;
+                if (form) form.reset();
+                addModal.classList.remove('hidden');
+            });
+        }
+        if (closeAddBtn && addModal) closeAddBtn.addEventListener('click', () => addModal.classList.add('hidden'));
+        if (closeEditBtn && editModal) closeEditBtn.addEventListener('click', () => editModal.classList.add('hidden'));
+
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!isStaffUser()) return;
+
+                const submitBtn = form.querySelector('button[type="submit"]');
+                const idleLabel = 'Add client';
+                const setBusy = (label) => { submitBtn.disabled = true; submitBtn.textContent = label; };
+                const val = id => (document.getElementById(id)?.value || '').trim();
+
+                const clientName = formatClientFullName(val('mc-fname'), val('mc-mi'), val('mc-lname'));
+                const email = val('mc-email');
+                const phone = val('mc-phone');
+                const address = val('mc-address');
+                const wantsPortal = isAdminUser() && !!document.getElementById('mc-create-portal')?.checked;
+
+                setBusy('Checking...');
+                try {
+                    const dupSelect = 'id, client_name, client_email';
+                    const [byEmail, byPhone, byName] = await Promise.all([
+                        supabaseClient.from('clients').select(dupSelect).ilike('client_email', escapeLikePattern(email)),
+                        supabaseClient.from('clients').select(dupSelect).eq('client_phone', phone),
+                        supabaseClient.from('clients').select(dupSelect).ilike('client_name', escapeLikePattern(clientName))
+                    ]);
+                    [byEmail, byPhone, byName].forEach(r => { if (r.error) throw r.error; });
+
+                    const dup = byEmail.data?.[0] || byPhone.data?.[0] || byName.data?.[0];
+                    if (dup) {
+                        alert(`A client with this name, email or phone already exists: "${dup.client_name}" (${dup.client_email || 'no email'}). Find them in the Client Directory instead of adding a duplicate.`);
                         return;
                     }
 
-                    const { error } = await supabaseClient
-                        .from('cases')
+                    setBusy('Saving client...');
+                    const { data: newClient, error: clientError } = await supabaseClient
+                        .from('clients')
                         .insert([{
-                            title: title,
-                            status: 'active',
-                            case_type: type || null,
-                            lawyer_id: lawyerId,
-                            client_id: clientId
-                        }]);
-                    if (error) throw error;
-                } else {
+                            client_name: clientName,
+                            client_email: email,
+                            client_phone: phone,
+                            full_address: address || null,
+                            registered_by: currentUser ? currentUser.id : null
+                        }])
+                        .select('id, approval_status')
+                        .single();
+                    if (clientError) throw clientError;
+
+                    let message = isAdminUser()
+                        ? `${clientName} was added and approved. Use "Assign lawyers" to give them a lead lawyer.`
+                        : `${clientName} was submitted. An administrator will approve or reject it.`;
+
+                    if (wantsPortal && email) {
+                        setBusy('Sending invite...');
+                        const { error: otpError } = await supabaseAdminActionsClient.auth.signInWithOtp({
+                            email: email,
+                            options: {
+                                emailRedirectTo: window.location.origin + window.location.pathname.replace('index.html', '') + 'client-portal.html',
+                                shouldCreateUser: true
+                            }
+                        });
+                        if (otpError) {
+                            console.error('Portal invite error:', otpError);
+                            message += `\n\nThe portal invite email could not be sent: ${otpError.message}`;
+                        } else {
+                            message += `\n\nA portal login link was emailed to ${email}.`;
+                        }
+                    }
+
+                    alert(message);
+                    form.reset();
+                    if (addModal) addModal.classList.add('hidden');
+                    await renderClientsView();
+                } catch (error) {
+                    console.error('Error adding client:', error);
+                    alert('Error adding client: ' + error.message);
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = idleLabel;
+                }
+            });
+        }
+
+        if (editForm) {
+            editForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (!isAdminUser()) return;
+                const val = id => (document.getElementById(id)?.value || '').trim();
+                const submitBtn = editForm.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+                try {
                     const { data: updated, error } = await supabaseClient
-                        .from('cases')
-                        .update({ lawyer_id: lawyerId })
-                        .eq('id', caseChoice)
+                        .from('clients')
+                        .update({
+                            client_name: val('ec-name'),
+                            client_email: val('ec-email'),
+                            client_phone: val('ec-phone'),
+                            full_address: val('ec-address') || null
+                        })
+                        .eq('id', Number(val('ec-id')))
                         .select('id');
                     if (error) throw error;
-                    if (!updated || updated.length === 0) {
-                        throw new Error('The case was not updated. Check that your account is allowed to edit cases.');
-                    }
+                    if (!updated || updated.length === 0) throw new Error('The client was not updated. Check your permissions.');
+                    if (editModal) editModal.classList.add('hidden');
+                    await renderClientsView();
+                } catch (err) {
+                    console.error('Error editing client:', err);
+                    alert('Could not save changes: ' + err.message);
+                } finally {
+                    submitBtn.disabled = false;
                 }
+            });
+        }
 
-                alert(`Atty. ${lawyerName} is now tagged to ${client ? client.client_name : 'this client'}'s case.`);
-                close();
-                await renderManageClientsView();
-            } catch (error) {
-                console.error('Error tagging lawyer:', error);
-                alert('Could not tag the lawyer: ' + error.message);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Tag lawyer';
-            }
-        });
+        setupTeamModal();
+        setupCaseForm();
     }
 
     window.openCaseDetail = async function(caseId) {
@@ -3878,7 +3851,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (!modal) return;
 
-        // Lists the lawyer's own cases so a document can be linked without typing a number.
+        
         async function populateDocCaseSelect() {
             const sel = document.getElementById('doc-case-select');
             if (!sel || !currentUser) return;
@@ -3891,8 +3864,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             try {
                 const { data: myCases, error } = await supabaseClient
                     .from('cases')
-                    .select('id, case_number, title, client_id')
-                    .eq('lawyer_id', currentUser.id)
+                    .select(casesSelect('id, case_number, title, client_id', true))
+                    .eq('case_lawyers.lawyer_id', currentUser.id)
                     .order('created_at', { ascending: false });
                 if (error) throw error;
 
@@ -3909,7 +3882,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }
         }
 
-        // Clears the text fields, the chosen file and the drag-and-drop box.
+        
         function resetUploadForm() {
             if (form) form.reset();
             if (fileInput) fileInput.value = '';
@@ -4083,9 +4056,33 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (!modal) return;
 
         if (openBtn) {
-            openBtn.addEventListener('click', () => {
+            openBtn.addEventListener('click', async () => {
+                if (globalRoleName !== 'admin') return;
                 if (form) form.reset();
                 modal.classList.remove('hidden');
+
+                const roleSel = document.getElementById('add-lawyer-role');
+                const specGroup = document.getElementById('add-lawyer-spec-group');
+                if (!roleSel) return;
+                try {
+                    const { data: roles, error } = await supabaseClient
+                        .from('roles')
+                        .select('id, name')
+                        .in('name', ['lawyer', 'secretary'])
+                        .order('id', { ascending: true });
+                    if (error) throw error;
+                    roleSel.innerHTML = (roles || []).map(r =>
+                        `<option value="${r.id}" data-name="${r.name}">${roleLabel(r.name)}</option>`).join('');
+                } catch (err) {
+                    console.error('Error loading roles:', err);
+                    roleSel.innerHTML = '<option value="">Could not load roles</option>';
+                }
+                const syncSpec = () => {
+                    const name = roleSel.options[roleSel.selectedIndex]?.dataset.name;
+                    if (specGroup) specGroup.style.display = name === 'secretary' ? 'none' : '';
+                };
+                roleSel.onchange = syncSpec;
+                syncSpec();
             });
         }
 
@@ -4112,7 +4109,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const email = document.getElementById('add-lawyer-email').value.trim();
                 const phone = document.getElementById('add-lawyer-phone').value.trim(); 
                 const password = document.getElementById('add-lawyer-password').value;
-                const spec = document.getElementById('add-lawyer-spec').value;
+                const roleSel = document.getElementById('add-lawyer-role');
+                const roleId = Number(roleSel.value);
+                const roleName = roleSel.options[roleSel.selectedIndex]?.dataset.name || 'lawyer';
+                const isLawyerRole = roleName === 'lawyer';
+                const spec = isLawyerRole ? document.getElementById('add-lawyer-spec').value : null;
 
                 const formattedName = `${fname} ${mi ? mi + '. ' : ''}${lname}`.trim();
 
@@ -4123,7 +4124,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         options: {
                             data: {
                                 full_name: formattedName,
-                                role: 'lawyer',
                                 specialization: spec,
                                 phone: phone
                             }
@@ -4131,33 +4131,41 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     });
 
                     if (error) {
-                        throw new Error("Failed to register lawyer: " + error.message);
+                        throw new Error("Failed to register user: " + error.message);
                     }
 
-                    await supabaseClient.from('profiles').insert([{
-                        id: data.user ? data.user.id : crypto.randomUUID(), 
-                        full_name: formattedName,
-                        role: 'lawyer',
-                        specialization: spec,
-                        phone: phone, 
-                        status: 'active'
-                    }]);
+                    if (data.user) {
+                        const { error: profileError } = await supabaseClient
+                            .from('profiles')
+                            .update({
+                                full_name: formattedName,
+                                role_id: roleId,
+                                specialization: spec,
+                                phone: phone,
+                                status: 'active'
+                            })
+                            .eq('id', data.user.id);
+                        if (profileError) {
+                            throw new Error('The account was created but its profile could not be saved: ' + profileError.message);
+                        }
+                    }
 
-                    alert(`Lawyer Atty. ${formattedName} successfully registered!`);
+                    alert(`${isLawyerRole ? 'Lawyer Atty.' : 'Secretary'} ${formattedName} successfully registered!`);
                     form.reset(); 
                     modal.classList.add('hidden'); 
                     
                     renderLawyerStatusWidget();
                     prepareEventModal();
                     renderManageLawyersList(); 
+                    renderSecretariesList();
 
                 } catch (error) {
-                    console.error('Error adding lawyer:', error);
+                    console.error('Error adding user:', error);
                     alert('Error: \n' + error.message);
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
-                        submitBtn.innerText = "Register Lawyer";
+                        submitBtn.innerText = "Register User";
                     }
                 }
             });
@@ -4482,8 +4490,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             const { data: lawyers, error } = await supabaseClient
                 .from('profiles')
-                .select('*')
-                .eq('role', 'lawyer')
+                .select('*, roles!inner(name)')
+                .eq('roles.name', 'lawyer')
                 .eq('status', 'active') 
                 .order('full_name', { ascending: true });
 
@@ -4491,6 +4499,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             if (lawyers && lawyers.length > 0) {
                 if (countEl) countEl.textContent = `Total: ${lawyers.length}`;
+                const canManageLawyers = globalRoleName === 'admin';
                 
                 listContainer.innerHTML = lawyers.map(l => `
                     <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9;">
@@ -4505,10 +4514,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         </div>
                         <div style="display:flex; align-items:center; gap: 12px;">
                             <span class="tag" style="background:#dcfce7; color:#22c55e; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600;">Active</span>
-                            <button onclick="openEditLawyerModal('${l.id}', '${l.full_name.replace(/'/g, "\\'")}', '${l.phone}', '${l.specialization}')" style="background:none; border:none; cursor:pointer; color:#3b82f6; padding: 5px;" title="Edit Lawyer">
+                            <button ${canManageLawyers ? '' : 'hidden'} onclick="openEditLawyerModal('${l.id}', '${l.full_name.replace(/'/g, "\\'")}', '${l.phone}', '${l.specialization}')" style="background:none; border:none; cursor:pointer; color:#3b82f6; padding: 5px;" title="Edit Lawyer">
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </button>
-                            <button onclick="openArchiveLawyerModal('${l.id}', '${l.full_name.replace(/'/g, "\\'")}')" style="background:none; border:none; cursor:pointer; color:#f59e0b; padding: 5px;" title="Archive Lawyer">
+                            <button ${canManageLawyers ? '' : 'hidden'} onclick="openArchiveLawyerModal('${l.id}', '${l.full_name.replace(/'/g, "\\'")}')" style="background:none; border:none; cursor:pointer; color:#f59e0b; padding: 5px;" title="Archive Lawyer">
                                 <i class="fa-solid fa-box-archive"></i>
                             </button>
                         </div>
@@ -4523,6 +4532,77 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             listContainer.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Error loading directory.</p>';
         }
     }
+    async function renderSecretariesList() {
+        const listContainer = document.getElementById('manage-secretaries-list-inject');
+        const countEl = document.getElementById('manage-secretaries-count');
+        if (!listContainer) return;
+
+        if (globalRoleName !== 'admin') {
+            listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">Only administrators can manage secretaries.</p>';
+            if (countEl) countEl.textContent = '';
+            return;
+        }
+
+        listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">Loading secretaries...</p>';
+        try {
+            const { data: people, error } = await supabaseClient
+                .from('profiles')
+                .select('id, full_name, phone, status, roles!inner(name)')
+                .eq('roles.name', 'secretary')
+                .order('full_name', { ascending: true });
+            if (error) throw error;
+
+            window.__secretaries = {};
+            (people || []).forEach(p => { window.__secretaries[p.id] = p; });
+
+            if (countEl) countEl.textContent = `Total: ${(people || []).length}`;
+            if (!people || people.length === 0) {
+                listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No secretaries yet. Use Add New User to create one.</p>';
+                return;
+            }
+
+            listContainer.innerHTML = people.map(p => {
+                const active = p.status !== 'inactive';
+                return `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9;${active ? '' : ' background:#fafafa;'}">
+                        <div style="display:flex; align-items:center; gap: 15px;">
+                            <div style="background:#f5f3ff; color:#8b5cf6; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
+                                ${getInitials(p.full_name)}
+                            </div>
+                            <div>
+                                <h4 style="margin:0; font-size:14px; color:#0f172a;">${escapeHtml(p.full_name || 'Unknown')}</h4>
+                                <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">Secretary • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${escapeHtml(p.phone || 'N/A')}</p>
+                            </div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap: 12px;">
+                            <span style="background:${active ? '#dcfce7' : '#f1f5f9'}; color:${active ? '#22c55e' : '#94a3b8'}; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600;">${active ? 'Active' : 'Archived'}</span>
+                            <button onclick="toggleSecretaryStatus('${p.id}')" style="background:none; border:none; cursor:pointer; color:${active ? '#f59e0b' : '#22c55e'}; padding: 5px;" title="${active ? 'Archive' : 'Restore'}">
+                                <i class="fa-solid ${active ? 'fa-box-archive' : 'fa-rotate-left'}"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error('Error loading secretaries:', err);
+            listContainer.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Error loading secretaries.</p>';
+        }
+    }
+
+    window.toggleSecretaryStatus = async function(profileId) {
+        if (globalRoleName !== 'admin') return;
+        const p = (window.__secretaries || {})[profileId];
+        if (!p) return;
+        const next = p.status === 'inactive' ? 'active' : 'inactive';
+        if (!confirm(`${next === 'inactive' ? 'Archive' : 'Restore'} ${p.full_name}?`)) return;
+        const { error } = await supabaseClient.from('profiles').update({ status: next }).eq('id', profileId);
+        if (error) {
+            alert('Could not update: ' + error.message);
+            return;
+        }
+        renderSecretariesList();
+    };
+
     async function renderArchivedLawyersList() {
         const listContainer = document.getElementById('manage-archived-list-inject');
         const countEl = document.getElementById('manage-archived-count');
@@ -4533,8 +4613,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             const { data: lawyers, error } = await supabaseClient
                 .from('profiles')
-                .select('*')
-                .eq('role', 'lawyer')
+                .select('*, roles!inner(name)')
+                .eq('roles.name', 'lawyer')
                 .eq('status', 'inactive')
                 .order('full_name', { ascending: true });
 
@@ -4626,6 +4706,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     
                     if (targetId === 'manage-archived-lawyers') {
                         renderArchivedLawyersList();
+                    } else if (targetId === 'manage-secretaries') {
+                        renderSecretariesList();
                     } else {
                         renderManageLawyersList();
                     }

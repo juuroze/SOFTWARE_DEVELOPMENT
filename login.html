@@ -60,7 +60,6 @@
             togglePasswordBtn.addEventListener('click', () => {
                 const willBeVisible = passwordInputEl.type === 'password';
                 passwordInputEl.type = willBeVisible ? 'text' : 'password';
-                // Visible password -> open eye (click to hide). Hidden password -> slashed eye (click to reveal).
                 togglePasswordIcon.classList.toggle('fa-eye', willBeVisible);
                 togglePasswordIcon.classList.toggle('fa-eye-slash', !willBeVisible);
                 togglePasswordBtn.setAttribute('aria-label', willBeVisible ? 'Hide password' : 'Show password');
@@ -90,33 +89,28 @@
             }
 
             const userId = authData.user.id;
-            let { data: profileData, error: profileError } = await supabaseClient
+
+            const { data: profileData, error: profileError } = await supabaseClient
                 .from('profiles')
-                .select('*')
+                .select('*, roles(name)')
                 .eq('id', userId)
                 .single();
 
             if (profileError || !profileData) {
-                const { data: insertedProfile, error: insertError } = await supabaseClient
-                    .from('profiles')
-                    .insert([{
-                        id: userId,
-                        full_name: emailInput.split('@')[0],
-                        role: 'lawyer',
-                        status: 'active',
-                        specialization: 'General Practice'
-                    }])
-                    .select('*')
-                    .single();
+                console.error('Profile load error:', profileError ? profileError.message : 'no profile row');
+                await supabaseClient.auth.signOut();
+                alert('Your account is signed in, but no profile was found. Please contact your administrator.');
+                loginBtn.disabled = false;
+                loginBtn.innerText = 'Sign In';
+                return;
+            }
 
-                if (insertError) {
-                    console.error("Profile auto-creation error:", insertError.message);
-                    alert('Authenticated, but failed to load or create profile data. Check database permissions.');
-                    loginBtn.disabled = false;
-                    loginBtn.innerText = 'Sign In';
-                    return;
-                }
-                profileData = insertedProfile;
+            if (profileData.status === 'inactive') {
+                await supabaseClient.auth.signOut();
+                alert('This account has been archived. Please contact your administrator.');
+                loginBtn.disabled = false;
+                loginBtn.innerText = 'Sign In';
+                return;
             }
 
             localStorage.setItem('userProfile', JSON.stringify(profileData));
