@@ -296,10 +296,19 @@
                         <i class="fa-solid fa-filter"></i>
                         <select id="doc-filter">
                             <option value="all">All Documents</option>
-                            <option value="motion">Motions</option>
-                            <option value="contract">Contracts</option>
-                            <option value="pleading">Pleadings</option>
-                            <option value="evidence">Evidence</option>
+                            <optgroup label="For Court">
+                                <option value="pleadings">Pleadings</option>
+                                <option value="motions">Motions</option>
+                                <option value="memoranda">Memoranda</option>
+                                <option value="affidavits">Affidavits</option>
+                                <option value="documentary evidence">Documentary Evidence</option>
+                                <option value="agreements">Agreements</option>
+                            </optgroup>
+                            <optgroup label="For Retained Clients">
+                                <option value="contracts">Contracts / Drafts of Contracts</option>
+                                <option value="legal opinions">Legal Opinions / Advice</option>
+                                <option value="invoices">Invoice / Billables</option>
+                            </optgroup>
                         </select>
                     </div>
                 </div>
@@ -688,10 +697,19 @@
                         <div style="position: relative;">
                             <select id="doc-category" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff; appearance: none;">
                                 <option value="">Select category</option>
-                                <option value="Motion">Motion</option>
-                                <option value="Contract">Contract</option>
-                                <option value="Pleading">Pleading</option>
-                                <option value="Evidence">Evidence</option>
+                                <optgroup label="For Court">
+                                    <option value="pleadings">Pleadings</option>
+                                    <option value="motions">Motions</option>
+                                    <option value="memoranda">Memoranda</option>
+                                    <option value="affidavits">Affidavits</option>
+                                    <option value="documentary evidence">Documentary Evidence</option>
+                                    <option value="agreements">Agreements</option>
+                                </optgroup>
+                                <optgroup label="For Retained Clients">
+                                    <option value="contracts">Contracts / Drafts of Contracts</option>
+                                    <option value="legal opinions">Legal Opinions / Advice</option>
+                                    <option value="invoices">Invoice / Billables</option>
+                                </optgroup>
                             </select>
                             <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
                         </div>
@@ -986,7 +1004,7 @@
         </div>
 
         <div id="case-form-modal" class="modal-overlay hidden">
-            <div class="modal-content mc-modal">
+            <div class="modal-content mc-modal" style="max-height: 92vh; overflow-y: auto;">
                 <div class="modal-header mc-modal-head">
                     <div>
                         <h2 id="cf-heading">New Case</h2>
@@ -1014,20 +1032,68 @@
                         </div>
                     </div>
 
+                    <div class="mc-field">
+                        <label for="cf-title">Case title</label>
+                        <input type="text" id="cf-title" required maxlength="150" placeholder="e.g., Dela Cruz vs. Santos">
+                    </div>
+
                     <div class="mc-row">
-                        <div class="mc-field mc-grow-2">
-                            <label for="cf-title">Case title</label>
-                            <input type="text" id="cf-title" required maxlength="150" placeholder="e.g., Dela Cruz vs. Santos">
+                        <div class="mc-field">
+                            <label for="cf-type">Case type</label>
+                            <div class="mc-select-wrap">
+                                <select id="cf-type" required></select>
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </div>
                         </div>
-                        <div class="mc-field mc-grow-2">
-                            <label for="cf-type">Case type <span class="mc-optional">(optional)</span></label>
-                            <input type="text" id="cf-type" maxlength="60" placeholder="e.g., Civil, Labor, Annulment">
+                        <div class="mc-field">
+                            <label for="cf-party">Party type</label>
+                            <div class="mc-select-wrap">
+                                <select id="cf-party"></select>
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="mc-field">
-                        <label for="cf-date">Date filed</label>
-                        <input type="date" id="cf-date">
+                    <div class="mc-row">
+                        <div class="mc-field mc-grow-2">
+                            <label for="cf-court">Court and Branch No. / Agency</label>
+                            <input type="text" id="cf-court" maxlength="200" placeholder="e.g., RTC Branch 12, Quezon City">
+                        </div>
+                        <div class="mc-field">
+                            <label for="cf-jurisdiction">Jurisdiction</label>
+                            <input type="text" id="cf-jurisdiction" maxlength="120" placeholder="e.g., Quezon City">
+                        </div>
+                    </div>
+
+                    <div class="mc-row">
+                        <div class="mc-field">
+                            <label for="cf-court-no">Case No.</label>
+                            <input type="text" id="cf-court-no" maxlength="80" placeholder="e.g., Civil Case No. Q-24-12345">
+                        </div>
+                        <div class="mc-field">
+                            <label for="cf-date">Date filed</label>
+                            <input type="date" id="cf-date">
+                        </div>
+                    </div>
+
+                    <div class="mc-row">
+                        <div class="mc-field">
+                            <label for="cf-stage">Case stage</label>
+                            <div class="mc-select-wrap">
+                                <select id="cf-stage"></select>
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </div>
+                        </div>
+                        <div class="mc-field">
+                            <label for="cf-status">Case status</label>
+                            <div class="mc-select-wrap">
+                                <select id="cf-status">
+                                    <option value="active">Active</option>
+                                    <option value="closed">Closed</option>
+                                </select>
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="mc-field">

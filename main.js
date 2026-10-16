@@ -21,6 +21,16 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
         return 'Lawyer';
     }
 
+    const CASE_TYPES = ['Civil', 'Criminal', 'Labor', 'Administrative'];
+    const CASE_STAGES = ['For Filing', 'Filed', 'Pre-Trial', 'Mediation/JDR', 'Trial - Plaintiff', 'Trial - Prosecution', 'Trial - Defense', 'Demurrer', 'For Decision', 'Appeal'];
+    const PARTY_TYPES = ['Plaintiff', 'Defendant', 'Petitioner', 'Respondent', 'Complainant', 'Accused'];
+
+    function fillSelect(el, values, placeholder) {
+        if (!el) return;
+        el.innerHTML = (placeholder ? `<option value="">${placeholder}</option>` : '') +
+            values.map(v => `<option value="${v}">${v}</option>`).join('');
+    }
+
     function casesSelect(base, onlyMine) {
         const embed = (onlyMine ? 'case_lawyers!inner' : 'case_lawyers') + '(lawyer_id, is_lead, profiles(full_name))';
         return base ? `${base}, ${embed}` : embed;
@@ -50,14 +60,19 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
     function caseHasLawyer(c, lawyerId) {
         return ((c && c.case_lawyers) || []).some(r => r.lawyer_id === lawyerId);
     }
-    async function createCase({ title, caseType, description, clientId, dateFiled, leadLawyerId }) {
+    async function createCase({ title, caseType, description, clientId, dateFiled, leadLawyerId, courtBranch, courtCaseNo, jurisdiction, caseStage, partyType }) {
         const { data, error } = await supabaseClient.rpc('create_case', {
             p_title: title,
             p_case_type: caseType || null,
             p_description: description || null,
             p_client_id: clientId ? Number(clientId) : null,
             p_date_filed: dateFiled || null,
-            p_lead_lawyer: leadLawyerId || null
+            p_lead_lawyer: leadLawyerId || null,
+            p_court_branch: courtBranch || null,
+            p_court_case_no: courtCaseNo || null,
+            p_jurisdiction: jurisdiction || null,
+            p_case_stage: caseStage || null,
+            p_party_type: partyType || null
         });
         const row = Array.isArray(data) ? data[0] : data;
         return { data: row || null, error };
@@ -1181,10 +1196,15 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
 
     function getCategoryColor(type) {
         const t = (type || '').toLowerCase();
-        if (t === 'motion') return { bg: '#e0e7ff', text: '#2563eb' }; 
-        if (t === 'contract') return { bg: '#dcfce7', text: '#16a34a' }; 
-        if (t === 'pleading') return { bg: '#f3e8ff', text: '#9333ea' }; 
-        if (t === 'evidence') return { bg: '#fef08a', text: '#ea580c' }; 
+        if (t === 'motion' || t === 'motions') return { bg: '#e0e7ff', text: '#2563eb' }; 
+        if (t === 'memoranda') return { bg: '#e0f2fe', text: '#0369a1' }; 
+        if (t === 'affidavits') return { bg: '#fef3c7', text: '#b45309' }; 
+        if (t === 'agreements') return { bg: '#ccfbf1', text: '#0f766e' }; 
+        if (t === 'legal opinions') return { bg: '#ede9fe', text: '#6d28d9' }; 
+        if (t === 'invoices') return { bg: '#fce7f3', text: '#be185d' }; 
+        if (t === 'contract' || t === 'contracts') return { bg: '#dcfce7', text: '#16a34a' }; 
+        if (t === 'pleading' || t === 'pleadings') return { bg: '#f3e8ff', text: '#9333ea' }; 
+        if (t === 'evidence' || t === 'documentary evidence') return { bg: '#fef08a', text: '#ea580c' }; 
         if (t === 'order') return { bg: '#fee2e2', text: '#dc2626' }; 
         if (t === 'transcript') return { bg: '#ffedd5', text: '#c2410c' }; 
         if (t === 'estate') return { bg: '#fae8ff', text: '#a855f7' }; 
@@ -2241,7 +2261,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             const { data: cases, error } = await supabaseClient
                 .from('cases')
-                .select(casesSelect('id, case_number, case_type, case_description, title, status, client_id, date_filed, clients(client_name)', true))
+                .select(casesSelect('id, case_number, case_type, case_description, title, status, client_id, date_filed, court_case_no, court_branch, case_stage, clients(client_name)', true))
                 .eq('status', 'active')
                 .eq('case_lawyers.lawyer_id', currentUser.id)
                 .order('created_at', { ascending: false });
@@ -2279,6 +2299,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
         info.innerHTML = `
             <div><strong>Client:</strong> ${escapeHtml(c.clients?.client_name || 'No client')}</div>
+            ${c.court_case_no || c.court_branch ? `<div><strong>Court:</strong> ${escapeHtml([c.court_case_no, c.court_branch].filter(Boolean).join(' • '))}</div>` : ''}
+            ${c.case_stage ? `<div><strong>Stage:</strong> ${escapeHtml(c.case_stage)}</div>` : ''}
             <div><strong>Type:</strong> ${escapeHtml(c.case_type || 'General')} • <strong>Filed:</strong> ${formatDate(c.date_filed || new Date().toISOString())}</div>
             ${c.case_description ? `<div><strong>Details:</strong> ${escapeHtml(c.case_description)}</div>` : ''}
         `;
@@ -3004,12 +3026,16 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
                             <h4 style="margin:0; font-size:15px; color:#0f172a;">${escapeHtml(c.title)}</h4>
                             <span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; text-transform:capitalize; ${statusStyle}">${c.status || 'active'}</span>
+                            ${c.case_stage ? `<span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; background:#eff6ff; color:#2563eb;">${escapeHtml(c.case_stage)}</span>` : ''}
                         </div>
                         <p style="margin:0; font-size:12px; color:#64748b;">
-                            ${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}${escapeHtml(c.case_type || 'General')}
+                            ${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}${escapeHtml(c.case_type || 'General')}${c.party_type ? ' • ' + escapeHtml(c.party_type) : ''}
                             • <i class="fa-solid fa-user" style="font-size:10px;"></i> ${clientName}
                             • Filed ${formatDate(c.date_filed || c.created_at)}
                         </p>
+                        ${(c.court_case_no || c.court_branch || c.jurisdiction) ? `<p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">
+                            ${[c.court_case_no ? 'Case No. ' + escapeHtml(c.court_case_no) : '', c.court_branch ? escapeHtml(c.court_branch) : '', c.jurisdiction ? 'Jurisdiction: ' + escapeHtml(c.jurisdiction) : ''].filter(Boolean).join(' • ')}
+                        </p>` : ''}
                         <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${teamChipsHtml(c.case_lawyers)}</div>
                         ${c.case_description ? `<p style="margin:8px 0 0 0; font-size:12px; color:#475569;">${escapeHtml(c.case_description)}</p>` : ''}
                     </div>
@@ -3413,6 +3439,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const record = isEdit ? (window.__casesRegistry || {})[caseId] : null;
 
         form.reset();
+        fillSelect(document.getElementById('cf-type'), CASE_TYPES, 'Select case type');
+        fillSelect(document.getElementById('cf-party'), PARTY_TYPES, 'Select party type');
+        fillSelect(document.getElementById('cf-stage'), CASE_STAGES);
         document.getElementById('cf-id').value = caseId || '';
         document.getElementById('cf-heading').textContent = isEdit ? 'Edit Case' : 'New Case';
         document.getElementById('cf-submit-btn').textContent = isEdit ? 'Save changes' : 'Save case';
@@ -3458,10 +3487,20 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             clientSel.disabled = !isAdminUser();
             document.getElementById('cf-title').value = record.title || '';
             document.getElementById('cf-type').value = record.case_type || '';
+            document.getElementById('cf-party').value = record.party_type || '';
+            document.getElementById('cf-court').value = record.court_branch || '';
+            document.getElementById('cf-jurisdiction').value = record.jurisdiction || '';
+            document.getElementById('cf-court-no').value = record.court_case_no || '';
+            document.getElementById('cf-stage').value = record.case_stage || 'For Filing';
+            document.getElementById('cf-status').value = record.status || 'active';
+            document.getElementById('cf-status').disabled = false;
             document.getElementById('cf-desc').value = record.case_description || '';
             document.getElementById('cf-date').value = toLocalDateKey(record.date_filed || record.created_at);
         } else {
             clientSel.disabled = false;
+            document.getElementById('cf-stage').value = 'For Filing';
+            document.getElementById('cf-status').value = 'active';
+            document.getElementById('cf-status').disabled = true;
             document.getElementById('cf-date').value = toLocalDateKey(new Date().toISOString());
         }
     }
@@ -3486,9 +3525,16 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             const desc = val('cf-desc');
             const dateVal = val('cf-date');
             const lead = val('cf-lead');
+            const partyType = val('cf-party');
+            const courtBranch = val('cf-court');
+            const jurisdiction = val('cf-jurisdiction');
+            const courtCaseNo = val('cf-court-no');
+            const caseStage = val('cf-stage');
+            const caseStatus = val('cf-status');
             const dateIso = dateVal ? new Date(dateVal + 'T00:00:00').toISOString() : null;
 
             if (!clientId) { alert('Select a client for this case.'); return; }
+            if (!type) { alert('Select the case type.'); return; }
 
             const submitBtn = document.getElementById('cf-submit-btn');
             const idle = submitBtn.textContent;
@@ -3496,7 +3542,17 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             submitBtn.textContent = 'Saving...';
             try {
                 if (caseId) {
-                    const patch = { title: title, case_type: type || null, case_description: desc || null };
+                    const patch = {
+                        title: title,
+                        case_type: type || null,
+                        party_type: partyType || null,
+                        court_branch: courtBranch || null,
+                        jurisdiction: jurisdiction || null,
+                        court_case_no: courtCaseNo || null,
+                        case_stage: caseStage || null,
+                        status: caseStatus || 'active',
+                        case_description: desc || null
+                    };
                     if (dateIso) patch.date_filed = dateIso;
                     if (isAdminUser()) patch.client_id = Number(clientId);
                     const { data: updated, error } = await supabaseClient
@@ -3508,7 +3564,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 } else {
                     const { data, error } = await createCase({
                         title: title, caseType: type, description: desc,
-                        clientId: clientId, dateFiled: dateIso, leadLawyerId: lead || null
+                        clientId: clientId, dateFiled: dateIso, leadLawyerId: lead || null,
+                        courtBranch: courtBranch, courtCaseNo: courtCaseNo, jurisdiction: jurisdiction,
+                        caseStage: caseStage, partyType: partyType
                     });
                     if (error) throw error;
                     alert('Case saved.' + (data && data.case_number ? `\n\nCase Number: ${data.case_number}` : ''));
