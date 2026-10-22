@@ -67,6 +67,11 @@
                     <span>Manage Lawyers</span>
                 </li>
 
+                <li id="nav-audits" data-target="audits-view" style="display: none;">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>Audit Logs</span>
+                </li>
+
             </ul>
 
             <ul class="nav-links" style="margin-top: auto; margin-bottom: 0;">
@@ -514,6 +519,24 @@
                 </div>
             </section>
 
+            <section id="audits-view" class="view-section hidden">
+                <header class="view-header flex-between">
+                    <div>
+                        <h1>Audit Logs</h1>
+                        <p>Track system activities, including additions, edits, and deletions.</p>
+                    </div>
+                </header>
+
+                <div class="content-card">
+                    <div class="card-title-flex">
+                        <h3><i class="fa-solid fa-list-check"></i> Recent Activity</h3>
+                        <span id="audits-count" class="cases-count"></span>
+                    </div>
+                    <div id="audits-list-inject" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+                        <p style="color:#64748b; text-align:center; padding:20px;">Loading audit logs...</p>
+                    </div>
+                </div>
+            </section>
         </main>
         
         <div id="logout-modal" class="modal-overlay hidden">

@@ -74,7 +74,12 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
             p_case_stage: caseStage || null,
             p_party_type: partyType || null
         });
-        const row = Array.isArray(data) ? data[0] : data;
+const row = Array.isArray(data) ? data[0] : data;
+        
+        if (!error && row) {
+            await logAuditActivity('INSERT', 'Cases', `Added new case: ${title}`, row.id);
+        }
+        
         return { data: row || null, error };
     }
 
@@ -181,6 +186,8 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
                 if (secretariesTabBtnEl) secretariesTabBtnEl.style.display = isAdminRole ? '' : 'none';
 
                 const isStaffRole = globalRoleName === 'admin' || globalRoleName === 'secretary';
+                const navAudits = document.getElementById('nav-audits');
+                if (navAudits) navAudits.style.display = isStaffRole ? 'flex' : 'none';
                 const addClientBtnEl = document.getElementById('btn-add-client');
                 if (addClientBtnEl) addClientBtnEl.style.display = isStaffRole ? '' : 'none';
                 const clientsFilterEl = document.getElementById('clients-status-filter');
@@ -362,6 +369,9 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
 
             if (target === 'clients-view') {
                 await renderClientsView();
+            }
+            if (target === 'audits-view') {
+                await renderAuditsView();
             }
         });
     });
@@ -3080,7 +3090,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    window.toggleCaseStatus = async function(caseId, currentStatus) {
+        window.toggleCaseStatus = async function(caseId, currentStatus) {
         const newStatus = currentStatus === 'closed' ? 'active' : 'closed';
         try {
             const { error } = await supabaseClient
@@ -3089,6 +3099,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 .eq('id', caseId);
 
             if (error) throw error;
+            
+            const c = (window.__casesRegistry || {})[caseId];
+            await logAuditActivity('UPDATE', 'Cases', `Changed case status to ${newStatus}: ${c ? c.title : caseId}`, caseId, {status: currentStatus}, {status: newStatus});
+            
             await renderCasesTabView();
         } catch (error) {
             alert('Could not update case status: ' + error.message);
@@ -3271,7 +3285,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             if (action === 'approve' || action === 'assign') {
                 await openTeamModal('client', client.id, { approve: action === 'approve' });
-            } else if (action === 'reject') {
+                } else if (action === 'reject') {
                 const reason = prompt(`Reject ${client.client_name}?\n\nReason (optional):`);
                 if (reason === null) return;
                 const { error } = await supabaseClient
@@ -3279,6 +3293,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     .update({ approval_status: 'rejected', rejection_reason: reason.trim() || null })
                     .eq('id', client.id);
                 if (error) throw error;
+                await logAuditActivity('UPDATE', 'Clients', `Rejected client: ${client.client_name}`, client.id, client, { approval_status: 'rejected', rejection_reason: reason.trim() || null });
                 await renderClientsView();
             } else if (action === 'edit') {
                 openEditClientModal(client);
@@ -3288,6 +3303,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 if (error) {
                     throw new Error(error.message + '\n\nA client that still has cases, documents or events cannot be deleted. Remove or reassign those first.');
                 }
+                await logAuditActivity('DELETE', 'Clients', `Deleted client: ${client.client_name}`, client.id, client, null);
                 await renderClientsView();
             }
         } catch (err) {
@@ -3397,7 +3413,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             submitBtn.disabled = true;
             submitBtn.textContent = 'Saving...';
             try {
-                if (kind === 'client') {
+                    if (kind === 'client') {
                     const { error } = await supabaseClient.rpc('set_client_team', {
                         p_client_id: Number(id), p_lead: lead, p_co: co
                     });
@@ -3408,6 +3424,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                             .update({ approval_status: 'approved' })
                             .eq('id', Number(id));
                         if (approveError) throw approveError;
+                        await logAuditActivity('UPDATE', 'Clients', `Approved client and assigned lawyer team`, id);
+                    } else {
+                        await logAuditActivity('UPDATE', 'Clients', `Updated assigned lawyer team`, id);
                     }
                 } else {
                     const { error } = await supabaseClient.rpc('set_case_team', {
@@ -3561,6 +3580,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     if (!updated || updated.length === 0) {
                         throw new Error('The case was not updated. You may not have permission to edit it.');
                     }
+
+                    const oldCaseRecord = (window.__casesRegistry || {})[caseId];
+                    await logAuditActivity('UPDATE', 'Cases', `Edited case: ${title}`, caseId, oldCaseRecord, patch);
                 } else {
                     const { data, error } = await createCase({
                         title: title, caseType: type, description: desc,
@@ -3597,6 +3619,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             alert('Could not delete the case: ' + error.message + '\n\nA case that still has documents or events linked to it cannot be deleted.');
             return;
         }
+        
+        await logAuditActivity('DELETE', 'Cases', `Deleted case: ${c ? c.title : caseId}`, caseId, c, null);
+        
         await renderCasesTabView();
         updateDashboardStats();
     };
@@ -3666,7 +3691,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
 
                     setBusy('Saving client...');
-                    const { data: newClient, error: clientError } = await supabaseClient
+                        const { data: newClient, error: clientError } = await supabaseClient
                         .from('clients')
                         .insert([{
                             client_name: clientName,
@@ -3678,6 +3703,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         .select('id, approval_status')
                         .single();
                     if (clientError) throw clientError;
+
+                    await logAuditActivity('INSERT', 'Clients', `Added new client: ${clientName}`, newClient.id);
 
                     let message = isAdminUser()
                         ? `${clientName} was added and approved. Use "Assign lawyers" to give them a lead lawyer.`
@@ -3722,18 +3749,26 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const submitBtn = editForm.querySelector('button[type="submit"]');
                 submitBtn.disabled = true;
                 try {
+                    const clientId = Number(val('ec-id'));
+                    const oldClient = (window.__clientsDirectory || []).find(c => c.id === clientId) || {};
+                    const patch = {
+                        client_name: val('ec-name'),
+                        client_email: val('ec-email'),
+                        client_phone: val('ec-phone'),
+                        full_address: val('ec-address') || null
+                    };
+
                     const { data: updated, error } = await supabaseClient
                         .from('clients')
-                        .update({
-                            client_name: val('ec-name'),
-                            client_email: val('ec-email'),
-                            client_phone: val('ec-phone'),
-                            full_address: val('ec-address') || null
-                        })
-                        .eq('id', Number(val('ec-id')))
+                        .update(patch)
+                        .eq('id', clientId)
                         .select('id');
+
                     if (error) throw error;
                     if (!updated || updated.length === 0) throw new Error('The client was not updated. Check your permissions.');
+                    
+                    await logAuditActivity('UPDATE', 'Clients', `Edited client profile: ${patch.client_name}`, clientId, oldClient, patch);
+
                     if (editModal) editModal.classList.add('hidden');
                     await renderClientsView();
                 } catch (err) {
@@ -4084,6 +4119,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         throw new Error("File uploaded, but failed to save details to database.");
                     }
 
+                    await logAuditActivity('INSERT', 'Documents', `Uploaded document: ${finalTitle}`);
+
                     alert('Document successfully uploaded and saved!');
                     
                     resetUploadForm();
@@ -4206,6 +4243,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         if (profileError) {
                             throw new Error('The account was created but its profile could not be saved: ' + profileError.message);
                         }
+                        
+                        await logAuditActivity('INSERT', 'Profiles', `Registered new ${roleName}: ${formattedName}`, data.user.id);
                     }
 
                     alert(`${isLawyerRole ? 'Lawyer Atty.' : 'Secretary'} ${formattedName} successfully registered!`);
@@ -4425,18 +4464,19 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const newName = document.getElementById('edit-lawyer-fullname').value.trim();
                 const newPhone = document.getElementById('edit-lawyer-phone').value.trim();
                 const newSpec = document.getElementById('edit-lawyer-spec').value;
+                const patch = { full_name: newName, phone: newPhone, specialization: newSpec };
 
                 try {
+                    const { data: oldData } = await supabaseClient.from('profiles').select('*').eq('id', lawyerId).single();
+
                     const { error } = await supabaseClient
                         .from('profiles')
-                        .update({ 
-                            full_name: newName, 
-                            phone: newPhone, 
-                            specialization: newSpec 
-                        })
+                        .update(patch)
                         .eq('id', lawyerId);
 
                     if (error) throw new Error(error.message);
+
+                    await logAuditActivity('UPDATE', 'Profiles', `Edited lawyer profile: Atty. ${newName}`, lawyerId, oldData, patch);
 
                     alert('Lawyer profile successfully updated!');
                     modal.classList.add('hidden');
@@ -4506,6 +4546,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         .eq('id', lawyerId);
 
                     if (error) throw new Error(error.message);
+
+                    const archiveName = document.getElementById('archive-lawyer-name-display').textContent;
+                    await logAuditActivity('UPDATE', 'Profiles', `Archived lawyer: ${archiveName}`, lawyerId);
 
                     alert('Lawyer successfully archived (set to inactive).');
                     modal.classList.add('hidden');
@@ -4714,12 +4757,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (!confirm(`Are you sure you want to restore Atty. ${name}? Their account will be reactivated.`)) return;
 
         try {
-            const { error } = await supabaseClient
+                const { error } = await supabaseClient
                 .from('profiles')
                 .update({ status: 'active' })
                 .eq('id', id);
 
             if (error) throw new Error(error.message);
+
+            await logAuditActivity('UPDATE', 'Profiles', `Restored lawyer: Atty. ${name}`, id);
 
             alert(`Atty. ${name} has been successfully restored!`);
             
@@ -4775,3 +4820,135 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         checkAuthAndInit();
     });
+
+async function renderAuditsView() {
+        const listEl = document.getElementById('audits-list-inject');
+        const countEl = document.getElementById('audits-count');
+        if (!listEl) return;
+
+        if (globalRoleName !== 'admin' && globalRoleName !== 'secretary') {
+            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Unauthorized access.</p>';
+            return;
+        }
+
+        listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading audit logs...</p>';
+
+        try {
+            const { data: logs, error: logsError } = await supabaseClient
+                .from('audit_logs')
+                .select('*')
+                .order('changed_at', { ascending: false })
+                .limit(100);
+
+            if (logsError) throw logsError;
+
+            if (countEl) countEl.textContent = `Showing last ${logs.length} activities`;
+
+            if (!logs || logs.length === 0) {
+                listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No recent activity found.</p>';
+                return;
+            }
+
+            const userIds = [...new Set(logs.map(log => log.changed_by).filter(Boolean))];
+            let profileMap = {};
+            
+            if (userIds.length > 0) {
+                const { data: profiles, error: profilesError } = await supabaseClient
+                    .from('profiles')
+                    .select('id, full_name')
+                    .in('id', userIds);
+                    
+                if (!profilesError && profiles) {
+                    profiles.forEach(p => {
+                        profileMap[p.id] = p.full_name;
+                    });
+                }
+            }
+            listEl.innerHTML = logs.map(log => {
+                const userName = profileMap[log.changed_by] || 'System';
+                
+                let actionColor = '#3b82f6'; 
+                let actionLabel = 'Updated';
+                if (log.action === 'DELETE') { actionColor = '#ef4444'; actionLabel = 'Deleted'; }
+                if (log.action === 'INSERT') { actionColor = '#22c55e'; actionLabel = 'Added'; }
+
+                const entityName = (log.table_name || 'record').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                
+                const displayRecordId = log.record_id || log.new_data?.original_int_id || 'Unknown';
+                const logDetails = log.new_data?.summary || `Record ID: ${displayRecordId}`;
+
+                return `
+                    <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; display: flex; align-items: flex-start; gap: 12px;">
+                        <div style="background: ${actionColor}20; color: ${actionColor}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                        </div>
+                        <div>
+                            <h4 style="margin: 0 0 4px 0; font-size: 14px; color: #0f172a;">
+                                <strong style="color: ${actionColor};">[${actionLabel}]</strong> 
+                                ${entityName}
+                            </h4>
+                            <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
+                                ${escapeHtml(logDetails)}
+                            </p>
+                            <p style="margin: 0; font-size: 11px; color: #64748b;">
+                                By: <strong>${escapeHtml(userName)}</strong> 
+                                • ${formatDate(log.changed_at)} at ${formatEventTime(log.changed_at)}
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+        } catch (err) {
+            console.error('Error loading audit logs:', err);
+            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Error loading logs. Check the console for details.</p>';
+        }
+    }
+
+    async function logAuditActivity(action, entityType, summaryText, recordId = null, oldData = null, newData = null) {
+    if (!currentUser) return;
+    try {
+        let detailsText = summaryText;
+        
+        const safeOldData = oldData ? JSON.parse(JSON.stringify(oldData)) : null;
+        const safeNewData = newData ? JSON.parse(JSON.stringify(newData)) : null;
+        
+        if (action === 'UPDATE' && safeOldData && safeNewData) {
+            const changes = [];
+            for (const key in safeNewData) {
+                if (key !== 'id' && key !== 'updated_at' && safeNewData[key] !== undefined) {
+                    const oldVal = safeOldData[key] ? String(safeOldData[key]) : '(empty)';
+                    const newVal = safeNewData[key] ? String(safeNewData[key]) : '(empty)';
+                    
+                    if (oldVal !== newVal && typeof safeNewData[key] !== 'object') {
+                        const niceKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        changes.push(`${niceKey}: "${oldVal}" ➔ "${newVal}"`);
+                    }
+                }
+            }
+            if (changes.length > 0) {
+                detailsText += ` | Changes: ${changes.join(', ')}`;
+            }
+        }
+
+        const payloadNewData = safeNewData ? { summary: detailsText, ...safeNewData } : { summary: detailsText };
+
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(recordId);
+        const validUuidRecordId = isUUID ? recordId : null;
+        
+        if (!isUUID && recordId) {
+            payloadNewData.original_int_id = recordId;
+        }
+
+        await supabaseClient.from('audit_logs').insert([{
+            action: action,
+            table_name: entityType.toLowerCase().replace(' ', '_'),
+            new_data: payloadNewData,
+            old_data: safeOldData,
+            record_id: validUuidRecordId, 
+            changed_by: currentUser.id
+        }]);
+    } catch (err) {
+        console.error('Failed to log activity:', err);
+    }
+}
