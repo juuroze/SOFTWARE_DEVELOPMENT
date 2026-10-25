@@ -458,7 +458,7 @@ const row = Array.isArray(data) ? data[0] : data;
                 if (lawyersStatCard) lawyersStatCard.style.display = isLawyer ? 'none' : 'flex';
 
             const uploadDocBtn = document.getElementById('btn-upload-doc');
-            if (uploadDocBtn) uploadDocBtn.style.display = (globalUserRole === 'administrator') ? 'none' : 'flex';
+            if (uploadDocBtn) uploadDocBtn.style.display = 'flex';
 
             const addEventBtn = document.getElementById('btn-add-event-header');
             if (addEventBtn) addEventBtn.style.display = 'flex';
@@ -1427,22 +1427,527 @@ const row = Array.isArray(data) ? data[0] : data;
         }
     }
 
+    const OCR_LANG = 'eng';
+    const OCR_MAX_PAGES = 25;
+    const OCR_MAX_CHARS = 400000;
+    const LIB_URLS = {
+        pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+        tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js',
+        mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'
+    };
+    const scriptLoads = {};
+
+    function loadScriptOnce(url) {
+        if (!scriptLoads[url]) {
+            scriptLoads[url] = new Promise((resolve, reject) => {
+                const el = document.createElement('script');
+                el.src = url;
+                el.onload = () => resolve();
+                el.onerror = () => {
+                    delete scriptLoads[url];
+                    reject(new Error('Could not load a text-reading library. Check your internet connection.'));
+                };
+                document.head.appendChild(el);
+            });
+        }
+        return scriptLoads[url];
+    }
+
+    function fileKind(fileOrName) {
+        const name = String((fileOrName && fileOrName.name) || fileOrName || '').toLowerCase();
+        const ext = name.includes('.') ? name.split('.').pop() : '';
+        if (ext === 'pdf') return 'pdf';
+        if (ext === 'docx') return 'docx';
+        if (ext === 'txt') return 'txt';
+        if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') return 'image';
+        const type = (fileOrName && fileOrName.type) || '';
+        if (type === 'application/pdf') return 'pdf';
+        if (type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
+        if (type === 'text/plain') return 'txt';
+        if (type === 'image/png' || type === 'image/jpeg') return 'image';
+        return null;
+    }
+
+    function fileExtension(name) {
+        const str = String(name || '');
+        const i = str.lastIndexOf('.');
+        return i > 0 && i >= str.length - 6 ? str.slice(i) : '';
+    }
+
+    function retitleForFile(oldTitle, file) {
+        const oldExt = fileExtension(oldTitle);
+        const newExt = fileExtension(file.name);
+        const base = oldExt ? String(oldTitle).slice(0, String(oldTitle).length - oldExt.length) : (oldTitle || file.name);
+        return base + newExt;
+    }
+
+    function keepExtension(newTitle, oldTitle) {
+        const typed = String(newTitle || '').trim();
+        const oldExt = fileExtension(oldTitle);
+        if (!typed) return oldTitle;
+        if (oldExt && !typed.toLowerCase().endsWith(oldExt.toLowerCase())) return typed + oldExt;
+        return typed;
+    }
+
+    function cleanOcrText(text) {
+        return String(text || '').replace(/\u0000/g, '').slice(0, OCR_MAX_CHARS);
+    }
+
+    function showIndexProgress(message) {
+        let el = document.getElementById('index-progress');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'index-progress';
+            el.style.cssText = 'position:fixed; right:20px; bottom:20px; z-index:10002; background:#0f172a; color:#ffffff; padding:12px 16px; border-radius:10px; font-size:12px; box-shadow:0 8px 20px rgba(0,0,0,0.2); max-width:320px;';
+            document.body.appendChild(el);
+        }
+        el.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${escapeHtml(message)}`;
+    }
+
+    function hideIndexProgress() {
+        const el = document.getElementById('index-progress');
+        if (el) el.remove();
+    }
+
+    async function extractTextFromFile(file, onProgress) {
+        const kind = fileKind(file);
+
+        if (kind === 'txt') {
+            return { text: await file.text(), pages: 1 };
+        }
+
+        if (kind === 'docx') {
+            await loadScriptOnce(LIB_URLS.mammoth);
+            const result = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+            return { text: result.value || '', pages: null };
+        }
+
+        if (kind === 'image') {
+            await loadScriptOnce(LIB_URLS.tesseract);
+            onProgress('Reading text from the image...');
+            const worker = await window.Tesseract.createWorker(OCR_LANG);
+            try {
+                const { data } = await worker.recognize(file);
+                return { text: data.text || '', pages: 1 };
+            } finally {
+                await worker.terminate();
+            }
+        }
+
+        if (kind === 'pdf') {
+            await loadScriptOnce(LIB_URLS.pdfjs);
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIB_URLS.pdfWorker;
+            const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+            const total = pdf.numPages;
+            const limit = Math.min(total, OCR_MAX_PAGES);
+            let worker = null;
+            let text = '';
+
+            try {
+                for (let i = 1; i <= limit; i++) {
+                    onProgress(`Reading page ${i} of ${limit}...`);
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    let pageText = content.items.map(item => item.str).join(' ').replace(/\s+/g, ' ').trim();
+
+                    if (pageText.length < 25) {
+                        if (!worker) {
+                            await loadScriptOnce(LIB_URLS.tesseract);
+                            worker = await window.Tesseract.createWorker(OCR_LANG);
+                        }
+                        onProgress(`Scanning page ${i} of ${limit} (OCR)...`);
+                        const viewport = page.getViewport({ scale: 2 });
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+                        const { data } = await worker.recognize(canvas);
+                        pageText = (data.text || '').replace(/\s+/g, ' ').trim();
+                    }
+
+                    text += pageText + '\n';
+                    if (text.length >= OCR_MAX_CHARS) break;
+                }
+            } finally {
+                if (worker) await worker.terminate();
+            }
+            return { text: text, pages: total };
+        }
+
+        throw new Error('This file type cannot be indexed.');
+    }
+
+    function refreshDocumentList() {
+        const searchEl = document.getElementById('doc-search-input');
+        const filterEl = document.getElementById('doc-filter');
+        renderDocumentList(searchEl ? searchEl.value : '', filterEl ? filterEl.value : 'all');
+    }
+
+    async function indexDocumentFile(docId, versionNo, file, quiet) {
+        if (!fileKind(file)) return false;
+        if (!quiet) showIndexProgress(`Indexing "${file.name}"...`);
+
+        let status = 'done';
+        let result = { text: '', pages: null };
+        try {
+            result = await extractTextFromFile(file, showIndexProgress);
+        } catch (err) {
+            console.error('Indexing failed:', err);
+            status = 'failed';
+        }
+
+        const { error } = await supabaseClient.rpc('index_document_text', {
+            p_document_id: docId,
+            p_version_no: versionNo,
+            p_text: cleanOcrText(result.text),
+            p_pages: result.pages,
+            p_status: status
+        });
+        if (error) {
+            console.error('Saving document text failed:', error.message);
+            status = 'failed';
+        }
+
+        if (!quiet) hideIndexProgress();
+        refreshDocumentList();
+        return status === 'done';
+    }
+
+    window.indexExistingDocument = async function(docId, quiet) {
+        const doc = (window.__docsRegistry || {})[docId];
+        if (!doc || !doc.file_path) return false;
+
+        if (!quiet) showIndexProgress('Downloading the file...');
+        try {
+            const url = await getDocumentSignedUrl(doc.file_path);
+            if (!url) throw new Error('Could not open the file.');
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Could not download the file.');
+            const blob = await res.blob();
+            const file = new File([blob], doc.title || 'document', { type: blob.type });
+            return await indexDocumentFile(doc.id, doc.version_no || 1, file, quiet);
+        } catch (err) {
+            console.error('Index existing document failed:', err);
+            if (!quiet) {
+                hideIndexProgress();
+                alert('Could not index this document: ' + err.message);
+            }
+            return false;
+        }
+    };
+
+    window.indexAllPendingDocuments = async function() {
+        if (!isStaffUser()) return;
+        const { data, error } = await supabaseClient
+            .from('documents')
+            .select('id, title, file_path, version_no, ocr_status')
+            .not('file_path', 'is', null)
+            .or('ocr_status.is.null,ocr_status.eq.failed,ocr_status.eq.processing');
+        if (error) {
+            alert('Could not check documents: ' + error.message);
+            return;
+        }
+
+        const pending = (data || []).filter(d => fileKind(d.title));
+        if (pending.length === 0) {
+            alert('Every document that can be indexed is already searchable.');
+            return;
+        }
+        if (!confirm(`Index ${pending.length} document${pending.length === 1 ? '' : 's'}? Each file is read in your browser, which can take several minutes. Keep this tab open.`)) return;
+
+        window.__docsRegistry = window.__docsRegistry || {};
+        let done = 0;
+        for (let i = 0; i < pending.length; i++) {
+            const d = pending[i];
+            window.__docsRegistry[d.id] = d;
+            showIndexProgress(`Document ${i + 1} of ${pending.length}: ${d.title}`);
+            if (await window.indexExistingDocument(d.id, true)) done++;
+        }
+        hideIndexProgress();
+        alert(`Finished. ${done} of ${pending.length} documents are now searchable.`);
+        refreshDocumentList();
+    };
+
+    async function loadCaseOptions() {
+        if (isStaffUser()) {
+            const { data, error } = await supabaseClient
+                .from('cases')
+                .select('id, case_number, title, client_id')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return data || [];
+        }
+        const { data, error } = await supabaseClient
+            .from('cases')
+            .select(casesSelect('id, case_number, title, client_id', true))
+            .eq('case_lawyers.lawyer_id', currentUser.id)
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data || [];
+    }
+
+    function caseOptionsHtml(cases, selectedId) {
+        return '<option value="">No case (general document)</option>' + cases.map(c =>
+            `<option value="${escapeHtml(c.id)}" data-client-id="${escapeHtml(c.client_id || '')}"${c.id === selectedId ? ' selected' : ''}>${escapeHtml((c.case_number ? c.case_number + ' — ' : '') + (c.title || 'Untitled case'))}</option>`
+        ).join('');
+    }
+
+    function docFieldLabel(text) {
+        return `<label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">${text}</label>`;
+    }
+
+    const DOC_INPUT_STYLE = 'width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit; background:#f8fafc; margin-bottom:14px;';
+
+    window.openEditDocumentModal = async function(docId) {
+        const doc = (window.__docsRegistry || {})[docId];
+        if (!doc) return;
+
+        const modal = openUserModal('Edit document details', escapeHtml(doc.title || ''), '<p style="color:#64748b; text-align:center; padding:20px;">Loading...</p>');
+        try {
+            const cases = await loadCaseOptions();
+            const categoryHtml = document.getElementById('doc-category') ? document.getElementById('doc-category').innerHTML : '';
+
+            modal.body.innerHTML = `
+                ${docFieldLabel('File name')}
+                <input type="text" id="ed-title" maxlength="200" value="${escapeHtml(doc.title || '')}" style="${DOC_INPUT_STYLE}">
+                ${docFieldLabel('Category')}
+                <select id="ed-category" style="${DOC_INPUT_STYLE}">${categoryHtml}</select>
+                ${docFieldLabel('Tags <span style="font-weight:400; color:#94a3b8;">(comma-separated)</span>')}
+                <input type="text" id="ed-tags" value="${escapeHtml(doc.tags || '')}" placeholder="e.g., motion, criminal, dismissal" style="${DOC_INPUT_STYLE}">
+                ${docFieldLabel('Case')}
+                <select id="ed-case" style="${DOC_INPUT_STYLE}">${caseOptionsHtml(cases, doc.case_id)}</select>
+                ${modalButtonsHtml('Save changes', '#0f172a')}
+            `;
+
+            const catSel = modal.body.querySelector('#ed-category');
+            catSel.value = (doc.type || '').toLowerCase();
+            const errEl = modal.body.querySelector('#um-error');
+            const confirmBtn = modal.body.querySelector('#um-confirm');
+            modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
+
+            confirmBtn.addEventListener('click', async () => {
+                const caseSel = modal.body.querySelector('#ed-case');
+                const caseId = caseSel.value || null;
+                const patch = {
+                    title: keepExtension(modal.body.querySelector('#ed-title').value, doc.title),
+                    type: (catSel.value || doc.type || 'document').toLowerCase(),
+                    tags: modal.body.querySelector('#ed-tags').value.trim()
+                };
+                if (caseId !== (doc.case_id || null)) {
+                    const opt = caseSel.selectedOptions[0];
+                    patch.case_id = caseId;
+                    patch.client_id = caseId && opt && opt.dataset.clientId ? Number(opt.dataset.clientId) : null;
+                }
+
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Saving...';
+                const { data: updated, error } = await supabaseClient
+                    .from('documents')
+                    .update(patch)
+                    .eq('id', doc.id)
+                    .select('id');
+                if (error || !updated || updated.length === 0) {
+                    errEl.textContent = error ? error.message : 'Nothing was saved. You may not have permission to edit this document.';
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Save changes';
+                    return;
+                }
+                modal.close();
+                refreshDocumentList();
+            });
+        } catch (err) {
+            console.error('Edit document modal error:', err);
+            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load this document\'s details.</p>';
+        }
+    };
+
+    window.openNewVersionModal = function(docId) {
+        const doc = (window.__docsRegistry || {})[docId];
+        if (!doc) return;
+
+        const modal = openUserModal('Upload a new version', escapeHtml(doc.title || ''), `
+            <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">The current file (version ${doc.version_no || 1}) is kept in the version history. You can restore it at any time.</p>
+            ${docFieldLabel('New file')}
+            <input type="file" id="nv-file" accept=".pdf,.docx,.jpg,.jpeg,.png,.txt" style="${DOC_INPUT_STYLE}">
+            ${docFieldLabel('What changed? <span style="font-weight:400; color:#94a3b8;">(optional)</span>')}
+            <input type="text" id="nv-note" maxlength="200" placeholder="e.g., Signed copy from the client" style="${DOC_INPUT_STYLE}">
+            ${modalButtonsHtml('Upload version', '#0f172a')}
+        `);
+
+        const errEl = modal.body.querySelector('#um-error');
+        const confirmBtn = modal.body.querySelector('#um-confirm');
+        modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
+
+        confirmBtn.addEventListener('click', async () => {
+            const file = modal.body.querySelector('#nv-file').files[0];
+            const note = modal.body.querySelector('#nv-note').value.trim();
+            if (!file) {
+                errEl.textContent = 'Choose the new file first.';
+                return;
+            }
+            if (file.size > 20 * 1024 * 1024) {
+                errEl.textContent = 'The file is larger than 20 MB.';
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Uploading...';
+
+            const path = `${Date.now()}_${safeStorageName(file.name)}`;
+            const { error: uploadError } = await supabaseClient.storage.from('documents').upload(path, file);
+            if (uploadError) {
+                errEl.textContent = 'Upload failed: ' + uploadError.message;
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Upload version';
+                return;
+            }
+
+            const willIndex = !!fileKind(file);
+            const { data: newNo, error } = await supabaseClient.rpc('add_document_version', {
+                p_document_id: doc.id,
+                p_file_path: path,
+                p_size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+                p_title: retitleForFile(doc.title, file),
+                p_note: note || null,
+                p_index: willIndex
+            });
+            if (error) {
+                errEl.textContent = error.message;
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Upload version';
+                return;
+            }
+
+            modal.close();
+            refreshDocumentList();
+            alert(`Version ${newNo} saved. The previous version is kept in the history.`);
+            if (willIndex) indexDocumentFile(doc.id, newNo, file);
+        });
+    };
+
+    window.openDocumentHistory = async function(docId) {
+        const doc = (window.__docsRegistry || {})[docId];
+        if (!doc) return;
+
+        const canVersion = isStaffUser() || doc.uploaded_by === currentUser.id || !!doc.case_id;
+        const modal = openUserModal('Version history', escapeHtml(doc.title || ''), '<p style="color:#64748b; text-align:center; padding:20px;">Loading versions...</p>');
+
+        try {
+            const { data: versions, error } = await supabaseClient
+                .from('document_versions')
+                .select('id, version_no, file_path, size, title, uploaded_by, uploaded_at, change_note')
+                .eq('document_id', docId)
+                .order('version_no', { ascending: false });
+            if (error) throw error;
+
+            const currentBy = doc.version_uploaded_by || doc.uploaded_by;
+            const names = await fetchProfileNameMap([currentBy, ...(versions || []).map(v => v.uploaded_by)]);
+
+            const items = [{
+                id: null,
+                version_no: doc.version_no || 1,
+                file_path: doc.file_path,
+                size: doc.size,
+                title: doc.title,
+                by: names[currentBy] || 'Unknown',
+                uploaded_at: doc.version_uploaded_at || doc.created_at,
+                note: doc.version_note,
+                current: true
+            }].concat((versions || []).map(v => ({
+                id: v.id,
+                version_no: v.version_no,
+                file_path: v.file_path,
+                size: v.size,
+                title: v.title,
+                by: names[v.uploaded_by] || 'Unknown',
+                uploaded_at: v.uploaded_at,
+                note: v.change_note,
+                current: false
+            })));
+
+            const btnStyle = 'padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600; color:#334155;';
+            modal.body.innerHTML = items.map(v => `
+                <div style="border:1px solid ${v.current ? '#bfdbfe' : '#e2e8f0'}; background:${v.current ? '#eff6ff' : '#ffffff'}; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <strong style="font-size:13px; color:#0f172a;">Version ${v.version_no}${v.current ? ' <span style="background:#dbeafe; color:#1d4ed8; font-size:10px; padding:2px 8px; border-radius:99px; margin-left:6px;">Current</span>' : ''}</strong>
+                        <span style="font-size:11px; color:#64748b;">${escapeHtml(v.size || '')}</span>
+                    </div>
+                    <p style="font-size:11px; color:#64748b; margin:4px 0 0 0;">${escapeHtml(formatStamp(v.uploaded_at))} by ${escapeHtml(v.by)}</p>
+                    ${v.note ? `<p style="font-size:12px; color:#334155; margin:6px 0 0 0;">${escapeHtml(v.note)}</p>` : ''}
+                    <div style="display:flex; gap:8px; margin-top:10px;">
+                        ${v.file_path ? `
+                            <button type="button" data-vh-action="view" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" style="${btnStyle}"><i class="fa-regular fa-eye"></i> View</button>
+                            <button type="button" data-vh-action="download" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" style="${btnStyle}"><i class="fa-solid fa-download"></i> Download</button>` : ''}
+                        ${!v.current && canVersion ? `<button type="button" data-vh-action="restore" data-id="${escapeHtml(v.id)}" data-no="${v.version_no}" style="${btnStyle} color:#0ea5e9;"><i class="fa-solid fa-rotate-left"></i> Restore</button>` : ''}
+                    </div>
+                </div>
+            `).join('') + ((versions || []).length === 0 ? '<p style="font-size:12px; color:#94a3b8; text-align:center; margin:8px 0 0 0;">No earlier versions yet.</p>' : '');
+
+            modal.body.addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-vh-action]');
+                if (!btn) return;
+                const action = btn.dataset.vhAction;
+
+                if (action === 'view') {
+                    window.openStoredDocument(btn.dataset.path, btn.dataset.title, false);
+                } else if (action === 'download') {
+                    window.openStoredDocument(btn.dataset.path, btn.dataset.title, true);
+                } else if (action === 'restore') {
+                    if (!confirm(`Make version ${btn.dataset.no} the current version? The current file stays in the history.`)) return;
+                    btn.disabled = true;
+                    const { error: restoreError } = await supabaseClient.rpc('restore_document_version', {
+                        p_document_id: docId,
+                        p_version_id: btn.dataset.id
+                    });
+                    if (restoreError) {
+                        alert('Could not restore: ' + restoreError.message);
+                        btn.disabled = false;
+                        return;
+                    }
+                    modal.close();
+                    alert('The version was restored as the current version.');
+                    refreshDocumentList();
+                }
+            });
+        } catch (err) {
+            console.error('Version history error:', err);
+            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load the version history.</p>';
+        }
+    };
+
     function setupDocumentFilters() {
         const searchInput = document.getElementById('doc-search-input');
         const filterSelect = document.getElementById('doc-filter');
 
         if (searchInput && filterSelect) {
+            searchInput.placeholder = 'Search by file name, tag, or text inside documents...';
+
+            let timer = null;
             searchInput.addEventListener('input', (e) => {
                 const searchTerm = e.target.value;
-                const filterVal = filterSelect.value;
-                renderDocumentList(searchTerm, filterVal);
+                clearTimeout(timer);
+                timer = setTimeout(() => renderDocumentList(searchTerm, filterSelect.value), 300);
             });
 
             filterSelect.addEventListener('change', (e) => {
-                const filterVal = e.target.value;
-                const searchTerm = searchInput.value;
-                renderDocumentList(searchTerm, filterVal);
+                renderDocumentList(searchInput.value, e.target.value);
             });
+        }
+
+        const meta = document.querySelector('.results-metadata');
+        if (meta && isStaffUser() && !document.getElementById('btn-index-all')) {
+            meta.style.display = 'flex';
+            meta.style.alignItems = 'center';
+            meta.style.justifyContent = 'space-between';
+            meta.style.gap = '12px';
+            const btn = document.createElement('button');
+            btn.id = 'btn-index-all';
+            btn.type = 'button';
+            btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Make older documents searchable';
+            btn.style.cssText = 'padding:8px 14px; border:1px solid #e2e8f0; background:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;';
+            btn.addEventListener('click', () => window.indexAllPendingDocuments());
+            meta.appendChild(btn);
         }
     }
 
@@ -1548,22 +2053,26 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     try {
         let query = supabaseClient
             .from('documents')
-            .select('*, profiles(full_name), cases(case_number, title)')
+            .select('id, title, type, size, uploaded_by, created_at, file_url, file_path, tags, case_id, client_id, ocr_status, ocr_pages, version_no, version_uploaded_by, version_uploaded_at, version_note, profiles(full_name), cases(case_number, title)')
             .order('created_at', { ascending: false });
-
-        if (globalUserRole !== 'administrator') {
-            query = query.eq('uploaded_by', currentUser.id); 
-        }
 
         if (filterType && filterType !== 'all') {
             query = query.eq('type', filterType.toLowerCase());
         }
 
         const { data: documents, error } = await query;
-
         if (error) throw error;
 
+        window.__docsRegistry = {};
+        (documents || []).forEach(d => { window.__docsRegistry[d.id] = d; });
+
         const term = (searchQuery || '').trim().toLowerCase();
+        const contentHits = {};
+        if (term.length >= 3) {
+            const { data: hits, error: hitError } = await supabaseClient.rpc('search_documents', { p_query: term });
+            if (!hitError) (hits || []).forEach(h => { contentHits[h.id] = h.snippet; });
+        }
+
         const filteredDocs = (documents || []).filter(doc => {
             if (!term) return true;
             const searchFields = [
@@ -1574,73 +2083,116 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 doc.cases?.title || '',
                 doc.profiles?.full_name || ''
             ].join(' ').toLowerCase();
-
-            return searchFields.includes(term);
+            return searchFields.includes(term) || (doc.id in contentHits);
         });
 
-        if (filteredDocs && filteredDocs.length > 0) {
-            container.innerHTML = filteredDocs.map(doc => {
-                const hasFile = !!doc.file_path;
-                const onBtnClick = hasFile
-                    ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, false)`
-                    : `alert('No file attached to this record in the database.')`;
+        if (filteredDocs.length === 0) {
+            container.innerHTML = '<p style="color:#64748b; grid-column: 1 / -1; text-align:center; padding: 40px;">No documents match your search/filter.</p>';
+            if (countEl) countEl.textContent = 'Found 0 documents';
+            return;
+        }
 
-                const onDownloadClick = hasFile
-                    ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, true)`
-                    : `alert('No file attached to this record in the database.')`;
+        const staff = isStaffUser();
+        const smallBtn = 'padding:6px 10px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600; color:#475569; display:inline-flex; align-items:center; gap:5px;';
 
-                const typeColor = getCategoryColor(doc.type);
+        container.innerHTML = filteredDocs.map(doc => {
+            const hasFile = !!doc.file_path;
+            const idArg = jsArg(doc.id);
+            const onBtnClick = hasFile
+                ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, false)`
+                : `alert('No file attached to this record in the database.')`;
+            const onDownloadClick = hasFile
+                ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, true)`
+                : `alert('No file attached to this record in the database.')`;
 
-                return `
-                <div class="doc-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-sizing: border-box;">
-                    <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-start;">
-                        <div style="background: #eff6ff; color: #3b82f6; width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                            <i class="fa-solid fa-file-lines" style="font-size: 18px;"></i>
-                        </div>
-                        <div>
-                            <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>
-                                <span style="font-size: 11px; color: #64748b;">${escapeHtml(doc.size || '0 KB')}</span>
-                            </div>
-                        </div>
+            const canEdit = staff || doc.uploaded_by === currentUser.id;
+            const canVersion = canEdit || !!doc.case_id;
+            const supported = !!fileKind(doc.title);
+            const stamp = new Date(doc.version_uploaded_at || doc.created_at).getTime();
+            const staleProcessing = doc.ocr_status === 'processing' && Date.now() - stamp > 15 * 60 * 1000;
+            const needsIndex = canVersion && hasFile && supported && doc.ocr_status !== 'done' && (doc.ocr_status !== 'processing' || staleProcessing);
+
+            let chip = '';
+            if (doc.ocr_status === 'done') {
+                chip = '<span style="background:#dcfce7; color:#16a34a; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;"><i class="fa-solid fa-magnifying-glass"></i> Searchable</span>';
+            } else if (doc.ocr_status === 'processing' && !staleProcessing) {
+                chip = '<span style="background:#dbeafe; color:#1d4ed8; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;"><i class="fa-solid fa-spinner fa-spin"></i> Indexing</span>';
+            } else if (doc.ocr_status === 'failed') {
+                chip = '<span style="background:#fee2e2; color:#dc2626; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;">Index failed</span>';
+            } else if (supported) {
+                chip = '<span style="background:#f1f5f9; color:#64748b; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;">Not indexed</span>';
+            }
+
+            const versionBadge = (doc.version_no || 1) > 1
+                ? `<span style="background:#ede9fe; color:#6d28d9; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:700;">v${doc.version_no}</span>`
+                : '';
+
+            const hit = contentHits[doc.id];
+            const snippetHtml = (hit && hit.includes('<<'))
+                ? `<div style="font-size:11px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 10px; margin-bottom:14px; line-height:1.5;"><i class="fa-solid fa-magnifying-glass" style="color:#f59e0b; margin-right:6px;"></i>…${escapeHtml(hit).replace(/&lt;&lt;/g, '<mark style="background:#fde047; padding:0 2px; border-radius:2px;">').replace(/&gt;&gt;/g, '</mark>')}…</div>`
+                : '';
+
+            const extraButtons = [
+                (doc.version_no || 1) > 1 ? `<button type="button" onclick="openDocumentHistory(${idArg})" style="${smallBtn}"><i class="fa-solid fa-clock-rotate-left"></i> History</button>` : '',
+                canVersion && hasFile ? `<button type="button" onclick="openNewVersionModal(${idArg})" style="${smallBtn}"><i class="fa-solid fa-file-circle-plus"></i> New version</button>` : '',
+                canEdit ? `<button type="button" onclick="openEditDocumentModal(${idArg})" style="${smallBtn}"><i class="fa-solid fa-pen"></i> Edit</button>` : '',
+                needsIndex ? `<button type="button" onclick="indexExistingDocument(${idArg})" style="${smallBtn}"><i class="fa-solid fa-wand-magic-sparkles"></i> Index</button>` : ''
+            ].filter(Boolean).join('');
+
+            const typeColor = getCategoryColor(doc.type);
+
+            return `
+            <div class="doc-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-sizing: border-box;">
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-start;">
+                    <div style="background: #eff6ff; color: #3b82f6; width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i class="fa-solid fa-file-lines" style="font-size: 18px;"></i>
                     </div>
-
-                    <div style="font-size: 12px; color: #475569; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <i class="fa-solid fa-tag" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
-                            ${escapeHtml(doc.cases?.case_number || 'No Case Number')}
+                    <div>
+                        <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                            <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>
+                            <span style="font-size: 11px; color: #64748b;">${escapeHtml(doc.size || '0 KB')}</span>
+                            ${versionBadge}
+                            ${chip}
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <i class="fa-regular fa-user" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
-                            ${escapeHtml(doc.profiles?.full_name || 'System')}
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <i class="fa-regular fa-calendar" style="color: #94a3b8; width: 14px; text-align: center;"></i> 
-                            ${formatDate(doc.created_at)}
-                        </div>
-                    </div>
-
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px;">
-                        ${generateTagsHtml(doc.tags)}
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-                        <button onclick="${onBtnClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                            <i class="fa-regular fa-eye"></i> View
-                        </button>
-                        <button onclick="${onDownloadClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                            <i class="fa-solid fa-download"></i> Download
-                        </button>
                     </div>
                 </div>
-            `}).join('');
 
-            if (countEl) countEl.textContent = `Found ${filteredDocs.length} document${filteredDocs.length > 1 ? 's' : ''}`;
-        } else {
-            container.innerHTML = '<p style="color:#64748b; grid-column: 1 / -1; text-align:center; padding: 40px;">No documents match your search/filter.</p>';
-            if (countEl) countEl.textContent = `Found 0 documents`;
-        }
+                ${snippetHtml}
+
+                <div style="font-size: 12px; color: #475569; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i class="fa-solid fa-tag" style="color: #94a3b8; width: 14px; text-align: center;"></i>
+                        ${escapeHtml(doc.cases?.case_number || 'No Case Number')}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i class="fa-regular fa-user" style="color: #94a3b8; width: 14px; text-align: center;"></i>
+                        ${escapeHtml(doc.profiles?.full_name || 'System')}
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <i class="fa-regular fa-calendar" style="color: #94a3b8; width: 14px; text-align: center;"></i>
+                        ${formatDate(doc.created_at)}
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px;">
+                    ${generateTagsHtml(doc.tags)}
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+                    <button onclick="${onBtnClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <i class="fa-regular fa-eye"></i> View
+                    </button>
+                    <button onclick="${onDownloadClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <i class="fa-solid fa-download"></i> Download
+                    </button>
+                </div>
+                ${extraButtons ? `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">${extraButtons}</div>` : ''}
+            </div>
+        `;
+        }).join('');
+
+        if (countEl) countEl.textContent = `Found ${filteredDocs.length} document${filteredDocs.length > 1 ? 's' : ''}`;
     } catch (error) {
         console.error('Error rendering documents:', error);
     }
@@ -1940,7 +2492,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             const { data: documents } = await supabaseClient
                 .from('documents')
-                .select('*')
+                .select('id, title, type, created_at')
                 .eq('uploaded_by', currentUser.id)
                 .order('created_at', { ascending: false })
                 .limit(3);
@@ -4614,12 +5166,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             sel.appendChild(none);
 
             try {
-                const { data: myCases, error } = await supabaseClient
-                    .from('cases')
-                    .select(casesSelect('id, case_number, title, client_id', true))
-                    .eq('case_lawyers.lawyer_id', currentUser.id)
-                    .order('created_at', { ascending: false });
-                if (error) throw error;
+                const myCases = await loadCaseOptions();
 
                 (myCases || []).forEach(c => {
                     const opt = document.createElement('option');
@@ -4649,10 +5196,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (openBtn) {
             openBtn.addEventListener('click', () => {
-                if (globalUserRole === 'administrator') {
-                    alert('As an administrator, you can view all documents but cannot upload. Please use a lawyer account to upload documents.');
-                    return;
-                }
                 resetUploadForm();
                 populateDocCaseSelect();
                 modal.classList.remove('hidden');
@@ -4712,11 +5255,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             form.addEventListener('submit', async (e) => {
                 e.preventDefault(); 
                 
-                if (globalUserRole === 'administrator') {
-                    alert("Administrators are not allowed to upload documents.");
-                    return;
-                }
-                
                 if (!selectedFile) {
                     alert("Please select or drag a file to upload first.");
                     return;
@@ -4762,9 +5300,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         uploaded_by: currentUser ? currentUser.id : null
                     };
 
-                    const { error: dbError } = await supabaseClient
+                    docData.ocr_status = fileKind(selectedFile) ? 'processing' : null;
+
+                    const { data: newDoc, error: dbError } = await supabaseClient
                         .from('documents')
-                        .insert([docData]);
+                        .insert([docData])
+                        .select('id, version_no')
+                        .single();
 
                     if (dbError) {
                         console.error("Database Error:", dbError);
@@ -4774,12 +5316,17 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     await logAuditActivity('INSERT', 'Documents', `Uploaded document: ${finalTitle}`);
 
                     alert('Document successfully uploaded and saved!');
-                    
+
+                    const fileForIndex = selectedFile;
                     resetUploadForm();
-                    modal.classList.add('hidden'); 
-                    
-                    renderDocumentList();
+                    modal.classList.add('hidden');
+
+                    refreshDocumentList();
                     renderRecentDocumentsInSchedule();
+
+                    if (newDoc && fileKind(fileForIndex)) {
+                        indexDocumentFile(newDoc.id, newDoc.version_no || 1, fileForIndex);
+                    }
 
                 } catch (error) {
                     console.error('Error saving document:', error);
