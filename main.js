@@ -3,10 +3,6 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 
-    const supabaseAdminActionsClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-        auth: { storageKey: 'jurisync-admin-actions', persistSession: false }
-    });
-
     let currentUser = null;
     let currentMonth = new Date().getMonth();
     let currentYear = new Date().getFullYear();
@@ -88,6 +84,248 @@ const row = Array.isArray(data) ? data[0] : data;
         "July", "August", "September", "October", "November", "December"
     ];
 
+    const IDLE_LIMIT_MS = 30 * 60 * 1000;
+
+    const IDLE_KEY = 'jurisync-last-activity';
+
+    function readLastActivity() {
+        try { return Number(localStorage.getItem(IDLE_KEY)) || 0; } catch (e) { return 0; }
+    }
+
+    function idleExpired() {
+        const last = readLastActivity();
+        return last > 0 && Date.now() - last > IDLE_LIMIT_MS;
+    }
+
+    async function signOutForInactivity() {
+        await supabaseClient.auth.signOut();
+        alert('You were signed out after 30 minutes of inactivity.');
+        window.location.href = 'login.html';
+    }
+
+    function setupIdleTimeout() {
+        let lastWrite = 0;
+        const touch = () => {
+            const now = Date.now();
+            if (now - lastWrite < 15000) return;
+            lastWrite = now;
+            try { localStorage.setItem(IDLE_KEY, String(now)); } catch (e) {}
+        };
+        ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => window.addEventListener(evt, touch, { passive: true }));
+        touch();
+
+        const check = () => { if (idleExpired()) signOutForInactivity(); };
+        setInterval(check, 30000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    }
+
+    const MFA_REQUIRED_ROLES = ['admin'];
+
+    function showMfaOverlay(innerHtml) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.style.zIndex = '10001';
+        overlay.style.background = '#0f172a';
+        overlay.innerHTML = `<div style="width: 90%; max-width: 420px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); max-height: 92vh; overflow-y: auto;">${innerHtml}</div>`;
+        document.body.appendChild(overlay);
+        return overlay;
+    }
+
+    const MFA_CODE_INPUT = 'width:100%; box-sizing:border-box; padding:12px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit; font-size:20px; letter-spacing:6px; text-align:center; margin-bottom:10px;';
+    const MFA_PRIMARY_BTN = 'width:100%; padding:12px; background:#0f172a; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;';
+    const MFA_SECONDARY_BTN = 'width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e2e8f0; border-radius:6px; font-weight:600; cursor:pointer; color:#475569;';
+
+    async function promptMfaEnroll() {
+        try {
+            const { data: existing } = await supabaseClient.auth.mfa.listFactors();
+            for (const f of ((existing && existing.all) || [])) {
+                if (f.status === 'unverified') await supabaseClient.auth.mfa.unenroll({ factorId: f.id });
+            }
+        } catch (e) {}
+
+        const { data, error } = await supabaseClient.auth.mfa.enroll({
+            factorType: 'totp',
+            friendlyName: 'JuriSync-' + Date.now()
+        });
+        if (error) throw error;
+
+        return new Promise((resolve) => {
+            const overlay = showMfaOverlay(`
+                <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;">Set up two-factor authentication</h2>
+                <p style="color: #64748b; font-size: 13px; margin: 0 0 16px 0;">Administrator accounts require an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password).</p>
+                <ol style="color:#334155; font-size:13px; margin:0 0 14px 18px; line-height:1.6;">
+                    <li>Scan this QR code with your authenticator app.</li>
+                    <li>Enter the 6-digit code the app shows.</li>
+                </ol>
+                <div style="text-align:center; margin-bottom:10px;"><img id="mfa-qr" alt="Authenticator QR code" style="width:180px; height:180px;"></div>
+                <p style="font-size:11px; color:#64748b; margin:0 0 4px 0; text-align:center;">Can't scan? Enter this key manually:</p>
+                <p id="mfa-secret" style="font-size:12px; font-family:monospace; word-break:break-all; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px; margin:0 0 16px 0; text-align:center; user-select:all;"></p>
+                <form id="mfa-form" autocomplete="off">
+                    <input type="text" id="mfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="${MFA_CODE_INPUT}">
+                    <div id="mfa-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+                    <button type="submit" id="mfa-submit" style="${MFA_PRIMARY_BTN}">Verify and enable</button>
+                </form>
+                <button type="button" id="mfa-logout" style="${MFA_SECONDARY_BTN}">Log out</button>
+            `);
+            overlay.querySelector('#mfa-qr').src = data.totp.qr_code;
+            overlay.querySelector('#mfa-secret').textContent = data.totp.secret;
+
+            const errEl = overlay.querySelector('#mfa-error');
+            const submitBtn = overlay.querySelector('#mfa-submit');
+
+            overlay.querySelector('#mfa-logout').addEventListener('click', async () => {
+                await supabaseClient.auth.signOut();
+                window.location.href = 'login.html';
+            });
+
+            overlay.querySelector('#mfa-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const code = overlay.querySelector('#mfa-code').value.replace(/\s+/g, '');
+                if (!/^\d{6}$/.test(code)) {
+                    errEl.textContent = 'Enter the 6-digit code from your app.';
+                    return;
+                }
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Verifying...';
+                const { error: verifyError } = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: data.id, code: code });
+                if (verifyError) {
+                    errEl.textContent = verifyError.message;
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Verify and enable';
+                    return;
+                }
+                overlay.remove();
+                resolve();
+            });
+        });
+    }
+
+    async function promptMfaVerify() {
+        const { data: factors, error } = await supabaseClient.auth.mfa.listFactors();
+        if (error) throw error;
+        const factor = ((factors && factors.totp) || [])[0];
+        if (!factor) return promptMfaEnroll();
+
+        return new Promise((resolve) => {
+            const overlay = showMfaOverlay(`
+                <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;">Two-factor verification</h2>
+                <p style="color: #64748b; font-size: 13px; margin: 0 0 18px 0;">Enter the 6-digit code from your authenticator app to continue.</p>
+                <form id="mfa-form" autocomplete="off">
+                    <input type="text" id="mfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="${MFA_CODE_INPUT}">
+                    <div id="mfa-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+                    <button type="submit" id="mfa-submit" style="${MFA_PRIMARY_BTN}">Verify</button>
+                </form>
+                <button type="button" id="mfa-logout" style="${MFA_SECONDARY_BTN}">Log out</button>
+            `);
+
+            const input = overlay.querySelector('#mfa-code');
+            const errEl = overlay.querySelector('#mfa-error');
+            const submitBtn = overlay.querySelector('#mfa-submit');
+            input.focus();
+
+            overlay.querySelector('#mfa-logout').addEventListener('click', async () => {
+                await supabaseClient.auth.signOut();
+                window.location.href = 'login.html';
+            });
+
+            overlay.querySelector('#mfa-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const code = input.value.replace(/\s+/g, '');
+                if (!/^\d{6}$/.test(code)) {
+                    errEl.textContent = 'Enter the 6-digit code from your app.';
+                    return;
+                }
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Verifying...';
+                const { error: verifyError } = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: factor.id, code: code });
+                if (verifyError) {
+                    errEl.textContent = verifyError.message;
+                    input.value = '';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Verify';
+                    return;
+                }
+                overlay.remove();
+                resolve();
+            });
+        });
+    }
+
+    async function enforceMfaIfRequired() {
+        const { data: roleName, error: roleError } = await supabaseClient.rpc('my_role_raw');
+        if (roleError || !MFA_REQUIRED_ROLES.includes(roleName)) return;
+
+        const { data: aal, error } = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (error || !aal || aal.currentLevel === 'aal2') return;
+
+        if (aal.nextLevel === 'aal2') {
+            await promptMfaVerify();
+        } else {
+            await promptMfaEnroll();
+        }
+    }
+
+    function promptForcedPasswordChange() {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.style.zIndex = '10000';
+            overlay.innerHTML = `
+                <div style="width: 90%; max-width: 420px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;">Set a new password</h2>
+                    <p style="color: #64748b; font-size: 13px; margin: 0 0 18px 0;">Your account was created with a temporary password. Choose your own to continue.</p>
+                    <form id="force-pw-form" autocomplete="off">
+                        <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">New password</label>
+                        <input type="password" id="force-pw-1" autocomplete="new-password" placeholder="Min. 8 characters, with a letter and a number" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:14px; font-family:inherit;">
+                        <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Confirm password</label>
+                        <input type="password" id="force-pw-2" autocomplete="new-password" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:10px; font-family:inherit;">
+                        <div id="force-pw-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+                        <button type="submit" id="force-pw-submit" style="width:100%; padding:12px; background:#0f172a; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Save password</button>
+                    </form>
+                    <button type="button" id="force-pw-logout" style="width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e2e8f0; border-radius:6px; font-weight:600; cursor:pointer; color:#475569;">Log out</button>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            const errEl = overlay.querySelector('#force-pw-error');
+            const submitBtn = overlay.querySelector('#force-pw-submit');
+
+            overlay.querySelector('#force-pw-logout').addEventListener('click', async () => {
+                await supabaseClient.auth.signOut();
+                window.location.href = 'login.html';
+            });
+
+            overlay.querySelector('#force-pw-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const pw1 = overlay.querySelector('#force-pw-1').value;
+                const pw2 = overlay.querySelector('#force-pw-2').value;
+
+                if (pw1.length < 8 || !/[A-Za-z]/.test(pw1) || !/\d/.test(pw1)) {
+                    errEl.textContent = 'Use at least 8 characters, including a letter and a number.';
+                    return;
+                }
+                if (pw1 !== pw2) {
+                    errEl.textContent = 'The two passwords do not match.';
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Saving...';
+                const { error } = await supabaseClient.auth.updateUser({
+                    password: pw1,
+                    data: { must_change_password: false }
+                });
+                if (error) {
+                    errEl.textContent = error.message;
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Save password';
+                    return;
+                }
+                overlay.remove();
+                resolve();
+            });
+        });
+    }
+
     async function checkAuthAndInit() {
         try {
             const { data: { session }, error } = await supabaseClient.auth.getSession();
@@ -97,8 +335,23 @@ const row = Array.isArray(data) ? data[0] : data;
                 return;
             }
 
+            if (idleExpired()) {
+                await signOutForInactivity();
+                return;
+            }
+
             currentUser = session.user;
-            
+
+            await enforceMfaIfRequired();
+
+            if (currentUser.user_metadata && currentUser.user_metadata.must_change_password) {
+                await promptForcedPasswordChange();
+                const { data: refreshed } = await supabaseClient.auth.getUser();
+                if (refreshed && refreshed.user) currentUser = refreshed.user;
+            }
+
+            setupIdleTimeout();
+
             await updateSidebarUserInfo();
             await initializeApp();
             
@@ -136,7 +389,7 @@ const row = Array.isArray(data) ? data[0] : data;
                 const avatarSmall = document.querySelector('.avatar-small');
                 if (avatarSmall) {
                     if (profile.avatar_url) {
-                        avatarSmall.innerHTML = `<img src="${profile.avatar_url}" style="width:100%; height:100%; object-fit:cover; border-radius:50%; display:block;">`;
+                        avatarSmall.innerHTML = `<img src="${escapeHtml(profile.avatar_url)}" style="width:100%; height:100%; object-fit:cover; border-radius:50%; display:block;">`;
                     } else {
                         avatarSmall.innerHTML = '';
                         avatarSmall.textContent = getInitials(globalUserName);
@@ -267,10 +520,21 @@ const row = Array.isArray(data) ? data[0] : data;
             .on('postgres_changes', { event: '*', schema: 'public', table: 'cases' }, () => {
                 renderMyCasesTab();
                 updateDashboardStats();
+                renderPerformanceTab();
+                renderAdminAttention();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
+                renderAdminAttention();
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
                 renderManageLawyersList();
                 renderLawyerStatusWidget();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUser.id}` }, () => {
+                renderNotificationsList();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'email_queue' }, () => {
+                renderEmailQueueList();
             })
             .subscribe();
     }
@@ -504,12 +768,12 @@ const row = Array.isArray(data) ? data[0] : data;
                         <div style="background:#fff; border:1px solid #f1f5f9; padding:20px; border-radius:15px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
                             <div>
                                 <h4 style="font-size:15px;">
-                                    ${d.title || 'Untitled Event'} 
+                                    ${escapeHtml(d.title || 'Untitled Event')} 
                                     ${priorityBadge}
                                     ${isGeneralBadge}
                                     ${statusBadge}
                                 </h4>
-                                <p style="font-size:13px; color:#64748b; margin-top:4px;"><i class="fa-solid fa-location-dot"></i> ${d.location || 'No location'} • Client: ${clientName} • Atty. ${assignedName}</p>
+                                <p style="font-size:13px; color:#64748b; margin-top:4px;"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(d.location || 'No location')} • Client: ${escapeHtml(clientName)} • Atty. ${escapeHtml(assignedName)}</p>
                                 <div style="margin-top:10px; font-size:12px; color:#94a3b8;">
                                     <i class="fa-regular fa-calendar"></i> ${formatDate(d.start_date)} at ${formatEventTime(d.start_date) || 'TBD'}${d.end_date ? ' - ' + formatEventTime(d.end_date) : ''}
                                 </div>
@@ -642,8 +906,8 @@ const row = Array.isArray(data) ? data[0] : data;
                     const clientNameStr = ev.cases?.clients?.client_name ? `Client: ${ev.cases.clients.client_name} | ` : '';
                     const priorityMark = ev.priority === 'high' ? '<i class="fa-solid fa-star" style="font-size:8px;"></i>' : '';
                     const timeRange = (formatEventTime(ev.start_date) || '') + (ev.end_date ? ' – ' + formatEventTime(ev.end_date) : '');
-                    eventsHtml += `<div class="cal-event-tag ${styleClass}" title="${clientNameStr}${ev.title} - Atty. ${lawyerName}">
-                        <span class="cal-event-tag-title">${iconHtml}${priorityMark}${ev.title || 'Untitled'}</span>
+                    eventsHtml += `<div class="cal-event-tag ${styleClass}" title="${escapeHtml(clientNameStr + ev.title + ' - Atty. ' + lawyerName)}">
+                        <span class="cal-event-tag-title">${iconHtml}${priorityMark}${escapeHtml(ev.title || 'Untitled')}</span>
                         <span class="cal-event-tag-time">${timeRange}</span>
                     </div>`;
                 });
@@ -888,7 +1152,7 @@ const row = Array.isArray(data) ? data[0] : data;
                         <span style="color:#475569;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
                         <span style="color:#475569;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
                     </div>
-                    <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${ev.cases.case_description || 'No description provided.'}"</em></p>
+                    <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${escapeHtml(ev.cases.case_description || 'No description provided.')}"</em></p>
                 </div>
             `;
         }
@@ -897,8 +1161,8 @@ const row = Array.isArray(data) ? data[0] : data;
         if (ev.documents) {
             attachmentHtml = `
                 <div style="margin-top: 10px;">
-                    <a href="${ev.documents.file_url}" target="_blank" rel="noopener" style="font-size:12px; color:#3b82f6; text-decoration:none;">
-                        <i class="fa-solid fa-paperclip"></i> ${ev.documents.title}
+                    <a href="#" data-doc-path="${escapeHtml(ev.documents.file_path || '')}" data-doc-title="${escapeHtml(ev.documents.title || '')}" style="font-size:12px; color:#3b82f6; text-decoration:none;">
+                        <i class="fa-solid fa-paperclip"></i> ${escapeHtml(ev.documents.title)}
                     </a>
                 </div>
             `;
@@ -907,13 +1171,13 @@ const row = Array.isArray(data) ? data[0] : data;
         return `
             <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
-                    <h4 style="margin:0; font-size:16px; color:#0f172a;">${ev.title} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
+                    <h4 style="margin:0; font-size:16px; color:#0f172a;">${escapeHtml(ev.title)} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
                     <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventTime(ev.start_date) || 'TBD'}${ev.end_date ? ' - ' + formatEventTime(ev.end_date) : ''}</span>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
-                    <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${ev.location || 'Office'}</span>
-                    <span><i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i> Client: <strong>${clientName}</strong></span>
-                    <span><i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${lawyerName}`}</span>
+                    <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${escapeHtml(ev.location || 'Office')}</span>
+                    <span><i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i> Client: <strong>${escapeHtml(clientName)}</strong></span>
+                    <span><i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${escapeHtml(lawyerName)}`}</span>
                 </div>
                 ${caseDetailsHtml}
                 ${attachmentHtml}
@@ -938,7 +1202,7 @@ const row = Array.isArray(data) ? data[0] : data;
             const { startISO: dayStart, endISO: dayEnd } = getDayRange(dateString);
             let eventsQuery = supabaseClient
                 .from('calendar_events')
-                .select('*, profiles(full_name), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
+                .select('*, profiles(full_name), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_path)')
                 .gte('start_date', dayStart)
                 .lte('start_date', dayEnd)
                 .order('start_date', { ascending: true });
@@ -988,7 +1252,7 @@ const row = Array.isArray(data) ? data[0] : data;
         try {
             const { data: ev, error } = await supabaseClient
                 .from('calendar_events')
-                .select('*, profiles(full_name), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_url)')
+                .select('*, profiles(full_name), cases(case_number, case_type, case_description, clients(client_name)), documents(title, file_path)')
                 .eq('id', eventId)
                 .single();
 
@@ -1144,14 +1408,14 @@ const row = Array.isArray(data) ? data[0] : data;
                     const displayTitle = eventTitle.length > 15 ? eventTitle.substring(0, 15) + '...' : eventTitle;
                     return `
                         <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                            <span title="${eventTitle}"><i class="fa-solid fa-circle" style="color:#ef4444; font-size:8px; margin-right:8px;"></i>${l.full_name || 'Unknown'}</span>
-                            <span class="tag" style="background:#fee2e2; color:#ef4444; font-size:10px; padding:3px 8px; border-radius:4px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px;" title="${eventTitle}">${displayTitle}</span>
+                            <span title="${escapeHtml(eventTitle)}"><i class="fa-solid fa-circle" style="color:#ef4444; font-size:8px; margin-right:8px;"></i>${escapeHtml(l.full_name || 'Unknown')}</span>
+                            <span class="tag" style="background:#fee2e2; color:#ef4444; font-size:10px; padding:3px 8px; border-radius:4px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px;" title="${escapeHtml(eventTitle)}">${escapeHtml(displayTitle)}</span>
                         </li>
                     `;
                 } else {
                     return `
                         <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                            <span><i class="fa-solid fa-circle" style="color:#22c55e; font-size:8px; margin-right:8px;"></i>${l.full_name || 'Unknown'}</span>
+                            <span><i class="fa-solid fa-circle" style="color:#22c55e; font-size:8px; margin-right:8px;"></i>${escapeHtml(l.full_name || 'Unknown')}</span>
                             <span class="tag tag-avail" style="background:#dcfce7; color:#22c55e; font-size:10px; padding:3px 8px; border-radius:4px; font-weight:bold;">Available</span>
                         </li>
                     `;
@@ -1183,6 +1447,55 @@ const row = Array.isArray(data) ? data[0] : data;
     }
 
     
+    function safeStorageName(name) {
+        const cleaned = String(name || 'file')
+            .normalize('NFKD')
+            .replace(/[^\w.\-]+/g, '_')
+            .replace(/_+/g, '_');
+        return cleaned.slice(-120) || 'file';
+    }
+
+    async function getDocumentSignedUrl(path, seconds = 300) {
+        if (!path) return null;
+        const { data, error } = await supabaseClient.storage.from('documents').createSignedUrl(path, seconds);
+        if (error) {
+            console.error('Signed URL error:', error.message);
+            return null;
+        }
+        return data.signedUrl;
+    }
+
+    window.openStoredDocument = async function(path, title, asDownload) {
+        if (!path) {
+            alert('No file attached to this record in the database.');
+            return;
+        }
+        const popup = asDownload ? null : window.open('about:blank', '_blank');
+        const url = await getDocumentSignedUrl(path);
+        if (!url) {
+            if (popup) popup.close();
+            alert('Could not open this file. It may have been removed, or you may not have access to it.');
+            return;
+        }
+        if (asDownload) {
+            await forceDownload(url, title || 'document');
+            return;
+        }
+        if (popup) {
+            popup.opener = null;
+            popup.location.href = url;
+        } else {
+            window.open(url, '_blank', 'noopener');
+        }
+    };
+
+    document.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-doc-path]');
+        if (!el) return;
+        e.preventDefault();
+        window.openStoredDocument(el.dataset.docPath, el.dataset.docTitle, false);
+    });
+
     function escapeHtml(value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -1267,12 +1580,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (filteredDocs && filteredDocs.length > 0) {
             container.innerHTML = filteredDocs.map(doc => {
-                const onBtnClick = doc.file_url 
-                    ? `window.open(${escapeHtml(JSON.stringify(doc.file_url))}, '_blank')` 
+                const hasFile = !!doc.file_path;
+                const onBtnClick = hasFile
+                    ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, false)`
                     : `alert('No file attached to this record in the database.')`;
-                
-                const onDownloadClick = doc.file_url 
-                    ? `forceDownload(${escapeHtml(JSON.stringify(doc.file_url))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))})` 
+
+                const onDownloadClick = hasFile
+                    ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, true)`
                     : `alert('No file attached to this record in the database.')`;
 
                 const typeColor = getCategoryColor(doc.type);
@@ -1287,7 +1601,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                             <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>
-                                <span style="font-size: 11px; color: #64748b;">${doc.size || '0 KB'}</span>
+                                <span style="font-size: 11px; color: #64748b;">${escapeHtml(doc.size || '0 KB')}</span>
                             </div>
                         </div>
                     </div>
@@ -1369,6 +1683,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         
         await renderMyCasesTab();
         renderPerformanceTab();
+        renderAdminAttention();
     }
 
     async function updateScheduleProfileHeader() {
@@ -1402,7 +1717,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 if (profile.specialization) specialization = profile.specialization;
                 
                 const phoneEl = document.querySelector('.contact-text span:last-child');
-                if (phoneEl) phoneEl.innerHTML = `<i class="fa-solid fa-phone"></i> ${profile.phone || '(555) 000-0000'}`;
+                if (phoneEl) phoneEl.innerHTML = `<i class="fa-solid fa-phone"></i> ${escapeHtml(profile.phone || '(555) 000-0000')}`;
             } else if (currentUser.user_metadata) {
                 if (currentUser.user_metadata.full_name) displayName = currentUser.user_metadata.full_name;
             }
@@ -1410,7 +1725,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             const avatarLarge = document.querySelector('.avatar-large');
             if (avatarLarge) {
                 if (profile && profile.avatar_url) {
-                    avatarLarge.innerHTML = `<img src="${profile.avatar_url}" style="width:100%; height:100%; object-fit:cover; border-radius:50%; display:block;">`;
+                    avatarLarge.innerHTML = `<img src="${escapeHtml(profile.avatar_url)}" style="width:100%; height:100%; object-fit:cover; border-radius:50%; display:block;">`;
                 } else {
                     avatarLarge.innerHTML = '';
                     avatarLarge.textContent = getInitials(displayName);
@@ -1423,7 +1738,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             if (nameEl) nameEl.textContent = `Atty. ${displayName}`;
             if (roleEl) roleEl.textContent = `${role.charAt(0).toUpperCase() + role.slice(1)} - ${specialization}`;
-            if (emailEl) emailEl.innerHTML = `<i class="fa-regular fa-envelope"></i> ${currentUser.email}`;
+            if (emailEl) emailEl.innerHTML = `<i class="fa-regular fa-envelope"></i> ${escapeHtml(currentUser.email)}`;
             
         } catch (error) {
             console.error('Error updating profile header in My Schedule:', error);
@@ -1602,9 +1917,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                                 ${generalBadge}
                                 ${statusBadge}
                             </div>
-                            <h4>${ev.title}</h4>
+                            <h4>${escapeHtml(ev.title)}</h4>
                             <div class="timeline-meta">
-                                <span><i class="fa-solid fa-location-dot"></i> ${ev.location || 'Office'}</span>
+                                <span><i class="fa-solid fa-location-dot"></i> ${escapeHtml(ev.location || 'Office')}</span>
                             </div>
                         </div>
                     `;
@@ -1638,7 +1953,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         </div>
                         <div>
                             <h4 style="font-size:13px; color:#1e293b; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
-                            <p style="font-size:11px; color:#64748b; text-transform:capitalize;">${doc.type || 'Doc'}</p>
+                            <p style="font-size:11px; color:#64748b; text-transform:capitalize;">${escapeHtml(doc.type || 'Doc')}</p>
                         </div>
                     </div>
                 `).join('');
@@ -1676,7 +1991,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     html += `
                         <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #fafbfc;">
                             <div>
-                                <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${c.title} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${clientName})</span></h4>
+                                <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
                                 <p style="color: #64748b; font-size: 11px;"><i class="fa-regular fa-clock"></i> Filed: ${formatDate(c.date_filed || c.created_at)}</p>
                             </div>
                             <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 99px; font-size: 10px; font-weight: bold; text-transform: uppercase;">
@@ -1695,43 +2010,358 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    function renderPerformanceTab() {
+    function perfBarRow(label, value, max, color) {
+        const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+        return `
+            <div style="margin-bottom:12px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px;">
+                    <span style="color:#475569;">${escapeHtml(label)}</span>
+                    <strong style="color:#0f172a;">${value}</strong>
+                </div>
+                <div style="background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
+                    <div style="background:${color}; width:${pct}%; height:100%; border-radius:4px;"></div>
+                </div>
+            </div>`;
+    }
+
+    function perfKpi(label, value, color) {
+        return `
+            <div style="flex:1; min-width:140px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:12px; padding:14px 16px;">
+                <div style="font-size:24px; font-weight:800; color:${color};">${value}</div>
+                <div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(label)}</div>
+            </div>`;
+    }
+
+    function perfPanel(title, bodyHtml) {
+        return `
+            <div style="border:1px solid #f1f5f9; border-radius:14px; padding:18px 20px; background:#ffffff;">
+                <h4 style="margin:0 0 14px 0; font-size:13px; color:#0f172a;">${escapeHtml(title)}</h4>
+                ${bodyHtml}
+            </div>`;
+    }
+
+    function lastSixMonths() {
+        const out = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            out.push({
+                key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+                label: d.toLocaleDateString('en-US', { month: 'short' })
+            });
+        }
+        return out;
+    }
+
+    function perfMonthlyChart(months, opened, closed) {
+        const max = Math.max(1, ...months.map(m => Math.max(opened[m.key] || 0, closed ? (closed[m.key] || 0) : 0)));
+        const bar = (v, color) => `
+            <div style="display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
+                <span style="font-size:10px; color:#475569; margin-bottom:2px;">${v}</span>
+                <div style="width:16px; height:${Math.max(2, Math.round((v / max) * 100))}px; background:${color}; border-radius:4px 4px 0 0;"></div>
+            </div>`;
+        const columns = months.map(m => `
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
+                <div style="display:flex; align-items:flex-end; gap:4px;">
+                    ${bar(opened[m.key] || 0, '#3b82f6')}
+                    ${closed ? bar(closed[m.key] || 0, '#22c55e') : ''}
+                </div>
+                <span style="font-size:10px; color:#64748b; margin-top:6px;">${escapeHtml(m.label)}</span>
+            </div>`).join('');
+        const legend = `
+            <div style="display:flex; gap:14px; margin-top:12px; font-size:11px; color:#64748b;">
+                <span><span style="display:inline-block; width:8px; height:8px; background:#3b82f6; border-radius:2px; margin-right:5px;"></span>Opened</span>
+                ${closed ? '<span><span style="display:inline-block; width:8px; height:8px; background:#22c55e; border-radius:2px; margin-right:5px;"></span>Closed</span>' : ''}
+            </div>`;
+        return `<div style="display:flex; align-items:flex-end; gap:10px; height:150px;">${columns}</div>${legend}`;
+    }
+
+    async function fetchWorkloadData() {
+        const nowIso = new Date().toISOString();
+        const weekIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const [casesRes, eventsRes] = await Promise.all([
+            supabaseClient.from('cases').select('id, status, case_lawyers(lawyer_id, is_lead)').eq('status', 'active'),
+            supabaseClient.from('calendar_events').select('assigned_to').eq('is_general', false).gte('start_date', nowIso).lte('start_date', weekIso)
+        ]);
+        return { cases: casesRes.data || [], events: eventsRes.data || [] };
+    }
+
+    function computeWorkload(cases, events) {
+        const map = {};
+        const slot = id => map[id] || (map[id] = { active: 0, lead: 0, events: 0 });
+        (cases || []).forEach(c => {
+            if (c.status === 'closed') return;
+            (c.case_lawyers || []).forEach(r => {
+                const w = slot(r.lawyer_id);
+                w.active++;
+                if (r.is_lead) w.lead++;
+            });
+        });
+        (events || []).forEach(e => { if (e.assigned_to) slot(e.assigned_to).events++; });
+        return map;
+    }
+
+    function workloadLine(w) {
+        const x = w || { active: 0, lead: 0, events: 0 };
+        return `<p style="margin:4px 0 0 0; font-size:11px; color:#3b82f6;"><i class="fa-solid fa-briefcase" style="font-size:10px;"></i> ${x.active} active case${x.active === 1 ? '' : 's'} • ${x.lead} as lead • ${x.events} event${x.events === 1 ? '' : 's'} in the next 7 days</p>`;
+    }
+
+    async function renderPerformanceTab() {
         const container = document.querySelector('#sched-perf .content-card');
-        if (!container) return;
-        
-        container.innerHTML = `
-            <h3 style="margin-bottom: 25px; font-size: 16px;">Monthly Performance Overview</h3>
-            
-            <div style="margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;">
-                    <span style="font-weight: 500; color: #475569;">Cases Resolved</span>
-                    <strong style="color: #22c55e;">85%</strong>
+        if (!container || !currentUser) return;
+
+        container.innerHTML = '<p style="color:#64748b; padding:20px; text-align:center;">Loading performance data...</p>';
+
+        try {
+            const isLawyerView = globalUserRole === 'lawyer';
+            const nowIso = new Date().toISOString();
+            const weekIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+            let casesQuery = supabaseClient.from('cases').select(casesSelect('*', isLawyerView));
+            if (isLawyerView) casesQuery = filterMyCases(casesQuery);
+
+            let eventsQuery = supabaseClient
+                .from('calendar_events')
+                .select('assigned_to')
+                .eq('is_general', false)
+                .gte('start_date', nowIso)
+                .lte('start_date', weekIso);
+            if (isLawyerView) eventsQuery = eventsQuery.eq('assigned_to', currentUser.id);
+
+            const [casesRes, eventsRes] = await Promise.all([casesQuery, eventsQuery]);
+            if (casesRes.error) throw casesRes.error;
+
+            const cases = casesRes.data || [];
+            const events = eventsRes.data || [];
+            const active = cases.filter(c => c.status !== 'closed');
+            const closed = cases.filter(c => c.status === 'closed');
+            const closureRate = cases.length > 0 ? Math.round((closed.length / cases.length) * 100) : 0;
+
+            const stageCounts = {};
+            CASE_STAGES.forEach(st => { stageCounts[st] = 0; });
+            active.forEach(c => { if (c.case_stage in stageCounts) stageCounts[c.case_stage]++; });
+            const stageMax = Math.max(0, ...Object.values(stageCounts));
+
+            const typeCounts = {};
+            CASE_TYPES.forEach(t => { typeCounts[t] = 0; });
+            active.forEach(c => { if (c.case_type in typeCounts) typeCounts[c.case_type]++; });
+            const typeMax = Math.max(0, ...Object.values(typeCounts));
+
+            const months = lastSixMonths();
+            const openedByMonth = {};
+            cases.forEach(c => {
+                const key = toLocalDateKey(c.date_filed || c.created_at).slice(0, 7);
+                openedByMonth[key] = (openedByMonth[key] || 0) + 1;
+            });
+            const tracksClosing = cases.length > 0 && 'closed_at' in cases[0];
+            let closedByMonth = null;
+            if (tracksClosing) {
+                closedByMonth = {};
+                closed.forEach(c => {
+                    if (!c.closed_at) return;
+                    const key = toLocalDateKey(c.closed_at).slice(0, 7);
+                    closedByMonth[key] = (closedByMonth[key] || 0) + 1;
+                });
+            }
+
+            const workload = computeWorkload(cases, events);
+            let kpis = '';
+            let workloadPanel = '';
+
+            if (isLawyerView) {
+                kpis = [
+                    perfKpi('My active cases', active.length, '#3b82f6'),
+                    perfKpi('My closed cases', closed.length, '#22c55e'),
+                    perfKpi('Closure rate', closureRate + '%', '#a855f7'),
+                    perfKpi('Events in the next 7 days', events.length, '#f97316')
+                ].join('');
+            } else {
+                const lawyers = await getActiveLawyersData();
+                const unassigned = active.filter(c => !(c.case_lawyers || []).length).length;
+                const totalLoad = lawyers.reduce((sum, l) => sum + ((workload[l.id] || {}).active || 0), 0);
+                const avgLoad = lawyers.length > 0 ? totalLoad / lawyers.length : 0;
+                const maxLoad = Math.max(1, ...lawyers.map(l => (workload[l.id] || {}).active || 0));
+
+                kpis = [
+                    perfKpi('Active cases', active.length, '#3b82f6'),
+                    perfKpi('Closed cases', closed.length, '#22c55e'),
+                    perfKpi('Closure rate', closureRate + '%', '#a855f7'),
+                    perfKpi('Avg. active cases per lawyer', avgLoad.toFixed(1), '#f97316'),
+                    perfKpi('Active cases without a lawyer', unassigned, unassigned > 0 ? '#ef4444' : '#22c55e')
+                ].join('');
+
+                const rows = lawyers
+                    .map(l => ({ l, w: workload[l.id] || { active: 0, lead: 0, events: 0 } }))
+                    .sort((a, b) => b.w.active - a.w.active)
+                    .map(({ l, w }) => {
+                        const high = w.active >= 4 && w.active > avgLoad * 1.5;
+                        const flag = high
+                            ? '<span style="background:#fee2e2; color:#ef4444; font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px;">High load</span>'
+                            : (w.active === 0 ? '<span style="background:#dcfce7; color:#16a34a; font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px;">Available</span>' : '');
+                        return `
+                            <tr>
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; font-weight:600; color:#0f172a;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; width:34%;">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <div style="flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
+                                            <div style="background:${high ? '#ef4444' : '#3b82f6'}; width:${Math.round((w.active / maxLoad) * 100)}%; height:100%;"></div>
+                                        </div>
+                                        <strong style="font-size:12px; color:#0f172a; min-width:18px;">${w.active}</strong>
+                                    </div>
+                                </td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${w.lead}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${w.events}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9;">${flag}</td>
+                            </tr>`;
+                    }).join('');
+
+                workloadPanel = perfPanel('Lawyer workload', lawyers.length === 0
+                    ? '<p style="color:#64748b; font-size:13px; margin:0;">No active lawyers yet.</p>'
+                    : `
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">
+                                <thead>
+                                    <tr style="color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:0.04em;">
+                                        <th style="padding:8px;">Lawyer</th>
+                                        <th style="padding:8px;">Active cases</th>
+                                        <th style="padding:8px;">As lead</th>
+                                        <th style="padding:8px;">Events (7 days)</th>
+                                        <th style="padding:8px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>`);
+            }
+
+            const stagePanel = perfPanel('Active cases by stage',
+                CASE_STAGES.map(st => perfBarRow(st, stageCounts[st], stageMax, '#3b82f6')).join(''));
+            const typePanel = perfPanel('Active cases by type',
+                CASE_TYPES.map(t => perfBarRow(t, typeCounts[t], typeMax, '#8b5cf6')).join(''));
+            const monthPanel = perfPanel('Cases opened and closed (last 6 months)', perfMonthlyChart(months, openedByMonth, closedByMonth));
+
+            container.innerHTML = `
+                <h3 style="margin-bottom:18px; font-size:16px;">${isLawyerView ? 'My Performance' : 'Firm Performance'}</h3>
+                <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:20px;">${kpis}</div>
+                ${workloadPanel ? `<div style="margin-bottom:20px;">${workloadPanel}</div>` : ''}
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:20px;">
+                    ${monthPanel}
+                    ${stagePanel}
+                    ${typePanel}
                 </div>
-                <div style="background: #f1f5f9; height: 8px; border-radius: 4px; overflow: hidden;">
-                    <div style="background: #22c55e; width: 85%; height: 100%; border-radius: 4px;"></div>
+                ${tracksClosing ? '' : '<p style="font-size:11px; color:#94a3b8; margin:14px 0 0 0;">Closed-per-month needs the closed_at column. Run dashboard_support.sql to enable it.</p>'}
+            `;
+        } catch (error) {
+            console.error('Error rendering performance tab:', error);
+            container.innerHTML = '<p style="color:#ef4444; padding:20px; text-align:center;">Could not load performance data.</p>';
+        }
+    }
+
+    function setNavBadge(target, count) {
+        const nav = document.querySelector(`.nav-links li[data-target="${target}"]`);
+        if (!nav) return;
+        let badge = nav.querySelector('.nav-badge');
+        if (!count) {
+            if (badge) badge.remove();
+            return;
+        }
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'nav-badge';
+            badge.style.cssText = 'margin-left:auto; background:#ef4444; color:#ffffff; font-size:10px; font-weight:700; padding:2px 7px; border-radius:99px;';
+            nav.appendChild(badge);
+        }
+        badge.textContent = count;
+    }
+
+    function setClientsNavBadge(count) {
+        setNavBadge('clients-view', count);
+    }
+
+    async function renderAdminAttention() {
+        const dash = document.getElementById('dashboard-view');
+        if (!dash || !currentUser) return;
+
+        let card = document.getElementById('admin-attention-card');
+        if (!isStaffUser()) {
+            if (card) card.remove();
+            setClientsNavBadge(0);
+            return;
+        }
+
+        const statsRow = dash.querySelector('.schedule-stats-row');
+        if (!statsRow) return;
+        if (!card) {
+            card = document.createElement('div');
+            card.id = 'admin-attention-card';
+            card.className = 'content-card';
+            card.style.marginBottom = '25px';
+            statsRow.parentNode.insertBefore(card, statsRow);
+            card.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-attn]');
+                if (!btn) return;
+                const action = btn.getAttribute('data-attn');
+                const filterEl = document.getElementById('clients-status-filter');
+                if (action === 'clients-pending' || action === 'clients-unassigned') {
+                    if (filterEl) filterEl.value = action === 'clients-pending' ? 'pending' : 'approved';
+                    const nav = document.querySelector('.nav-links li[data-target="clients-view"]');
+                    if (nav) nav.click();
+                } else if (action === 'cases-unassigned') {
+                    const nav = document.querySelector('.nav-links li[data-target="cases-view"]');
+                    if (nav) nav.click();
+                }
+            });
+        }
+
+        try {
+            const [clientsRes, casesRes] = await Promise.all([
+                supabaseClient.from('clients').select('id, approval_status, client_lawyers(lawyer_id)').in('approval_status', ['pending', 'approved']),
+                supabaseClient.from('cases').select('id, case_lawyers(lawyer_id)').eq('status', 'active')
+            ]);
+            if (clientsRes.error) throw clientsRes.error;
+            if (casesRes.error) throw casesRes.error;
+
+            const clientRows = clientsRes.data || [];
+            const pending = clientRows.filter(c => c.approval_status === 'pending').length;
+            const clientsNoLawyer = clientRows.filter(c => c.approval_status === 'approved' && !(c.client_lawyers || []).length).length;
+            const casesNoLawyer = (casesRes.data || []).filter(c => !(c.case_lawyers || []).length).length;
+
+            setClientsNavBadge(pending);
+
+            const admin = isAdminUser();
+            const items = [];
+            if (pending > 0) {
+                items.push({ icon: 'fa-user-clock', color: '#f59e0b', bg: '#fffbeb', action: 'clients-pending',
+                    text: `${pending} client${pending === 1 ? '' : 's'} waiting for approval`, button: admin ? 'Review' : 'View' });
+            }
+            if (clientsNoLawyer > 0) {
+                items.push({ icon: 'fa-user-slash', color: '#ef4444', bg: '#fef2f2', action: 'clients-unassigned',
+                    text: `${clientsNoLawyer} approved client${clientsNoLawyer === 1 ? ' has' : 's have'} no assigned lawyer`, button: admin ? 'Assign' : 'View' });
+            }
+            if (casesNoLawyer > 0) {
+                items.push({ icon: 'fa-briefcase', color: '#ef4444', bg: '#fef2f2', action: 'cases-unassigned',
+                    text: `${casesNoLawyer} active case${casesNoLawyer === 1 ? ' has' : 's have'} no lawyer`, button: 'View cases' });
+            }
+
+            const body = items.length === 0
+                ? `<div style="display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:10px; background:#f0fdf4; color:#16a34a; font-size:13px; font-weight:600;"><i class="fa-regular fa-circle-check"></i> Nothing needs your attention right now.</div>`
+                : items.map(it => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; border-radius:10px; background:${it.bg}; margin-bottom:10px;">
+                        <span style="display:flex; align-items:center; gap:10px; font-size:13px; color:#0f172a;">
+                            <i class="fa-solid ${it.icon}" style="color:${it.color};"></i> ${escapeHtml(it.text)}
+                        </span>
+                        <button type="button" data-attn="${it.action}" style="padding:7px 14px; border:1px solid #e2e8f0; background:#ffffff; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;">${escapeHtml(it.button)}</button>
+                    </div>`).join('');
+
+            card.innerHTML = `
+                <div class="card-title-flex">
+                    <h3><i class="fa-solid fa-bell-concierge"></i> Needs your attention</h3>
                 </div>
-            </div>
-            
-            <div style="margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;">
-                    <span style="font-weight: 500; color: #475569;">Client Satisfaction</span>
-                    <strong style="color: #3b82f6;">92%</strong>
-                </div>
-                <div style="background: #f1f5f9; height: 8px; border-radius: 4px; overflow: hidden;">
-                    <div style="background: #3b82f6; width: 92%; height: 100%; border-radius: 4px;"></div>
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;">
-                    <span style="font-weight: 500; color: #475569;">Billable Hours Target</span>
-                    <strong style="color: #a855f7;">78%</strong>
-                </div>
-                <div style="background: #f1f5f9; height: 8px; border-radius: 4px; overflow: hidden;">
-                    <div style="background: #a855f7; width: 78%; height: 100%; border-radius: 4px;"></div>
-                </div>
-            </div>
-        `;
+                ${body}`;
+        } catch (error) {
+            console.error('Error rendering attention card:', error);
+            card.innerHTML = '<p style="color:#ef4444; font-size:13px; margin:0;">Could not load pending items.</p>';
+        }
     }
 
     function setupScheduleTabs() {
@@ -1765,286 +2395,257 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
+    const NOTIF_STYLES = {
+        client_pending: { icon: 'fa-solid fa-user-clock', color: '#f59e0b' },
+        client_approved: { icon: 'fa-regular fa-circle-check', color: '#22c55e' },
+        client_rejected: { icon: 'fa-regular fa-circle-xmark', color: '#ef4444' },
+        case_assigned: { icon: 'fa-solid fa-briefcase', color: '#3b82f6' },
+        client_assigned: { icon: 'fa-solid fa-user-tie', color: '#3b82f6' },
+        conflict: { icon: 'fa-solid fa-triangle-exclamation', color: '#ef4444' },
+        event_reminder: { icon: 'fa-regular fa-bell', color: '#a855f7' },
+        email_failed: { icon: 'fa-solid fa-triangle-exclamation', color: '#ef4444' }
+    };
+
+    const EMAIL_STATUS = {
+        pending: { label: 'Pending', bg: '#fef3c7', color: '#b45309' },
+        processing: { label: 'Sending', bg: '#dbeafe', color: '#1d4ed8' },
+        sent: { label: 'Sent', bg: '#dcfce7', color: '#16a34a' },
+        failed: { label: 'Failed', bg: '#fee2e2', color: '#dc2626' }
+    };
+
+    function emailStatusBadge(status) {
+        const st = EMAIL_STATUS[status] || EMAIL_STATUS.pending;
+        return `<span style="background:${st.bg}; color:${st.color}; font-size:10px; padding:2px 8px; border-radius:99px; font-weight:700; white-space:nowrap;">${st.label}</span>`;
+    }
+
+    function emailTimeText(m) {
+        if (m.status === 'sent') return `Sent ${formatStamp(m.sent_at)}`;
+        if (m.status === 'failed') return `Failed after ${m.attempts} attempt${m.attempts === 1 ? '' : 's'}`;
+        if (m.status === 'processing') return 'Sending now';
+        if (m.attempts > 0 && m.next_attempt_at) return `Retry ${m.attempts} scheduled for ${formatStamp(m.next_attempt_at)}`;
+        return `Queued ${formatTimeAgo(m.created_at)}`;
+    }
+
+    function updateNotificationCounters(unread, high) {
+        const rows = document.querySelectorAll('.notif-sidebar-container .stat-row');
+        if (rows[0] && rows[0].lastElementChild) rows[0].lastElementChild.textContent = unread;
+        if (rows[1] && rows[1].lastElementChild) rows[1].lastElementChild.textContent = high;
+
+        const headerBadge = document.getElementById('notif-header-badge');
+        if (headerBadge) {
+            if (unread > 0) {
+                headerBadge.textContent = `${unread} unread`;
+                headerBadge.style.display = 'inline-block';
+            } else {
+                headerBadge.style.display = 'none';
+            }
+        }
+        setNavBadge('notifications-view', unread);
+    }
+
+    async function refreshNotificationBadge() {
+        if (!currentUser) return;
+        const base = () => supabaseClient.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', currentUser.id).eq('is_read', false);
+        const [unreadRes, highRes] = await Promise.all([base(), base().eq('priority', 'high')]);
+        if (!unreadRes.error) updateNotificationCounters(unreadRes.count || 0, highRes.count || 0);
+    }
+
     async function renderNotificationsList() {
         const list = document.getElementById('notifications-list-inject');
         if (!list || !currentUser) return;
 
         try {
-            const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
-            const nextWeek = new Date(today);
-            nextWeek.setDate(nextWeek.getDate() + 7);
-            const nextWeekStr = nextWeek.toISOString().split('T')[0];
+            const { data: notes, error } = await supabaseClient
+                .from('notifications')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .order('created_at', { ascending: false })
+                .limit(100);
+            if (error) throw error;
 
-            const { data: events } = await supabaseClient
-                .from('calendar_events')
-                .select('*, profiles(full_name)')
-                .gte('start_date', todayStr)
-                .or(`assigned_to.eq.${currentUser.id},is_general.eq.true`);
+            window.__notifications = notes || [];
+            const unread = window.__notifications.filter(n => !n.is_read);
+            const high = unread.filter(n => n.priority === 'high');
+            updateNotificationCounters(unread.length, high.length);
 
-            let notifications = [];
-
-            if (events && events.length > 0) {
-                const seen = {};
-                events.forEach(ev => {
-                    if (!ev.location) return;
-                    const key = `${ev.start_date}_${ev.location}`;
-                    if (seen[key]) {
-                        notifications.push({
-                            type: 'conflict',
-                            title: 'Scheduling Conflict Detected',
-                            priority: 'High Priority',
-                            priorityColor: '#ef4444',
-                            message: `${ev.location} double-booked on ${formatDate(ev.start_date)} at ${formatEventTime(ev.start_date)}`,
-                            recipient: ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'You'),
-                            timeAgo: 'Just now',
-                            icon: 'fa-solid fa-triangle-exclamation',
-                            iconColor: '#ef4444',
-                            unread: true,
-                            cardBorder: '#93c5fd',
-                            cardBg: '#eff6ff'
-                        });
-                    } else {
-                        seen[key] = true;
-                    }
-                });
-
-                events.forEach(ev => {
-                    if (ev.start_date >= todayStr && ev.start_date <= nextWeekStr) {
-                        const evDate = new Date(ev.start_date);
-                        const diffDays = Math.ceil((evDate - today) / (1000 * 60 * 60 * 24));
-                        
-                        const lawyerName = ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'You');
-
-                        if (diffDays <= 3) {
-                            notifications.push({
-                                type: 'deadline',
-                                title: ev.is_general ? 'Firm-wide Event Approaching' : 'Critical Deadline Approaching',
-                                priority: 'High Priority',
-                                priorityColor: '#ef4444',
-                                message: `${ev.title} due in ${diffDays} days (${formatDate(ev.start_date)})`,
-                                recipient: lawyerName,
-                                timeAgo: '2 hours ago',
-                                icon: ev.is_general ? 'fa-solid fa-building' : 'fa-regular fa-calendar',
-                                iconColor: ev.is_general ? '#7c3aed' : '#f97316',
-                                unread: true,
-                                cardBorder: '#93c5fd',
-                                cardBg: '#eff6ff'
-                            });
-                        } else {
-                            notifications.push({
-                                type: 'reminder',
-                                title: ev.is_general ? 'Firm-wide Reminder' : 'Court Appearance Reminder',
-                                priority: 'Medium',
-                                priorityColor: '#0f172a',
-                                message: `${ev.title} scheduled on ${formatDate(ev.start_date)} at ${formatEventTime(ev.start_date)}`,
-                                recipient: lawyerName,
-                                timeAgo: '5 hours ago',
-                                icon: 'fa-regular fa-bell',
-                                iconColor: '#a855f7',
-                                unread: false,
-                                cardBorder: '#e2e8f0',
-                                cardBg: '#ffffff'
-                            });
-                        }
-                    }
-                });
+            if (window.__notifications.length === 0) {
+                list.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">You have no notifications.</p>';
+                return;
             }
 
-            const unreadCount = notifications.filter(n => n.unread).length;
-            const highCount = notifications.filter(n => n.priority === 'High Priority').length;
-            
-            const statUnread = document.querySelector('.notif-sidebar-container .stat-row:nth-child(2) span:nth-child(2)');
-            const statHigh = document.querySelector('.notif-sidebar-container .stat-row:nth-child(3) span:nth-child(2)');
-            if (statUnread) statUnread.textContent = unreadCount;
-            if (statHigh) statHigh.textContent = highCount;
-
-            const headerBadge = document.getElementById('notif-header-badge');
-            if (headerBadge) {
-                if (unreadCount > 0) {
-                    headerBadge.textContent = `${unreadCount} unread`;
-                    headerBadge.style.display = 'inline-block';
-                } else {
-                    headerBadge.style.display = 'none';
-                }
-            }
-
-            if (notifications.length > 0) {
-                list.innerHTML = notifications.map(n => `
-                    <div class="notif-item-card" style="background: ${n.cardBg}; border: 1px solid ${n.cardBorder}; border-radius: 8px; padding: 20px; margin-bottom: 15px;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                            <i class="${n.icon}" style="color: ${n.iconColor}; font-size: 16px;"></i>
-                            <h4 style="font-size: 15px; color: #0f172a; margin: 0; font-weight: 600;">${n.title}</h4>
-                            ${n.unread ? `<div class="notif-dot" style="width: 8px; height: 8px; background: #3b82f6; border-radius: 50%;"></div>` : ''}
+            list.innerHTML = window.__notifications.map(n => {
+                const style = NOTIF_STYLES[n.type] || { icon: 'fa-regular fa-bell', color: '#64748b' };
+                const priorityBg = n.priority === 'high' ? '#ef4444' : (n.priority === 'low' ? '#94a3b8' : '#0f172a');
+                const priorityLabel = n.priority === 'high' ? 'High Priority' : (n.priority === 'low' ? 'Low' : 'Medium');
+                return `
+                    <div class="notif-item-card" onclick="openNotification(${jsArg(n.id)})" style="cursor:pointer; background:${n.is_read ? '#ffffff' : '#eff6ff'}; border:1px solid ${n.is_read ? '#e2e8f0' : '#93c5fd'}; border-radius:8px; padding:20px; margin-bottom:15px;">
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                            <i class="${style.icon}" style="color:${style.color}; font-size:16px;"></i>
+                            <h4 style="font-size:15px; color:#0f172a; margin:0; font-weight:${n.is_read ? '500' : '600'};">${escapeHtml(n.title)}</h4>
+                            ${n.is_read ? '' : '<div class="notif-dot" style="width:8px; height:8px; background:#3b82f6; border-radius:50%;"></div>'}
                         </div>
-                        <span style="background: ${n.priorityColor}; color: white; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; display: inline-block; margin-bottom: 10px;">
-                            ${n.priority}
-                        </span>
-                        <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">${n.message}</p>
-                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #64748b;">
-                            <span>To: ${n.recipient}</span>
-                            <div style="display: flex; gap: 15px;">
-                                <span style="color: #22c55e;"><i class="fa-regular fa-circle-check"></i> Email sent</span>
-                                <span>${n.timeAgo}</span>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                list.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No new notifications</p>';
-            }
+                        <span style="background:${priorityBg}; color:white; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600; display:inline-block; margin-bottom:10px;">${priorityLabel}</span>
+                        <p style="font-size:13px; color:#475569; margin:0 0 12px 0;">${escapeHtml(n.message || '')}</p>
+                        <div style="font-size:12px; color:#64748b;">${escapeHtml(formatTimeAgo(n.created_at))}</div>
+                    </div>`;
+            }).join('');
         } catch (error) {
             console.error('Error rendering notifications:', error);
+            list.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load notifications. Make sure notifications_email.sql has been run.</p>';
         }
     }
+
+    window.openNotification = async function(id) {
+        const n = (window.__notifications || []).find(x => x.id === id);
+        if (!n) return;
+
+        if (!n.is_read) {
+            await supabaseClient
+                .from('notifications')
+                .update({ is_read: true, read_at: new Date().toISOString() })
+                .eq('id', id);
+            n.is_read = true;
+        }
+
+        if (n.link_type === 'event' && n.link_id) {
+            window.openEventDetails(n.link_id);
+        } else {
+            const target = { client: 'clients-view', case: 'cases-view' }[n.link_type];
+            const nav = target ? document.querySelector(`.nav-links li[data-target="${target}"]`) : null;
+            if (nav) nav.click();
+        }
+        renderNotificationsList();
+    };
 
     async function renderEmailQueueList() {
         const list = document.getElementById('email-queue-list-inject');
         if (!list || !currentUser) return;
 
         try {
-            const todayDate = new Date();
-            todayDate.setHours(0,0,0,0);
-            
-            const { data: events } = await supabaseClient
-                .from('calendar_events')
-                .select('*, profiles(full_name)')
-                .or(`assigned_to.eq.${currentUser.id},is_general.eq.true`)
-                .order('start_date', { ascending: true });
+            const [listRes, sentRes] = await Promise.all([
+                supabaseClient
+                    .from('email_queue')
+                    .select('id, subject, recipient_email, status, attempts, last_error, kind, sent_at, next_attempt_at, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(100),
+                supabaseClient
+                    .from('email_queue')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('status', 'sent')
+            ]);
+            if (listRes.error) throw listRes.error;
 
-            let emails = [];
+            const rows = document.querySelectorAll('.notif-sidebar-container .stat-row');
+            if (rows[2] && rows[2].lastElementChild) rows[2].lastElementChild.textContent = sentRes.count || 0;
 
-            if (events && events.length > 0) {
-                events.forEach(ev => {
-                    const evDate = new Date(ev.start_date);
-                    evDate.setHours(0,0,0,0);
-
-                    const isSent = evDate <= todayDate;
-                    const lawyerName = ev.is_general ? 'All Lawyers' : (ev.profiles?.full_name || 'user');
-                    const emailAddress = ev.is_general ? 'all.lawyers@lawfirm.com' : lawyerName.toLowerCase().replace(' ', '.') + '@lawfirm.com';
-
-                    if (isSent) {
-                        emails.push({
-                            subject: `Sent: Reminder for ${ev.title}`,
-                            recipient: emailAddress,
-                            isSent: true,
-                            timeText: `Sent at ${formatDate(ev.start_date)} 08:00 AM`,
-                            status: 'sent',
-                            icon: 'fa-regular fa-circle-check',
-                            iconColor: '#22c55e'
-                        });
-                    } else {
-                        emails.push({
-                            subject: `Upcoming Reminder - ${ev.title}`,
-                            recipient: emailAddress,
-                            isSent: false,
-                            timeText: `Scheduled for ${formatDate(ev.start_date)} 08:00 AM`,
-                            status: 'pending',
-                            icon: 'fa-regular fa-calendar',
-                            iconColor: '#f97316'
-                        });
-                    }
-                });
-            }
-
-            const sentCount = emails.filter(e => e.isSent).length;
-            const statSent = document.querySelector('.notif-sidebar-container .stat-row:nth-child(4) span:nth-child(2)');
-            if (statSent) statSent.textContent = sentCount; 
-
-            if (emails.length > 0) {
-                list.innerHTML = emails.map(e => `
-                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-start;">
-                        <div style="display: flex; gap: 15px;">
-                            <i class="fa-regular fa-envelope" style="color: #94a3b8; font-size: 16px; margin-top: 2px;"></i>
-                            <div>
-                                <h4 style="font-size: 14px; color: #0f172a; margin: 0 0 5px 0; font-weight: 600;">${e.subject}</h4>
-                                <p style="font-size: 12px; color: #64748b; margin: 0 0 8px 0;">To: ${e.recipient}</p>
-                                <p style="font-size: 12px; color: ${e.iconColor}; margin: 0; font-weight: 500;">
-                                    <i class="${e.icon}"></i> ${e.timeText}
-                                </p>
-                            </div>
-                        </div>
-                        <span style="${e.isSent ? 'background: #ffffff; border: 1px solid #e2e8f0; color: #475569;' : 'background: #0f172a; border: 1px solid #0f172a; color: #ffffff;'} padding: 3px 12px; border-radius: 99px; font-size: 11px; font-weight: 600; text-transform: lowercase;">
-                            ${e.status}
-                        </span>
-                    </div>
-                `).join('');
-            } else {
+            const emails = listRes.data || [];
+            if (emails.length === 0) {
                 list.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No emails in queue</p>';
+                return;
             }
+
+            list.innerHTML = emails.map(m => `
+                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:20px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                    <div style="display:flex; gap:15px; min-width:0;">
+                        <i class="fa-regular fa-envelope" style="color:#94a3b8; font-size:16px; margin-top:2px;"></i>
+                        <div style="min-width:0;">
+                            <h4 style="font-size:14px; color:#0f172a; margin:0 0 5px 0; font-weight:600; word-break:break-word;">${escapeHtml(m.subject)}</h4>
+                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">${m.kind === 'reminder' ? 'Reminder' : 'Case update'} • To: ${escapeHtml(m.recipient_email)}</p>
+                            <p style="font-size:12px; color:#64748b; margin:0; font-weight:500;">${escapeHtml(emailTimeText(m))}</p>
+                            ${m.last_error && m.status !== 'sent' ? `<p style="font-size:12px; color:#dc2626; margin:6px 0 0 0;">${escapeHtml(m.last_error)}</p>` : ''}
+                        </div>
+                    </div>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0;">
+                        ${emailStatusBadge(m.status)}
+                        ${m.status === 'failed' ? `<button type="button" onclick="retryEmail(${jsArg(m.id)})" style="padding:5px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600; color:#334155;"><i class="fa-solid fa-rotate-right"></i> Retry</button>` : ''}
+                    </div>
+                </div>
+            `).join('');
         } catch (error) {
             console.error('Error rendering email queue:', error);
+            list.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load the email queue. Make sure notifications_email.sql has been run.</p>';
         }
     }
+
+    window.retryEmail = async function(id) {
+        const { error } = await supabaseClient.rpc('retry_email', { p_id: id });
+        if (error) {
+            alert('Could not retry this email: ' + error.message);
+            return;
+        }
+        await renderEmailQueueList();
+    };
 
     function setupNotificationActions() {
         const btnMarkRead = document.getElementById('btn-mark-read');
         const btnClearRead = document.getElementById('btn-clear-read');
         const btnSendTest = document.getElementById('btn-send-test-email');
-        
+
         if (btnMarkRead) {
-            btnMarkRead.addEventListener('click', () => {
-                document.querySelectorAll('.notif-dot').forEach(dot => dot.remove());
-                
-                const statUnread = document.querySelector('.notif-sidebar-container .stat-row:nth-child(2) span:nth-child(2)');
-                if (statUnread) statUnread.textContent = '0';
-                
-                const headerBadge = document.getElementById('notif-header-badge');
-                if (headerBadge) headerBadge.style.display = 'none';
-                
-                alert("All notifications marked as read.");
+            btnMarkRead.addEventListener('click', async () => {
+                const { error } = await supabaseClient
+                    .from('notifications')
+                    .update({ is_read: true, read_at: new Date().toISOString() })
+                    .eq('user_id', currentUser.id)
+                    .eq('is_read', false);
+                if (error) {
+                    alert('Could not mark notifications as read: ' + error.message);
+                    return;
+                }
+                await renderNotificationsList();
             });
         }
 
         if (btnClearRead) {
-            btnClearRead.addEventListener('click', () => {
-                const list = document.getElementById('notifications-list-inject');
-                if (list) {
-                    const cards = list.querySelectorAll('.notif-item-card'); 
-                    cards.forEach(card => {
-                        if (!card.querySelector('.notif-dot')) {
-                            card.remove(); 
-                        }
-                    });
-                    alert("Read notifications cleared from view.");
+            btnClearRead.addEventListener('click', async () => {
+                if (!confirm('Delete all notifications you have already read?')) return;
+                const { error } = await supabaseClient
+                    .from('notifications')
+                    .delete()
+                    .eq('user_id', currentUser.id)
+                    .eq('is_read', true);
+                if (error) {
+                    alert('Could not clear notifications: ' + error.message);
+                    return;
                 }
+                await renderNotificationsList();
             });
         }
 
         if (btnSendTest) {
-            btnSendTest.addEventListener('click', () => {
-                const list = document.getElementById('email-queue-list-inject');
-                if (list) {
-                    const newEmail = `
-                        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="display: flex; gap: 15px;">
-                                <i class="fa-regular fa-envelope" style="color: #94a3b8; font-size: 16px; margin-top: 2px;"></i>
-                                <div>
-                                    <h4 style="font-size: 14px; color: #0f172a; margin: 0 0 5px 0; font-weight: 600;">TEST EMAIL: System Check</h4>
-                                    <p style="font-size: 12px; color: #64748b; margin: 0 0 8px 0;">To: ${currentUser ? currentUser.email : 'you@lawfirm.com'}</p>
-                                    <p style="font-size: 12px; color: #22c55e; margin: 0; font-weight: 500;">
-                                        <i class="fa-regular fa-circle-check"></i> Sent Just Now
-                                    </p>
-                                </div>
-                            </div>
-                            <span style="background: #ffffff; border: 1px solid #e2e8f0; color: #475569; padding: 3px 12px; border-radius: 99px; font-size: 11px; font-weight: 600; text-transform: lowercase;">
-                                sent
-                            </span>
-                        </div>
-                    `;
-                    
-                    if (list.innerHTML.includes('No emails in queue')) {
-                        list.innerHTML = '';
+            btnSendTest.addEventListener('click', async () => {
+                const idleHtml = btnSendTest.innerHTML;
+                btnSendTest.disabled = true;
+                btnSendTest.textContent = 'Sending...';
+                try {
+                    const { data, error } = await supabaseClient.functions.invoke('send-test-email');
+                    if (error) {
+                        let message = error.message;
+                        try {
+                            const errBody = await error.context.json();
+                            if (errBody && errBody.error) message = errBody.error;
+                        } catch (e) {}
+                        throw new Error(message);
                     }
-                    list.insertAdjacentHTML('afterbegin', newEmail);
-                    
-                    const statSent = document.querySelector('.notif-sidebar-container .stat-row:nth-child(4) span:nth-child(2)');
-                    if (statSent) statSent.textContent = parseInt(statSent.textContent || 0) + 1;
-
-                    alert("Test email sent and added to queue!");
+                    alert(`Test email sent to ${data.to}. Check your inbox.`);
+                } catch (err) {
+                    console.error('Test email error:', err);
+                    alert('The test email could not be sent: ' + err.message);
+                } finally {
+                    btnSendTest.disabled = false;
+                    btnSendTest.innerHTML = idleHtml;
                 }
             });
         }
+
+        setInterval(() => {
+            refreshNotificationBadge();
+            const view = document.getElementById('notifications-view');
+            if (view && !view.classList.contains('hidden')) {
+                renderNotificationsList();
+                renderEmailQueueList();
+            }
+        }, 60000);
     }
 
     function setupNotificationTabs() {
@@ -2355,7 +2956,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     async function uploadCaseDocument(file, { caseId = null, clientId = null, category = 'Attachment', tag = '', title = null } = {}) {
         if (!file) return null;
 
-        const uniqueFileName = `${Date.now()}_${file.name}`;
+        const uniqueFileName = `${Date.now()}_${safeStorageName(file.name)}`;
         const { error: uploadError } = await supabaseClient
             .storage
             .from('documents')
@@ -2363,22 +2964,16 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (uploadError) {
             console.error('Storage Error:', uploadError);
-            throw new Error("Failed to upload attachment. Please check if the 'documents' bucket exists and is public.");
+            throw new Error("Failed to upload attachment. Please check if the 'documents' bucket exists and your account is allowed to upload to it.");
         }
 
-        const { data: publicUrlData } = supabaseClient
-            .storage
-            .from('documents')
-            .getPublicUrl(uniqueFileName);
-
-        const fileUrl = publicUrlData.publicUrl;
         const fileSizeMb = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
 
         const docData = {
             title: title || file.name,
             type: category.toLowerCase(),
             size: fileSizeMb,
-            file_url: fileUrl,
+            file_path: uniqueFileName,
             tags: tag,
             uploaded_by: currentUser ? currentUser.id : null
         };
@@ -2388,7 +2983,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const { data: newDoc, error: dbError } = await supabaseClient
             .from('documents')
             .insert([docData])
-            .select('id, title, file_url')
+            .select('id, title, file_path')
             .single();
 
         if (dbError) {
@@ -2892,7 +3487,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                                 ${tagText}
                             </span>
                         </div>
-                        ${subText ? `<span style="color:#94a3b8; font-size:11px; margin-top:3px;">${subText}${linkedEvent ? ' <i class="fa-solid fa-circle-info" style="margin-left:4px;"></i>' : ''}</span>` : ''}
+                        ${subText ? `<span style="color:#94a3b8; font-size:11px; margin-top:3px;">${escapeHtml(subText)}${linkedEvent ? ' <i class="fa-solid fa-circle-info" style="margin-left:4px;"></i>' : ''}</span>` : ''}
                     </div>
                 `;
             }).join('');
@@ -2926,11 +3521,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
                 <i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i>
-                <span>Booked by: <strong>${bookedBy}</strong></span>
+                <span>Booked by: <strong>${escapeHtml(bookedBy)}</strong></span>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
                 <i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i>
-                <span>Client: <strong>${clientName}</strong></span>
+                <span>Client: <strong>${escapeHtml(clientName)}</strong></span>
             </div>
         `;
 
@@ -3194,6 +3789,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             window.__clientsDirectory = clients || [];
             paintClientsDirectory();
+            renderAdminAttention();
         } catch (err) {
             console.error('Error loading clients:', err);
             const countEl = document.getElementById('clients-count');
@@ -3449,6 +4045,61 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         });
     }
 
+    const CASE_REQUIRED_FIELDS = [
+        ['cf-client', 'Please select a client.'],
+        ['cf-title', 'Case title is required.'],
+        ['cf-type', 'Please select a case type.'],
+        ['cf-party', 'Please select a party type.'],
+        ['cf-court', 'Court and Branch No. / Agency is required.'],
+        ['cf-jurisdiction', 'Jurisdiction is required.'],
+        ['cf-court-no', 'Case No. is required.'],
+        ['cf-date', 'Date filed is required.'],
+        ['cf-stage', 'Please select a case stage.']
+    ];
+
+    function clearCaseFormErrors() {
+        const form = document.getElementById('case-form');
+        if (!form) return;
+        form.querySelectorAll('.cf-error').forEach(n => n.remove());
+        form.querySelectorAll('.cf-invalid').forEach(el => el.classList.remove('cf-invalid'));
+    }
+
+    function validateCaseForm() {
+        clearCaseFormErrors();
+        let firstInvalid = null;
+
+        CASE_REQUIRED_FIELDS.forEach(([id, message]) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if ((el.value || '').trim() !== '') return;
+
+            el.classList.add('cf-invalid');
+            const note = document.createElement('div');
+            note.className = 'cf-error';
+            note.textContent = message;
+            const field = el.closest('.mc-field');
+            (field || el.parentElement).appendChild(note);
+
+            const clear = () => {
+                el.classList.remove('cf-invalid');
+                note.remove();
+                el.removeEventListener('input', clear);
+                el.removeEventListener('change', clear);
+            };
+            el.addEventListener('input', clear);
+            el.addEventListener('change', clear);
+
+            if (!firstInvalid) firstInvalid = el;
+        });
+
+        if (firstInvalid) {
+            firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstInvalid.focus({ preventScroll: true });
+            return false;
+        }
+        return true;
+    }
+
     async function openCaseForm(caseId = null) {
         const modal = document.getElementById('case-form-modal');
         const form = document.getElementById('case-form');
@@ -3458,6 +4109,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const record = isEdit ? (window.__casesRegistry || {})[caseId] : null;
 
         form.reset();
+        clearCaseFormErrors();
         fillSelect(document.getElementById('cf-type'), CASE_TYPES, 'Select case type');
         fillSelect(document.getElementById('cf-party'), PARTY_TYPES, 'Select party type');
         fillSelect(document.getElementById('cf-stage'), CASE_STAGES);
@@ -3531,11 +4183,18 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const newBtn = document.getElementById('btn-new-case');
         if (!modal || !form) return;
 
+        form.setAttribute('novalidate', '');
+
         if (newBtn) newBtn.addEventListener('click', () => { if (globalRoleName !== 'secretary') openCaseForm(null); });
-        if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+        if (closeBtn) closeBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            clearCaseFormErrors();
+        });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!validateCaseForm()) return;
+
             const val = id => (document.getElementById(id)?.value || '').trim();
             const caseId = val('cf-id');
             const clientId = val('cf-client');
@@ -3551,9 +4210,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             const caseStage = val('cf-stage');
             const caseStatus = val('cf-status');
             const dateIso = dateVal ? new Date(dateVal + 'T00:00:00').toISOString() : null;
-
-            if (!clientId) { alert('Select a client for this case.'); return; }
-            if (!type) { alert('Select the case type.'); return; }
 
             const submitBtn = document.getElementById('cf-submit-btn');
             const idle = submitBtn.textContent;
@@ -3712,18 +4368,22 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                     if (wantsPortal && email) {
                         setBusy('Sending invite...');
-                        const { error: otpError } = await supabaseAdminActionsClient.auth.signInWithOtp({
-                            email: email,
-                            options: {
-                                emailRedirectTo: window.location.origin + window.location.pathname.replace('index.html', '') + 'client-portal.html',
-                                shouldCreateUser: true
+                        const { error: inviteError } = await supabaseClient.functions.invoke('invite-client', {
+                            body: {
+                                client_id: newClient.id,
+                                redirect_to: window.location.origin + window.location.pathname.replace('index.html', '') + 'client-portal.html'
                             }
                         });
-                        if (otpError) {
-                            console.error('Portal invite error:', otpError);
-                            message += `\n\nThe portal invite email could not be sent: ${otpError.message}`;
+                        if (inviteError) {
+                            let detail = inviteError.message;
+                            try {
+                                const errBody = await inviteError.context.json();
+                                if (errBody && errBody.error) detail = errBody.error;
+                            } catch (e) {}
+                            console.error('Portal invite error:', inviteError);
+                            message += `\n\nThe portal invite could not be sent: ${detail}`;
                         } else {
-                            message += `\n\nA portal login link was emailed to ${email}.`;
+                            message += `\n\nA portal invite was emailed to ${email}.`;
                         }
                     }
 
@@ -3815,7 +4475,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             const { data: emails, error } = await supabaseClient
                 .from('email_queue')
-                .select('*, documents(title, file_url)')
+                .select('*, documents(title, file_path)')
                 .eq('case_id', caseId)
                 .order('created_at', { ascending: false });
 
@@ -3825,21 +4485,20 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 listEl.innerHTML = '<p style="color:#94a3b8; text-align:center; padding:20px;">No emails sent for this case yet. Send an update below.</p>';
             } else {
                 listEl.innerHTML = emails.map(m => {
-                    const statusBadge = m.is_sent
-                        ? '<span style="background:#dcfce7; color:#16a34a; font-size:10px; padding:2px 8px; border-radius:99px; font-weight:700;">Sent</span>'
-                        : '<span style="background:#fef3c7; color:#b45309; font-size:10px; padding:2px 8px; border-radius:99px; font-weight:700;">Pending</span>';
+                    const statusBadge = emailStatusBadge(m.status || (m.is_sent ? 'sent' : 'pending'));
                     const attachmentLink = m.documents
-                        ? `<a href="${m.documents.file_url}" target="_blank" rel="noopener" style="display:inline-block; margin-top:6px; font-size:11px; color:#3b82f6; text-decoration:none;"><i class="fa-solid fa-paperclip"></i> ${m.documents.title}</a>`
+                        ? `<a href="#" data-doc-path="${escapeHtml(m.documents.file_path || '')}" data-doc-title="${escapeHtml(m.documents.title || '')}" style="display:inline-block; margin-top:6px; font-size:11px; color:#3b82f6; text-decoration:none;"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(m.documents.title)}</a>`
                         : '';
                     return `
                         <div style="border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
                             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
-                                <p style="margin:0; font-size:13px; font-weight:700; color:#0f172a;">${m.subject}</p>
+                                <p style="margin:0; font-size:13px; font-weight:700; color:#0f172a;">${escapeHtml(m.subject)}</p>
                                 ${statusBadge}
                             </div>
-                            <p style="margin:6px 0 0 0; font-size:12px; color:#475569; white-space:pre-wrap;">${m.body || ''}</p>
+                            <p style="margin:6px 0 0 0; font-size:12px; color:#475569; white-space:pre-wrap;">${escapeHtml(m.body || '')}</p>
                             ${attachmentLink}
-                            <p style="margin:6px 0 0 0; font-size:10px; color:#94a3b8;">To: ${m.recipient_email} • ${m.is_sent ? 'Sent ' + formatEventTime(m.sent_at) : 'Queued'}</p>
+                            <p style="margin:6px 0 0 0; font-size:10px; color:#94a3b8;">To: ${escapeHtml(m.recipient_email)} • ${escapeHtml(emailTimeText(m))}</p>
+                            ${m.status === 'failed' ? `<p style="margin:6px 0 0 0; font-size:11px; color:#dc2626;">${escapeHtml(m.last_error || 'Sending failed.')} <a href="#" onclick="event.preventDefault(); retryEmail(${jsArg(m.id)}).then(() => loadCaseEmails(${jsArg(caseId)}));" style="color:#3b82f6; font-weight:600;">Retry</a></p>` : ''}
                         </div>
                     `;
                 }).join('');
@@ -4081,7 +4740,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const fileSizeMb = (selectedFile.size / (1024 * 1024)).toFixed(2) + ' MB';
 
                 try {
-                    const uniqueFileName = `${Date.now()}_${selectedFile.name}`;
+                    const uniqueFileName = `${Date.now()}_${safeStorageName(selectedFile.name)}`;
                     const { data: uploadData, error: uploadError } = await supabaseClient
                         .storage
                         .from('documents') 
@@ -4089,21 +4748,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                     if (uploadError) {
                         console.error("Storage Error:", uploadError);
-                        throw new Error("Failed to upload file to Storage. Please check if 'documents' bucket exists and is public.");
+                        throw new Error("Failed to upload file to Storage. Please check if 'documents' bucket exists and your account is allowed to upload to it.");
                     }
-
-                    const { data: publicUrlData } = supabaseClient
-                        .storage
-                        .from('documents')
-                        .getPublicUrl(uniqueFileName);
-                    
-                    const fileUrl = publicUrlData.publicUrl;
 
                     const docData = { 
                         title: finalTitle, 
                         type: category.toLowerCase(), 
                         size: fileSizeMb,
-                        file_url: fileUrl, 
+                        file_path: uniqueFileName, 
                         case_id: matchedCaseId,
                         client_id: matchedClientId,
                         tags: caseNum ? `${tagsInput}${tagsInput ? ', ' : ''}Case #${caseNum}` : tagsInput,
@@ -4154,6 +4806,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             openBtn.addEventListener('click', async () => {
                 if (globalRoleName !== 'admin') return;
                 if (form) form.reset();
+                const tempPwInput = document.getElementById('add-lawyer-password');
+                if (tempPwInput) tempPwInput.placeholder = 'Min. 8 characters, with a letter and a number';
                 modal.classList.remove('hidden');
 
                 const roleSel = document.getElementById('add-lawyer-role');
@@ -4213,38 +4867,28 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const formattedName = `${fname} ${mi ? mi + '. ' : ''}${lname}`.trim();
 
                 try {
-                    const { data, error } = await supabaseAdminActionsClient.auth.signUp({
-                        email: email,
-                        password: password,
-                        options: {
-                            data: {
-                                full_name: formattedName,
-                                specialization: spec,
-                                phone: phone
-                            }
+                    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+                        throw new Error('The temporary password must be at least 8 characters and include a letter and a number.');
+                    }
+
+                    const { error } = await supabaseClient.functions.invoke('create-user', {
+                        body: {
+                            email: email,
+                            password: password,
+                            full_name: formattedName,
+                            phone: phone,
+                            specialization: spec,
+                            role_id: roleId
                         }
                     });
 
                     if (error) {
-                        throw new Error("Failed to register user: " + error.message);
-                    }
-
-                    if (data.user) {
-                        const { error: profileError } = await supabaseClient
-                            .from('profiles')
-                            .update({
-                                full_name: formattedName,
-                                role_id: roleId,
-                                specialization: spec,
-                                phone: phone,
-                                status: 'active'
-                            })
-                            .eq('id', data.user.id);
-                        if (profileError) {
-                            throw new Error('The account was created but its profile could not be saved: ' + profileError.message);
-                        }
-                        
-                        await logAuditActivity('INSERT', 'Profiles', `Registered new ${roleName}: ${formattedName}`, data.user.id);
+                        let message = error.message;
+                        try {
+                            const body = await error.context.json();
+                            if (body && body.error) message = body.error;
+                        } catch (e) {}
+                        throw new Error('Failed to register user: ' + message);
                     }
 
                     alert(`${isLawyerRole ? 'Lawyer Atty.' : 'Secretary'} ${formattedName} successfully registered!`);
@@ -4464,7 +5108,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const newName = document.getElementById('edit-lawyer-fullname').value.trim();
                 const newPhone = document.getElementById('edit-lawyer-phone').value.trim();
                 const newSpec = document.getElementById('edit-lawyer-spec').value;
-                const patch = { full_name: newName, phone: newPhone, specialization: newSpec };
+                const isSecretaryEdit = modal.dataset.role === 'secretary';
+                const patch = isSecretaryEdit
+                    ? { full_name: newName, phone: newPhone }
+                    : { full_name: newName, phone: newPhone, specialization: newSpec };
 
                 try {
                     const { data: oldData } = await supabaseClient.from('profiles').select('*').eq('id', lawyerId).single();
@@ -4476,9 +5123,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                     if (error) throw new Error(error.message);
 
-                    await logAuditActivity('UPDATE', 'Profiles', `Edited lawyer profile: Atty. ${newName}`, lawyerId, oldData, patch);
+                    await logAuditActivity('UPDATE', 'Profiles', `Edited ${isSecretaryEdit ? 'secretary' : 'lawyer'} profile: ${newName}`, lawyerId, oldData, patch);
 
-                    alert('Lawyer profile successfully updated!');
+                    alert(isSecretaryEdit ? 'Secretary profile successfully updated!' : 'Lawyer profile successfully updated!');
+                    if (isSecretaryEdit) renderSecretariesList();
                     modal.classList.add('hidden');
                     
                     renderManageLawyersList();
@@ -4498,15 +5146,23 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    window.openEditLawyerModal = function(id, name, phone, spec) {
+    window.openEditLawyerModal = function(id, name, phone, spec, role) {
         const modal = document.getElementById('edit-lawyer-modal');
         if (!modal) return;
+
+        const isSecretary = role === 'secretary';
+        modal.dataset.role = isSecretary ? 'secretary' : 'lawyer';
+
+        const heading = modal.querySelector('h2');
+        if (heading) heading.textContent = isSecretary ? 'Edit Secretary Profile' : 'Edit Lawyer Profile';
 
         document.getElementById('edit-lawyer-id').value = id;
         document.getElementById('edit-lawyer-fullname').value = name || '';
         document.getElementById('edit-lawyer-phone').value = phone || '';
-        
+
         const specSelect = document.getElementById('edit-lawyer-spec');
+        const specGroup = specSelect ? specSelect.closest('.form-group') : null;
+        if (specGroup) specGroup.style.display = isSecretary ? 'none' : '';
         if (specSelect && spec) {
             for (let i = 0; i < specSelect.options.length; i++) {
                 if (specSelect.options[i].value === spec) {
@@ -4568,17 +5224,326 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    window.openArchiveLawyerModal = function(id, name) {
-        const modal = document.getElementById('archive-lawyer-modal');
-        const nameDisplay = document.getElementById('archive-lawyer-name-display');
-        const idInput = document.getElementById('archive-lawyer-id');
+    const SPECIALIZATIONS = ['General Practice', 'Criminal Law', 'Corporate Law', 'Family Law', 'Civil Litigation'];
 
-        if (!modal || !nameDisplay || !idInput) return;
+    function jsArg(value) {
+        return escapeHtml(JSON.stringify(value));
+    }
 
-        idInput.value = id;
-        nameDisplay.textContent = `Atty. ${name}`;
-        
-        modal.classList.remove('hidden');
+    function formatStamp(iso) {
+        return `${formatDate(iso)} at ${formatEventTime(iso)}`;
+    }
+
+    async function fetchProfileNameMap(ids) {
+        const unique = [...new Set((ids || []).filter(Boolean))];
+        const map = {};
+        if (unique.length === 0) return map;
+        const { data } = await supabaseClient.from('profiles').select('id, full_name').in('id', unique);
+        (data || []).forEach(p => { map[p.id] = p.full_name; });
+        return map;
+    }
+
+    function statusTrailHtml(p, names) {
+        if (p.status === 'inactive' && p.archived_at) {
+            const who = p.archived_by ? ' by ' + escapeHtml(names[p.archived_by] || 'Unknown') : '';
+            return `<p style="margin:4px 0 0 0; font-size:11px; color:#94a3b8;"><i class="fa-solid fa-box-archive" style="font-size:10px;"></i> Archived ${escapeHtml(formatStamp(p.archived_at))}${who}</p>`;
+        }
+        if (p.status !== 'inactive' && p.restored_at) {
+            const who = p.restored_by ? ' by ' + escapeHtml(names[p.restored_by] || 'Unknown') : '';
+            return `<p style="margin:4px 0 0 0; font-size:11px; color:#94a3b8;"><i class="fa-solid fa-rotate-left" style="font-size:10px;"></i> Restored ${escapeHtml(formatStamp(p.restored_at))}${who}</p>`;
+        }
+        return '';
+    }
+
+    function userIconButton(onclick, icon, title, color) {
+        return `<button onclick="${onclick}" style="background:none; border:none; cursor:pointer; color:${color}; padding:5px;" title="${escapeHtml(title)}"><i class="fa-solid ${icon}"></i></button>`;
+    }
+
+    function userManageButtons(p, role) {
+        const id = jsArg(p.id);
+        const name = jsArg(p.full_name || '');
+        const phone = jsArg(p.phone || '');
+        const spec = jsArg(p.specialization || '');
+        const r = jsArg(role);
+        return userIconButton(`openEditLawyerModal(${id}, ${name}, ${phone}, ${spec}, ${r})`, 'fa-pen-to-square', role === 'lawyer' ? 'Edit lawyer' : 'Edit secretary', '#3b82f6')
+            + userIconButton(`openResetPasswordModal(${id}, ${name})`, 'fa-key', 'Reset password', '#8b5cf6')
+            + userIconButton(`openChangeRoleModal(${id}, ${name}, ${r}, ${spec})`, 'fa-user-gear', 'Change role', '#0ea5e9');
+    }
+
+    function refreshUserDirectories() {
+        renderManageLawyersList();
+        renderSecretariesList();
+        renderArchivedLawyersList();
+        renderLawyerStatusWidget();
+        prepareEventModal();
+        updateDashboardStats();
+        renderPerformanceTab();
+        renderAdminAttention();
+    }
+
+    function openUserModal(title, subtitleHtml, bodyHtml) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div style="width:90%; max-width:480px; padding:25px 30px; background:#ffffff; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.1); max-height:90vh; overflow-y:auto;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e2e8f0; padding-bottom:15px; margin-bottom:16px;">
+                    <div>
+                        <h2 style="font-size:18px; font-weight:700; color:#1e293b; margin:0;">${escapeHtml(title)}</h2>
+                        <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">${subtitleHtml}</p>
+                    </div>
+                    <button type="button" data-um-close style="background:transparent; border:none; font-size:20px; cursor:pointer; color:#64748b; padding:0;"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div data-um-body>${bodyHtml}</div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const close = () => overlay.remove();
+        overlay.querySelector('[data-um-close]').addEventListener('click', close);
+        return { overlay: overlay, body: overlay.querySelector('[data-um-body]'), close: close };
+    }
+
+    async function getLawyerWorkSummary(lawyerId) {
+        const nowIso = new Date().toISOString();
+        const [casesRes, clientsRes, eventsRes] = await Promise.all([
+            supabaseClient.from('case_lawyers').select('case_id, cases!inner(status)', { count: 'exact', head: true }).eq('lawyer_id', lawyerId).eq('cases.status', 'active'),
+            supabaseClient.from('client_lawyers').select('client_lawyer_id', { count: 'exact', head: true }).eq('lawyer_id', lawyerId),
+            supabaseClient.from('calendar_events').select('id', { count: 'exact', head: true }).eq('assigned_to', lawyerId).gte('start_date', nowIso)
+        ]);
+        const failed = casesRes.error || clientsRes.error || eventsRes.error;
+        if (failed) throw new Error(failed.message);
+        return { cases: casesRes.count || 0, clients: clientsRes.count || 0, events: eventsRes.count || 0 };
+    }
+
+    function workSummaryHtml(work) {
+        const row = (n, singular, plural) => `<li>${n} ${n === 1 ? singular : plural}</li>`;
+        return `
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; font-size:13px; color:#334155; margin-bottom:16px;">
+                <strong>Currently assigned</strong>
+                <ul style="margin:8px 0 0 18px; padding:0; line-height:1.7;">
+                    ${row(work.cases, 'active case', 'active cases')}
+                    ${row(work.clients, 'client', 'clients')}
+                    ${row(work.events, 'upcoming event', 'upcoming events')}
+                </ul>
+            </div>`;
+    }
+
+    function replacementSelectHtml(lawyers) {
+        return `
+            <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Transfer their work to</label>
+            <div style="position:relative; margin-bottom:8px;">
+                <select id="um-replacement" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; appearance:none;">
+                    <option value="">Select a lawyer</option>
+                    ${lawyers.map(l => `<option value="${escapeHtml(l.id)}">Atty. ${escapeHtml(l.full_name || 'Unnamed')}${l.specialization ? ' — ' + escapeHtml(l.specialization) : ''}</option>`).join('')}
+                </select>
+                <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#94a3b8; pointer-events:none; font-size:12px;"></i>
+            </div>
+            <p style="font-size:11px; color:#94a3b8; margin:0 0 16px 0;">Lead roles carry over. Closed cases keep their original lawyers. Upcoming events move too, so check the calendar for overlaps afterwards.</p>`;
+    }
+
+    function modalButtonsHtml(confirmLabel, confirmColor) {
+        return `
+            <div id="um-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+            <div style="display:flex; justify-content:flex-end; gap:10px;">
+                <button type="button" id="um-cancel" style="padding:10px 18px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600;">Cancel</button>
+                <button type="button" id="um-confirm" style="padding:10px 18px; background:${confirmColor}; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600;">${escapeHtml(confirmLabel)}</button>
+            </div>`;
+    }
+
+    window.openArchiveLawyerModal = async function(id, name) {
+        if (globalRoleName !== 'admin') return;
+        const modal = openUserModal('Archive Lawyer', `Atty. ${escapeHtml(name)}`, '<p style="color:#64748b; text-align:center; padding:20px;">Checking assignments...</p>');
+
+        try {
+            const [work, allLawyers] = await Promise.all([getLawyerWorkSummary(id), getActiveLawyersData()]);
+            const others = allLawyers.filter(l => l.id !== id);
+            const hasWork = work.cases + work.clients + work.events > 0;
+
+            let middle;
+            if (!hasWork) {
+                middle = `<p style="font-size:13px; color:#475569; margin:0 0 16px 0;">Atty. ${escapeHtml(name)} has no active assignments. Their account will be deactivated and their historical records will stay intact.</p>`;
+            } else if (others.length === 0) {
+                middle = `${workSummaryHtml(work)}<p style="font-size:13px; color:#ef4444; margin:0 0 16px 0;">There is no other active lawyer to take over this work. Add or restore a lawyer first.</p>`;
+            } else {
+                middle = workSummaryHtml(work) + replacementSelectHtml(others);
+            }
+
+            modal.body.innerHTML = middle + modalButtonsHtml(hasWork ? 'Transfer & archive' : 'Archive account', '#f59e0b');
+            const confirmBtn = modal.body.querySelector('#um-confirm');
+            const errEl = modal.body.querySelector('#um-error');
+            modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
+            if (hasWork && others.length === 0) confirmBtn.disabled = true;
+
+            confirmBtn.addEventListener('click', async () => {
+                const replacement = hasWork ? (modal.body.querySelector('#um-replacement') || {}).value : '';
+                if (hasWork && !replacement) {
+                    errEl.textContent = 'Choose the lawyer who will take over.';
+                    return;
+                }
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Working...';
+                const { data, error } = await supabaseClient.rpc('archive_lawyer', {
+                    p_lawyer_id: id,
+                    p_replacement: replacement || null
+                });
+                if (error) {
+                    errEl.textContent = error.message;
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = hasWork ? 'Transfer & archive' : 'Archive account';
+                    return;
+                }
+                modal.close();
+                alert(hasWork
+                    ? `Atty. ${name} was archived. Transferred ${data.cases} case(s), ${data.clients} client(s) and ${data.events} upcoming event(s).`
+                    : `Atty. ${name} was archived.`);
+                refreshUserDirectories();
+            });
+        } catch (err) {
+            console.error('Archive modal error:', err);
+            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not check this lawyer\'s assignments. Please try again.</p>';
+        }
+    };
+
+    window.openChangeRoleModal = async function(id, name, currentRole) {
+        if (globalRoleName !== 'admin') return;
+        const toRole = currentRole === 'lawyer' ? 'secretary' : 'lawyer';
+        const label = r => (r === 'lawyer' ? 'Lawyer' : 'Secretary');
+        const modal = openUserModal('Change Role', `${escapeHtml(name)}: ${label(currentRole)} &rarr; ${label(toRole)}`, '<p style="color:#64748b; text-align:center; padding:20px;">Checking assignments...</p>');
+
+        try {
+            let hasWork = false;
+            let others = [];
+            let middle = '';
+
+            if (currentRole === 'lawyer') {
+                const [work, allLawyers] = await Promise.all([getLawyerWorkSummary(id), getActiveLawyersData()]);
+                others = allLawyers.filter(l => l.id !== id);
+                hasWork = work.cases + work.clients + work.events > 0;
+                if (!hasWork) {
+                    middle = '<p style="font-size:13px; color:#475569; margin:0 0 16px 0;">They have no active assignments. As a secretary they will no longer be assignable to cases or clients.</p>';
+                } else if (others.length === 0) {
+                    middle = `${workSummaryHtml(work)}<p style="font-size:13px; color:#ef4444; margin:0 0 16px 0;">There is no other active lawyer to take over this work. Add or restore a lawyer first.</p>`;
+                } else {
+                    middle = workSummaryHtml(work) + replacementSelectHtml(others);
+                }
+            } else {
+                middle = `
+                    <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">As a lawyer they can be assigned clients and cases.</p>
+                    <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Specialization</label>
+                    <div style="position:relative; margin-bottom:16px;">
+                        <select id="um-spec" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; appearance:none;">
+                            ${SPECIALIZATIONS.map(sp => `<option value="${escapeHtml(sp)}">${escapeHtml(sp)}</option>`).join('')}
+                        </select>
+                        <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#94a3b8; pointer-events:none; font-size:12px;"></i>
+                    </div>`;
+            }
+
+            middle += '<p style="font-size:11px; color:#94a3b8; margin:0 0 12px 0;">The change applies immediately. If they are signed in, they should sign in again to see the right menus.</p>';
+
+            modal.body.innerHTML = middle + modalButtonsHtml('Change role', '#0ea5e9');
+            const confirmBtn = modal.body.querySelector('#um-confirm');
+            const errEl = modal.body.querySelector('#um-error');
+            modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
+            if (currentRole === 'lawyer' && hasWork && others.length === 0) confirmBtn.disabled = true;
+
+            confirmBtn.addEventListener('click', async () => {
+                const replacement = (currentRole === 'lawyer' && hasWork) ? (modal.body.querySelector('#um-replacement') || {}).value : '';
+                if (currentRole === 'lawyer' && hasWork && !replacement) {
+                    errEl.textContent = 'Choose the lawyer who will take over.';
+                    return;
+                }
+                const spec = toRole === 'lawyer' ? (modal.body.querySelector('#um-spec') || {}).value : null;
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = 'Working...';
+                const { error } = await supabaseClient.rpc('change_user_role', {
+                    p_user_id: id,
+                    p_new_role: toRole,
+                    p_replacement: replacement || null,
+                    p_specialization: spec
+                });
+                if (error) {
+                    errEl.textContent = error.message;
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = 'Change role';
+                    return;
+                }
+                modal.close();
+                alert(`${name} is now a ${label(toRole).toLowerCase()}.`);
+                refreshUserDirectories();
+            });
+        } catch (err) {
+            console.error('Change role modal error:', err);
+            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not check this account\'s assignments. Please try again.</p>';
+        }
+    };
+
+    function generateTempPassword() {
+        const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+        const digits = '23456789';
+        const all = letters + digits;
+        const bytes = new Uint32Array(12);
+        crypto.getRandomValues(bytes);
+        let out = '';
+        for (let i = 0; i < 10; i++) out += all[bytes[i] % all.length];
+        out += letters[bytes[10] % letters.length];
+        out += digits[bytes[11] % digits.length];
+        return out;
+    }
+
+    window.openResetPasswordModal = function(id, name) {
+        if (globalRoleName !== 'admin') return;
+        const modal = openUserModal('Reset Password', escapeHtml(name), `
+            <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">Set a temporary password. They will be asked to choose their own the next time they sign in.</p>
+            <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Temporary password</label>
+            <div style="display:flex; gap:8px; margin-bottom:6px;">
+                <input type="text" id="um-pw" autocomplete="off" style="flex:1; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; font-family:monospace; background:#f8fafc;">
+                <button type="button" id="um-pw-generate" style="padding:10px 12px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Generate</button>
+                <button type="button" id="um-pw-copy" style="padding:10px 12px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Copy</button>
+            </div>
+            <p style="font-size:11px; color:#94a3b8; margin:0 0 16px 0;">At least 8 characters with a letter and a number. Share it with them privately.</p>
+            ${modalButtonsHtml('Reset password', '#8b5cf6')}
+        `);
+
+        const pwInput = modal.body.querySelector('#um-pw');
+        const errEl = modal.body.querySelector('#um-error');
+        const confirmBtn = modal.body.querySelector('#um-confirm');
+        pwInput.value = generateTempPassword();
+
+        modal.body.querySelector('#um-pw-generate').addEventListener('click', () => { pwInput.value = generateTempPassword(); });
+        modal.body.querySelector('#um-pw-copy').addEventListener('click', async (e) => {
+            try {
+                await navigator.clipboard.writeText(pwInput.value);
+                e.target.textContent = 'Copied';
+                setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
+            } catch (err) {
+                pwInput.select();
+            }
+        });
+        modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
+
+        confirmBtn.addEventListener('click', async () => {
+            const password = pwInput.value;
+            if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+                errEl.textContent = 'Use at least 8 characters, including a letter and a number.';
+                return;
+            }
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Resetting...';
+            const { error } = await supabaseClient.functions.invoke('admin-reset-password', {
+                body: { user_id: id, password: password }
+            });
+            if (error) {
+                let message = error.message;
+                try {
+                    const errBody = await error.context.json();
+                    if (errBody && errBody.error) message = errBody.error;
+                } catch (e) {}
+                errEl.textContent = message;
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Reset password';
+                return;
+            }
+            modal.close();
+            alert(`Password reset for ${name}. Give them the temporary password privately.`);
+        });
     };
 
     async function renderManageLawyersList() {
@@ -4593,7 +5558,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 .from('profiles')
                 .select('*, roles!inner(name)')
                 .eq('roles.name', 'lawyer')
-                .eq('status', 'active') 
+                .eq('status', 'active')
                 .order('full_name', { ascending: true });
 
             if (error) throw error;
@@ -4601,26 +5566,26 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             if (lawyers && lawyers.length > 0) {
                 if (countEl) countEl.textContent = `Total: ${lawyers.length}`;
                 const canManageLawyers = globalRoleName === 'admin';
-                
+                const workloadData = await fetchWorkloadData();
+                const workloadMap = computeWorkload(workloadData.cases, workloadData.events);
+                const names = await fetchProfileNameMap(lawyers.map(l => l.restored_by));
+
                 listContainer.innerHTML = lawyers.map(l => `
                     <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9;">
                         <div style="display:flex; align-items:center; gap: 15px;">
                             <div style="background:#eff6ff; color:#3b82f6; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                                ${getInitials(l.full_name)}
+                                ${escapeHtml(getInitials(l.full_name))}
                             </div>
                             <div>
-                                <h4 style="margin:0; font-size:14px; color:#0f172a;">Atty. ${l.full_name || 'Unknown'}</h4>
-                                <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">${l.specialization || 'General Practice'} • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${l.phone || 'N/A'}</p>
+                                <h4 style="margin:0; font-size:14px; color:#0f172a;">Atty. ${escapeHtml(l.full_name || 'Unknown')}</h4>
+                                <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">${escapeHtml(l.specialization || 'General Practice')} • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${escapeHtml(l.phone || 'N/A')}</p>
+                                ${workloadLine(workloadMap[l.id])}
+                                ${statusTrailHtml(l, names)}
                             </div>
                         </div>
-                        <div style="display:flex; align-items:center; gap: 12px;">
-                            <span class="tag" style="background:#dcfce7; color:#22c55e; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600;">Active</span>
-                            <button ${canManageLawyers ? '' : 'hidden'} onclick="openEditLawyerModal('${l.id}', '${l.full_name.replace(/'/g, "\\'")}', '${l.phone}', '${l.specialization}')" style="background:none; border:none; cursor:pointer; color:#3b82f6; padding: 5px;" title="Edit Lawyer">
-                                <i class="fa-solid fa-pen-to-square"></i>
-                            </button>
-                            <button ${canManageLawyers ? '' : 'hidden'} onclick="openArchiveLawyerModal('${l.id}', '${l.full_name.replace(/'/g, "\\'")}')" style="background:none; border:none; cursor:pointer; color:#f59e0b; padding: 5px;" title="Archive Lawyer">
-                                <i class="fa-solid fa-box-archive"></i>
-                            </button>
+                        <div style="display:flex; align-items:center; gap: 6px;">
+                            <span class="tag" style="background:#dcfce7; color:#22c55e; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600; margin-right:6px;">Active</span>
+                            ${canManageLawyers ? userManageButtons(l, 'lawyer') + userIconButton(`openArchiveLawyerModal(${jsArg(l.id)}, ${jsArg(l.full_name || '')})`, 'fa-box-archive', 'Archive lawyer', '#f59e0b') : ''}
                         </div>
                     </div>
                 `).join('');
@@ -4633,6 +5598,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             listContainer.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Error loading directory.</p>';
         }
     }
+
     async function renderSecretariesList() {
         const listContainer = document.getElementById('manage-secretaries-list-inject');
         const countEl = document.getElementById('manage-secretaries-count');
@@ -4648,7 +5614,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             const { data: people, error } = await supabaseClient
                 .from('profiles')
-                .select('id, full_name, phone, status, roles!inner(name)')
+                .select('id, full_name, phone, specialization, status, archived_at, archived_by, restored_at, restored_by, roles!inner(name)')
                 .eq('roles.name', 'secretary')
                 .order('full_name', { ascending: true });
             if (error) throw error;
@@ -4662,24 +5628,26 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 return;
             }
 
+            const names = await fetchProfileNameMap(people.flatMap(p => [p.archived_by, p.restored_by]));
+
             listContainer.innerHTML = people.map(p => {
                 const active = p.status !== 'inactive';
                 return `
                     <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9;${active ? '' : ' background:#fafafa;'}">
                         <div style="display:flex; align-items:center; gap: 15px;">
                             <div style="background:#f5f3ff; color:#8b5cf6; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                                ${getInitials(p.full_name)}
+                                ${escapeHtml(getInitials(p.full_name))}
                             </div>
                             <div>
                                 <h4 style="margin:0; font-size:14px; color:#0f172a;">${escapeHtml(p.full_name || 'Unknown')}</h4>
                                 <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">Secretary • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${escapeHtml(p.phone || 'N/A')}</p>
+                                ${statusTrailHtml(p, names)}
                             </div>
                         </div>
-                        <div style="display:flex; align-items:center; gap: 12px;">
-                            <span style="background:${active ? '#dcfce7' : '#f1f5f9'}; color:${active ? '#22c55e' : '#94a3b8'}; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600;">${active ? 'Active' : 'Archived'}</span>
-                            <button onclick="toggleSecretaryStatus('${p.id}')" style="background:none; border:none; cursor:pointer; color:${active ? '#f59e0b' : '#22c55e'}; padding: 5px;" title="${active ? 'Archive' : 'Restore'}">
-                                <i class="fa-solid ${active ? 'fa-box-archive' : 'fa-rotate-left'}"></i>
-                            </button>
+                        <div style="display:flex; align-items:center; gap: 6px;">
+                            <span style="background:${active ? '#dcfce7' : '#f1f5f9'}; color:${active ? '#22c55e' : '#94a3b8'}; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600; margin-right:6px;">${active ? 'Active' : 'Archived'}</span>
+                            ${active ? userManageButtons(p, 'secretary') : ''}
+                            ${userIconButton(`toggleSecretaryStatus(${jsArg(p.id)})`, active ? 'fa-box-archive' : 'fa-rotate-left', active ? 'Archive' : 'Restore', active ? '#f59e0b' : '#22c55e')}
                         </div>
                     </div>
                 `;
@@ -4723,21 +5691,23 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             if (lawyers && lawyers.length > 0) {
                 if (countEl) countEl.textContent = `Total Archived: ${lawyers.length}`;
-                
+                const names = await fetchProfileNameMap(lawyers.map(l => l.archived_by));
+
                 listContainer.innerHTML = lawyers.map(l => `
                     <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9; background: #fafafa;">
                         <div style="display:flex; align-items:center; gap: 15px;">
                             <div style="background:#f1f5f9; color:#94a3b8; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                                ${getInitials(l.full_name)}
+                                ${escapeHtml(getInitials(l.full_name))}
                             </div>
                             <div>
-                                <h4 style="margin:0; font-size:14px; color:#64748b;">Atty. ${l.full_name || 'Unknown'}</h4>
-                                <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">${l.specialization || 'General Practice'} • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${l.phone || 'N/A'}</p>
+                                <h4 style="margin:0; font-size:14px; color:#64748b;">Atty. ${escapeHtml(l.full_name || 'Unknown')}</h4>
+                                <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">${escapeHtml(l.specialization || 'General Practice')} • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${escapeHtml(l.phone || 'N/A')}</p>
+                                ${statusTrailHtml(l, names)}
                             </div>
                         </div>
                         <div style="display:flex; align-items:center; gap: 12px;">
                             <span class="tag" style="background:#f1f5f9; color:#94a3b8; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600;">Archived</span>
-                            <button onclick="restoreArchivedLawyer('${l.id}', '${l.full_name.replace(/'/g, "\\'")}')" style="background:none; border:none; cursor:pointer; color:#22c55e; padding: 5px;" title="Restore Lawyer">
+                            <button onclick="restoreArchivedLawyer(${jsArg(l.id)}, ${jsArg(l.full_name || '')})" style="background:none; border:none; cursor:pointer; color:#22c55e; padding: 5px;" title="Restore Lawyer">
                                 <i class="fa-solid fa-rotate-left"></i>
                             </button>
                         </div>
@@ -4905,50 +5875,6 @@ async function renderAuditsView() {
         }
     }
 
-    async function logAuditActivity(action, entityType, summaryText, recordId = null, oldData = null, newData = null) {
-    if (!currentUser) return;
-    try {
-        let detailsText = summaryText;
-        
-        const safeOldData = oldData ? JSON.parse(JSON.stringify(oldData)) : null;
-        const safeNewData = newData ? JSON.parse(JSON.stringify(newData)) : null;
-        
-        if (action === 'UPDATE' && safeOldData && safeNewData) {
-            const changes = [];
-            for (const key in safeNewData) {
-                if (key !== 'id' && key !== 'updated_at' && safeNewData[key] !== undefined) {
-                    const oldVal = safeOldData[key] ? String(safeOldData[key]) : '(empty)';
-                    const newVal = safeNewData[key] ? String(safeNewData[key]) : '(empty)';
-                    
-                    if (oldVal !== newVal && typeof safeNewData[key] !== 'object') {
-                        const niceKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                        changes.push(`${niceKey}: "${oldVal}" ➔ "${newVal}"`);
-                    }
-                }
-            }
-            if (changes.length > 0) {
-                detailsText += ` | Changes: ${changes.join(', ')}`;
-            }
-        }
-
-        const payloadNewData = safeNewData ? { summary: detailsText, ...safeNewData } : { summary: detailsText };
-
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(recordId);
-        const validUuidRecordId = isUUID ? recordId : null;
-        
-        if (!isUUID && recordId) {
-            payloadNewData.original_int_id = recordId;
-        }
-
-        await supabaseClient.from('audit_logs').insert([{
-            action: action,
-            table_name: entityType.toLowerCase().replace(' ', '_'),
-            new_data: payloadNewData,
-            old_data: safeOldData,
-            record_id: validUuidRecordId, 
-            changed_by: currentUser.id
-        }]);
-    } catch (err) {
-        console.error('Failed to log activity:', err);
+    async function logAuditActivity() {
+        return;
     }
-}

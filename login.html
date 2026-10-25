@@ -113,6 +113,7 @@
                 return;
             }
 
+            localStorage.setItem('jurisync-last-activity', String(Date.now()));
             localStorage.setItem('userProfile', JSON.stringify(profileData));
             window.location.href = 'index.html';
         });

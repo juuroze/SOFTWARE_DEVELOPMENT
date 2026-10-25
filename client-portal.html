@@ -92,6 +92,32 @@
         let currentClient = null;
         let activeCaseId = null;
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        document.addEventListener('click', async (e) => {
+            const el = e.target.closest('[data-doc-path]');
+            if (!el) return;
+            e.preventDefault();
+            const popup = window.open('about:blank', '_blank');
+            const { data, error } = await supabaseClient.storage.from('documents').createSignedUrl(el.dataset.docPath, 300);
+            if (error || !data) {
+                if (popup) popup.close();
+                alert('Could not open this file.');
+                return;
+            }
+            if (popup) {
+                popup.opener = null;
+                popup.location.href = data.signedUrl;
+            }
+        });
+
         function formatTime(iso) {
             const d = new Date(iso);
             return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -109,34 +135,19 @@
                 return;
             }
 
-            // Find (or self-link) this client's record by email.
-            let { data: client, error } = await supabaseClient
+            await supabaseClient.rpc('link_my_client_account');
+
+            const { data: client } = await supabaseClient
                 .from('clients')
                 .select('*')
                 .eq('auth_user_id', session.user.id)
                 .maybeSingle();
 
             if (!client) {
-                const { data: matchByEmail } = await supabaseClient
-                    .from('clients')
-                    .select('*')
-                    .ilike('client_email', session.user.email)
-                    .maybeSingle();
-
-                if (matchByEmail) {
-                    await supabaseClient
-                        .from('clients')
-                        .update({ auth_user_id: session.user.id })
-                        .eq('id', matchByEmail.id);
-                    client = matchByEmail;
-                }
-            }
-
-            if (!client) {
                 container.innerHTML = `
                     <div style="text-align:center; padding: 60px 20px; color:#64748b;">
                         <i class="fa-solid fa-circle-exclamation" style="font-size:32px; color:#f59e0b; margin-bottom:15px;"></i>
-                        <p>We couldn't find a client record linked to <strong>${session.user.email}</strong>.</p>
+                        <p>We couldn't find an approved client record linked to <strong>${escapeHtml(session.user.email)}</strong>.</p>
                         <p style="font-size:13px;">Please contact your lawyer to confirm you've been added as a client.</p>
                     </div>
                 `;
@@ -148,33 +159,29 @@
         }
 
         async function loadCases() {
-            const { data: cases, error } = await supabaseClient
-                .from('cases')
-                .select('*, profiles(full_name)')
-                .eq('client_id', currentClient.id)
-                .order('created_at', { ascending: false });
+            const { data: cases, error } = await supabaseClient.rpc('portal_my_cases');
 
             if (error) {
-                container.innerHTML = `<p style="text-align:center; color:#ef4444; margin-top:40px;">Failed to load your cases: ${error.message}</p>`;
+                container.innerHTML = `<p style="text-align:center; color:#ef4444; margin-top:40px;">Failed to load your cases: ${escapeHtml(error.message)}</p>`;
                 return;
             }
 
-            let html = `<h2 style="margin-bottom:15px; color:#0f172a;">Welcome, ${currentClient.client_name}</h2>`;
+            let html = `<h2 style="margin-bottom:15px; color:#0f172a;">Welcome, ${escapeHtml(currentClient.client_name)}</h2>`;
 
             if (!cases || cases.length === 0) {
                 html += `<p style="color:#64748b;">You don't have any cases on file yet.</p>`;
             } else {
                 html += cases.map(c => {
-                    const lawyerName = c.profiles?.full_name ? `Atty. ${c.profiles.full_name}` : 'Unassigned';
+                    const lawyerName = c.lead_lawyer ? `Atty. ${escapeHtml(c.lead_lawyer)}` : 'Unassigned';
                     const statusStyle = c.status === 'closed' ? 'background:#f1f5f9; color:#64748b;' : 'background:#dcfce7; color:#16a34a;';
                     return `
-                        <div class="portal-case-card ${c.id === activeCaseId ? 'active' : ''}" onclick="openCase('${c.id}')">
+                        <div class="portal-case-card ${c.id === activeCaseId ? 'active' : ''}" onclick="openCase('${escapeHtml(c.id)}', this)">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <h3 style="margin:0; font-size:15px; color:#0f172a;">${c.title}</h3>
-                                <span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; text-transform:capitalize; ${statusStyle}">${c.status || 'active'}</span>
+                                <h3 style="margin:0; font-size:15px; color:#0f172a;">${escapeHtml(c.title)}</h3>
+                                <span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; text-transform:capitalize; ${statusStyle}">${escapeHtml(c.status || 'active')}</span>
                             </div>
                             <p style="margin:6px 0 0 0; font-size:12px; color:#64748b;">
-                                ${c.case_number ? '#' + c.case_number + ' • ' : ''}${c.case_type || 'General'} • ${lawyerName}
+                                ${c.case_number ? '#' + escapeHtml(c.case_number) + ' • ' : ''}${escapeHtml(c.case_type || 'General')} • ${lawyerName}
                             </p>
                         </div>
                     `;
@@ -189,10 +196,10 @@
             }
         }
 
-        window.openCase = async function(caseId) {
+        window.openCase = async function(caseId, card) {
             activeCaseId = caseId;
             document.querySelectorAll('.portal-case-card').forEach(el => el.classList.remove('active'));
-            event.currentTarget.classList.add('active');
+            if (card) card.classList.add('active');
             renderChatPanel(caseId);
         };
 
@@ -216,7 +223,7 @@
 
             const { data: emails, error } = await supabaseClient
                 .from('email_queue')
-                .select('*, documents(title, file_url)')
+                .select('*, documents(title, file_path)')
                 .eq('case_id', caseId)
                 .eq('is_sent', true)
                 .order('sent_at', { ascending: false });
@@ -231,12 +238,12 @@
             } else {
                 listEl.innerHTML = emails.map(m => {
                     const attachmentLink = m.documents
-                        ? `<a href="${m.documents.file_url}" target="_blank" rel="noopener" style="display:inline-block; margin-top:8px; font-size:12px; color:#3b82f6; text-decoration:none;"><i class="fa-solid fa-paperclip"></i> ${m.documents.title}</a>`
+                        ? `<a href="#" data-doc-path="${escapeHtml(m.documents.file_path || '')}" style="display:inline-block; margin-top:8px; font-size:12px; color:#3b82f6; text-decoration:none;"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(m.documents.title)}</a>`
                         : '';
                     return `
                         <div class="portal-email-card">
-                            <p style="margin:0; font-size:14px; font-weight:700; color:#0f172a;">${m.subject}</p>
-                            <p style="margin:6px 0 0 0; font-size:13px; color:#475569; white-space:pre-wrap;">${m.body || ''}</p>
+                            <p style="margin:0; font-size:14px; font-weight:700; color:#0f172a;">${escapeHtml(m.subject)}</p>
+                            <p style="margin:6px 0 0 0; font-size:13px; color:#475569; white-space:pre-wrap;">${escapeHtml(m.body || '')}</p>
                             ${attachmentLink}
                             <p style="margin:8px 0 0 0; font-size:11px; color:#94a3b8;">${formatDate(m.sent_at)} at ${formatTime(m.sent_at)}</p>
                         </div>

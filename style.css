@@ -1485,3 +1485,14 @@ body {
 @media (prefers-reduced-motion: reduce) {
     .cases-tab-content:not(.hidden) { animation: none; }
 }
+
+.cf-invalid {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
+}
+
+.cf-error {
+    color: #ef4444;
+    font-size: 11px;
+    margin-top: 4px;
+}
