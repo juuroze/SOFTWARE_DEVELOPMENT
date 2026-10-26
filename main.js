@@ -10,6 +10,286 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
     let globalUserName = '';
     let globalRoleName = '';
 
+    const TOAST_ICONS = {
+        success: 'fa-circle-check',
+        error: 'fa-circle-exclamation',
+        warning: 'fa-triangle-exclamation',
+        info: 'fa-circle-info'
+    };
+    const TOAST_DURATIONS = { success: 4000, info: 4500, warning: 6000, error: 8000 };
+
+    function getToastRoot() {
+        let root = document.getElementById('toast-root');
+        if (!root) {
+            root = document.createElement('div');
+            root.id = 'toast-root';
+            root.setAttribute('aria-live', 'polite');
+            document.body.appendChild(root);
+        }
+        return root;
+    }
+
+    function showToast(message, type, options) {
+        const text = String(message === undefined || message === null ? '' : message).trim();
+        if (!text) return null;
+        const kind = TOAST_ICONS[type] ? type : 'info';
+        const opts = options || {};
+        const root = getToastRoot();
+
+        const duplicate = Array.from(root.children).find(el => el.dataset.msg === text && el.dataset.type === kind);
+        if (duplicate) {
+            duplicate.classList.remove('toast-pulse');
+            void duplicate.offsetWidth;
+            duplicate.classList.add('toast-pulse');
+            return duplicate;
+        }
+
+        const el = document.createElement('div');
+        el.className = `toast toast-${kind}`;
+        el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        el.dataset.msg = text;
+        el.dataset.type = kind;
+        el.innerHTML = `
+            <i class="fa-solid ${TOAST_ICONS[kind]} toast-icon"></i>
+            <div class="toast-body"></div>
+            <button type="button" class="toast-close" aria-label="Dismiss"><i class="fa-solid fa-xmark"></i></button>`;
+        el.querySelector('.toast-body').textContent = text;
+
+        let timer = null;
+        const dismiss = () => {
+            clearTimeout(timer);
+            el.classList.add('toast-out');
+            setTimeout(() => el.remove(), 200);
+        };
+        el.querySelector('.toast-close').addEventListener('click', dismiss);
+        el.addEventListener('mouseenter', () => clearTimeout(timer));
+        el.addEventListener('mouseleave', () => { timer = setTimeout(dismiss, 2000); });
+
+        root.appendChild(el);
+        while (root.children.length > 5) root.firstElementChild.remove();
+
+        timer = setTimeout(dismiss, opts.duration || TOAST_DURATIONS[kind]);
+        return el;
+    }
+
+    function trapDialogFocus(container, e) {
+        const items = Array.from(container.querySelectorAll('button, input, textarea, select, [tabindex]:not([tabindex="-1"])'))
+            .filter(el => !el.disabled);
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    }
+
+    function buildDialog(opts) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay dialog-overlay';
+        const icon = opts.danger ? 'fa-triangle-exclamation' : (opts.withInput ? 'fa-pen' : 'fa-circle-question');
+        overlay.innerHTML = `
+            <div class="dialog-card" role="${opts.withInput ? 'dialog' : 'alertdialog'}" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-msg">
+                <div class="dialog-icon${opts.danger ? ' danger' : ''}"><i class="fa-solid ${icon}"></i></div>
+                <h3 id="dlg-title"></h3>
+                <p id="dlg-msg"></p>
+                ${opts.withInput ? `
+                    <label class="dialog-label" for="dlg-input"></label>
+                    ${opts.multiline ? '<textarea id="dlg-input" rows="3"></textarea>' : '<input id="dlg-input" type="text">'}` : ''}
+                <div class="dialog-actions">
+                    <button type="button" class="dialog-btn" data-dlg="cancel"></button>
+                    <button type="button" class="dialog-btn dialog-btn-primary${opts.danger ? ' danger' : ''}" data-dlg="ok"></button>
+                </div>
+            </div>`;
+        overlay.querySelector('#dlg-title').textContent = opts.title;
+        overlay.querySelector('#dlg-msg').textContent = opts.message;
+        if (!opts.message) overlay.querySelector('#dlg-msg').style.display = 'none';
+        overlay.querySelector('[data-dlg="cancel"]').textContent = opts.cancelLabel;
+        overlay.querySelector('[data-dlg="ok"]').textContent = opts.confirmLabel;
+        if (opts.withInput) {
+            overlay.querySelector('.dialog-label').textContent = opts.label || '';
+            overlay.querySelector('#dlg-input').placeholder = opts.placeholder || '';
+        }
+        return overlay;
+    }
+
+    function runDialog(opts, readValue) {
+        return new Promise((resolve) => {
+            const previous = document.activeElement;
+            const overlay = buildDialog(opts);
+            document.body.appendChild(overlay);
+            const okBtn = overlay.querySelector('[data-dlg="ok"]');
+            const cancelBtn = overlay.querySelector('[data-dlg="cancel"]');
+            const input = overlay.querySelector('#dlg-input');
+
+            const finish = (confirmed) => {
+                document.removeEventListener('keydown', onKey, true);
+                const value = readValue(confirmed, input);
+                overlay.remove();
+                if (previous && typeof previous.focus === 'function') previous.focus();
+                resolve(value);
+            };
+            const onKey = (e) => {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    finish(false);
+                } else if (e.key === 'Tab') {
+                    trapDialogFocus(overlay, e);
+                } else if (e.key === 'Enter' && input && input.tagName === 'INPUT') {
+                    e.preventDefault();
+                    finish(true);
+                }
+            };
+            document.addEventListener('keydown', onKey, true);
+            okBtn.addEventListener('click', () => finish(true));
+            cancelBtn.addEventListener('click', () => finish(false));
+            overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) finish(false); });
+
+            if (input) input.focus();
+            else (opts.danger ? cancelBtn : okBtn).focus();
+        });
+    }
+
+    function confirmDialog(options) {
+        const opts = typeof options === 'string' ? { message: options } : (options || {});
+        return runDialog({
+            title: opts.title || 'Please confirm',
+            message: opts.message || '',
+            confirmLabel: opts.confirmLabel || 'Confirm',
+            cancelLabel: opts.cancelLabel || 'Cancel',
+            danger: !!opts.danger,
+            withInput: false
+        }, (confirmed) => confirmed);
+    }
+
+    function promptDialog(options) {
+        const opts = options || {};
+        return runDialog({
+            title: opts.title || 'Enter a value',
+            message: opts.message || '',
+            label: opts.label || '',
+            placeholder: opts.placeholder || '',
+            confirmLabel: opts.confirmLabel || 'OK',
+            cancelLabel: opts.cancelLabel || 'Cancel',
+            danger: !!opts.danger,
+            multiline: !!opts.multiline,
+            withInput: true
+        }, (confirmed, input) => (confirmed ? input.value : null));
+    }
+
+    function skeletonRows(count) {
+        const row = `
+            <div class="skeleton-row">
+                <div class="skeleton skeleton-avatar"></div>
+                <div class="skeleton-lines">
+                    <div class="skeleton skeleton-line" style="width:55%;"></div>
+                    <div class="skeleton skeleton-line" style="width:35%;"></div>
+                </div>
+            </div>`;
+        return `<div class="skeleton-group" aria-hidden="true">${row.repeat(count || 3)}</div><span class="sr-only">Loading...</span>`;
+    }
+
+    function skeletonCards(count) {
+        const card = `
+            <div class="skeleton-card-row">
+                <div class="skeleton skeleton-line" style="width:40%; height:16px;"></div>
+                <div class="skeleton skeleton-line" style="width:70%;"></div>
+                <div class="skeleton skeleton-line" style="width:50%;"></div>
+            </div>`;
+        return `<div class="skeleton-group" aria-hidden="true">${card.repeat(count || 3)}</div><span class="sr-only">Loading...</span>`;
+    }
+
+    function skeletonGrid(count) {
+        const card = `
+            <div class="skeleton-doc" aria-hidden="true">
+                <div class="skeleton-row" style="padding:0; margin-bottom:18px;">
+                    <div class="skeleton skeleton-avatar" style="border-radius:8px;"></div>
+                    <div class="skeleton-lines">
+                        <div class="skeleton skeleton-line" style="width:65%;"></div>
+                        <div class="skeleton skeleton-line" style="width:30%;"></div>
+                    </div>
+                </div>
+                <div class="skeleton skeleton-line" style="width:80%;"></div>
+                <div class="skeleton skeleton-line" style="width:60%;"></div>
+                <div class="skeleton skeleton-line" style="width:100%; height:34px; margin-top:16px;"></div>
+            </div>`;
+        return card.repeat(count || 4);
+    }
+
+    function showSkeletonIfEmpty(el, html) {
+        if (el && el.children.length === 0) el.innerHTML = html;
+    }
+
+    function errorStateHtml(message, retryFn, icon) {
+        const canRetry = typeof retryFn === 'string' && /^[A-Za-z_$][\w$]*$/.test(retryFn);
+        return `
+            <div class="state-error" role="alert">
+                <i class="fa-solid ${escapeHtml(icon || 'fa-circle-exclamation')}"></i>
+                <p>${escapeHtml(message)}</p>
+                ${canRetry ? `<button type="button" class="state-retry" onclick="retryRender(this, '${retryFn}')"><i class="fa-solid fa-rotate-right"></i> Try again</button>` : ''}
+            </div>`;
+    }
+
+    window.retryRender = function(btn, fnName) {
+        const fn = window[fnName];
+        if (typeof fn !== 'function') {
+            window.location.reload();
+            return;
+        }
+        const state = btn && btn.closest ? btn.closest('.state-error') : null;
+        if (state && state.parentElement) state.parentElement.innerHTML = skeletonRows(3);
+        fn();
+    };
+
+    function setupResponsiveShell() {
+        const menuBtn = document.getElementById('mobile-menu-btn');
+        const backdrop = document.getElementById('sidebar-backdrop');
+        const close = () => {
+            document.body.classList.remove('sidebar-open');
+            if (menuBtn) menuBtn.setAttribute('aria-expanded', 'false');
+        };
+
+        if (menuBtn) {
+            menuBtn.addEventListener('click', () => {
+                const open = document.body.classList.toggle('sidebar-open');
+                menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+        }
+        if (backdrop) backdrop.addEventListener('click', close);
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+        window.addEventListener('resize', () => { if (window.innerWidth > 900) close(); });
+        document.querySelectorAll('.sidebar .nav-links li, .sidebar .sidebar-footer').forEach(el => el.addEventListener('click', close));
+    }
+
+    function setupGlobalErrorHandling() {
+        let lastReport = 0;
+        const report = () => {
+            const now = Date.now();
+            if (now - lastReport < 5000) return;
+            lastReport = now;
+            showToast('Something went wrong. Please try again.', 'error');
+        };
+
+        window.addEventListener('unhandledrejection', (e) => {
+            console.error('Unhandled promise rejection:', e.reason);
+            report();
+        });
+        window.addEventListener('error', (e) => {
+            if (!e.message || /ResizeObserver|^Script error/i.test(e.message)) return;
+            console.error('Uncaught error:', e.error || e.message);
+            report();
+        });
+        window.addEventListener('offline', () => showToast('You are offline. Changes cannot be saved until you reconnect.', 'warning', { duration: 8000 }));
+        window.addEventListener('online', () => showToast('You are back online.', 'success'));
+    }
+
+    setupResponsiveShell();
+    setupGlobalErrorHandling();
+
     function roleLabel(name) {
         const n = (name || '').toLowerCase();
         if (n === 'admin' || n === 'administrator') return 'Administrator';
@@ -99,7 +379,7 @@ const row = Array.isArray(data) ? data[0] : data;
 
     async function signOutForInactivity() {
         await supabaseClient.auth.signOut();
-        alert('You were signed out after 30 minutes of inactivity.');
+        try { localStorage.setItem('jurisync-login-notice', 'You were signed out after 30 minutes of inactivity.'); } catch (e) {}
         window.location.href = 'login.html';
     }
 
@@ -354,6 +634,7 @@ const row = Array.isArray(data) ? data[0] : data;
 
             await updateSidebarUserInfo();
             await initializeApp();
+            document.body.classList.remove('app-loading');
             
             supabaseClient.auth.onAuthStateChange((event) => {
                 if (event === 'SIGNED_OUT') {
@@ -363,6 +644,8 @@ const row = Array.isArray(data) ? data[0] : data;
 
         } catch (err) {
             console.error('System Initialization error:', err);
+            document.body.classList.remove('app-loading');
+            showToast('The app could not finish loading. Please refresh the page.', 'error', { duration: 12000 });
         }
     }
 
@@ -711,6 +994,7 @@ const row = Array.isArray(data) ? data[0] : data;
         const timeframeLabel = document.getElementById('deadline-timeframe-label');
         
         if (!deadlineList) return;
+        showSkeletonIfEmpty(deadlineList, skeletonRows(2));
 
         try {
             const localDate = new Date();
@@ -794,6 +1078,7 @@ const row = Array.isArray(data) ? data[0] : data;
 
         } catch (error) {
             console.error('Error rendering dashboard content:', error);
+            deadlineList.innerHTML = errorStateHtml('Could not load deadlines.', 'renderDashboardContent');
         }
     }
 
@@ -864,7 +1149,10 @@ const row = Array.isArray(data) ? data[0] : data;
 
         const { data: calendarEvents, error } = await eventsQuery;
 
-        if (error) console.error("Calendar fetch error:", error);
+        if (error) {
+            console.error("Calendar fetch error:", error);
+            showToast('Could not load calendar events.', 'error');
+        }
 
         const eventsByDay = {};
         if (calendarEvents) {
@@ -979,7 +1267,7 @@ const row = Array.isArray(data) ? data[0] : data;
             lawyers: 'Active Lawyers'
         };
         titleEl.textContent = titles[type] || 'Details';
-        listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading...</p>';
+        listEl.innerHTML = skeletonRows(4);
         modal.classList.remove('hidden');
 
         try {
@@ -1117,7 +1405,7 @@ const row = Array.isArray(data) ? data[0] : data;
             }
         } catch (error) {
             console.error('Error loading stat details:', error);
-            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load details.</p>';
+            listEl.innerHTML = errorStateHtml("Could not load the details.", null);
         }
     }
 
@@ -1194,7 +1482,7 @@ const row = Array.isArray(data) ? data[0] : data;
 
         const dateObj = new Date(dateString);
         titleEl.textContent = `Events for ${dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
-        listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading events...</p>';
+        listEl.innerHTML = skeletonRows(3);
         
         modal.classList.remove('hidden');
 
@@ -1231,7 +1519,7 @@ const row = Array.isArray(data) ? data[0] : data;
             }
         } catch (error) {
             console.error("Error fetching day details:", error);
-            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load events.</p>';
+            listEl.innerHTML = errorStateHtml("Could not load the events for this day.", null);
         }
     };
 
@@ -1246,7 +1534,7 @@ const row = Array.isArray(data) ? data[0] : data;
         if (!modal || !titleEl || !listEl) return;
 
         titleEl.textContent = 'Event Details';
-        listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading event...</p>';
+        listEl.innerHTML = skeletonRows(2);
         modal.classList.remove('hidden');
 
         try {
@@ -1262,7 +1550,7 @@ const row = Array.isArray(data) ? data[0] : data;
             listEl.innerHTML = ev ? buildEventDetailCard(ev) : '<p style="color:#64748b; text-align:center; padding:30px;">Event not found.</p>';
         } catch (error) {
             console.error('Error fetching event details:', error);
-            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load this event.</p>';
+            listEl.innerHTML = errorStateHtml("Could not load this event.", null);
         }
     };
 
@@ -1351,7 +1639,7 @@ const row = Array.isArray(data) ? data[0] : data;
             `;
         } catch (error) {
             console.error('Error rendering schedule summary:', error);
-            summaryWidget.innerHTML = '<p style="color:#ef4444; padding:10px; font-size:13px;">Unable to load the schedule summary.</p>';
+            summaryWidget.innerHTML = errorStateHtml("Could not load the schedule summary.", "renderScheduleSummaryWidget");
         }
     }
 
@@ -1631,7 +1919,7 @@ const row = Array.isArray(data) ? data[0] : data;
             console.error('Index existing document failed:', err);
             if (!quiet) {
                 hideIndexProgress();
-                alert('Could not index this document: ' + err.message);
+                showToast('Could not index this document: ' + err.message, 'error');
             }
             return false;
         }
@@ -1645,16 +1933,16 @@ const row = Array.isArray(data) ? data[0] : data;
             .not('file_path', 'is', null)
             .or('ocr_status.is.null,ocr_status.eq.failed,ocr_status.eq.processing');
         if (error) {
-            alert('Could not check documents: ' + error.message);
+            showToast('Could not check documents: ' + error.message, 'error');
             return;
         }
 
         const pending = (data || []).filter(d => fileKind(d.title));
         if (pending.length === 0) {
-            alert('Every document that can be indexed is already searchable.');
+            showToast('Every document that can be indexed is already searchable.', 'info');
             return;
         }
-        if (!confirm(`Index ${pending.length} document${pending.length === 1 ? '' : 's'}? Each file is read in your browser, which can take several minutes. Keep this tab open.`)) return;
+        if (!(await confirmDialog({ title: 'Make documents searchable', confirmLabel: 'Start indexing', message: `Index ${pending.length} document${pending.length === 1 ? '' : 's'}? Each file is read in your browser, which can take several minutes. Keep this tab open.` }))) return;
 
         window.__docsRegistry = window.__docsRegistry || {};
         let done = 0;
@@ -1665,7 +1953,7 @@ const row = Array.isArray(data) ? data[0] : data;
             if (await window.indexExistingDocument(d.id, true)) done++;
         }
         hideIndexProgress();
-        alert(`Finished. ${done} of ${pending.length} documents are now searchable.`);
+        showToast(`Finished. ${done} of ${pending.length} documents are now searchable.`, 'success');
         refreshDocumentList();
     };
 
@@ -1753,13 +2041,12 @@ const row = Array.isArray(data) ? data[0] : data;
                     confirmBtn.textContent = 'Save changes';
                     return;
                 }
-                await logAuditActivity('UPDATE', 'Documents', `Edited document properties: ${patch.title}`, doc.id, doc, patch);
                 modal.close();
                 refreshDocumentList();
             });
         } catch (err) {
             console.error('Edit document modal error:', err);
-            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load this document\'s details.</p>';
+            modal.body.innerHTML = errorStateHtml("Could not load this document's details.", null);
         }
     };
 
@@ -1819,12 +2106,10 @@ const row = Array.isArray(data) ? data[0] : data;
                 confirmBtn.textContent = 'Upload version';
                 return;
             }
-            
-            await logAuditActivity('INSERT', 'Document Versions', `Uploaded version ${newNo} for document: ${doc.title}`, doc.id, null, { version_no: newNo, change_note: note });
 
             modal.close();
             refreshDocumentList();
-            alert(`Version ${newNo} saved. The previous version is kept in the history.`);
+            showToast(`Version ${newNo} saved. The previous version is kept in the history.`, 'success');
             if (willIndex) indexDocumentFile(doc.id, newNo, file);
         });
     };
@@ -1897,25 +2182,25 @@ const row = Array.isArray(data) ? data[0] : data;
                 } else if (action === 'download') {
                     window.openStoredDocument(btn.dataset.path, btn.dataset.title, true);
                 } else if (action === 'restore') {
-                    if (!confirm(`Make version ${btn.dataset.no} the current version? The current file stays in the history.`)) return;
+                    if (!(await confirmDialog({ title: 'Restore this version', confirmLabel: 'Restore', message: `Make version ${btn.dataset.no} the current version? The current file stays in the history.` }))) return;
                     btn.disabled = true;
                     const { error: restoreError } = await supabaseClient.rpc('restore_document_version', {
                         p_document_id: docId,
                         p_version_id: btn.dataset.id
                     });
                     if (restoreError) {
-                        alert('Could not restore: ' + restoreError.message);
+                        showToast('Could not restore: ' + restoreError.message, 'error');
                         btn.disabled = false;
                         return;
                     }
                     modal.close();
-                    alert('The version was restored as the current version.');
+                    showToast('The version was restored as the current version.', 'success');
                     refreshDocumentList();
                 }
             });
         } catch (err) {
             console.error('Version history error:', err);
-            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load the version history.</p>';
+            modal.body.innerHTML = errorStateHtml("Could not load the version history.", null);
         }
     };
 
@@ -1975,14 +2260,14 @@ const row = Array.isArray(data) ? data[0] : data;
 
     window.openStoredDocument = async function(path, title, asDownload) {
         if (!path) {
-            alert('No file attached to this record in the database.');
+            showToast('No file attached to this record in the database.', 'warning');
             return;
         }
         const popup = asDownload ? null : window.open('about:blank', '_blank');
         const url = await getDocumentSignedUrl(path);
         if (!url) {
             if (popup) popup.close();
-            alert('Could not open this file. It may have been removed, or you may not have access to it.');
+            showToast('Could not open this file. It may have been removed, or you may not have access to it.', 'error');
             return;
         }
         if (asDownload) {
@@ -2052,6 +2337,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     const container = document.getElementById('documents-grid-inject');
     const countEl = document.getElementById('docs-found-count');
     if (!container || !currentUser) return;
+    showSkeletonIfEmpty(container, skeletonGrid(4));
 
     try {
         let query = supabaseClient
@@ -2103,10 +2389,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             const idArg = jsArg(doc.id);
             const onBtnClick = hasFile
                 ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, false)`
-                : `alert('No file attached to this record in the database.')`;
+                : `showToast('No file is attached to this document.', 'warning')`;
             const onDownloadClick = hasFile
                 ? `openStoredDocument(${escapeHtml(JSON.stringify(doc.file_path))}, ${escapeHtml(JSON.stringify(doc.title || 'document'))}, true)`
-                : `alert('No file attached to this record in the database.')`;
+                : `showToast('No file is attached to this document.', 'warning')`;
 
             const canEdit = staff || doc.uploaded_by === currentUser.id;
             const canVersion = canEdit || !!doc.case_id;
@@ -2198,11 +2484,12 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (countEl) countEl.textContent = `Found ${filteredDocs.length} document${filteredDocs.length > 1 ? 's' : ''}`;
     } catch (error) {
         console.error('Error rendering documents:', error);
+        container.innerHTML = errorStateHtml('Could not load documents.', 'refreshDocumentList');
     }
 }
     async function forceDownload(url, filename) {
         if (!url || url === '#') { 
-            alert('File URL is missing.'); 
+            showToast('File URL is missing.', 'error'); 
             return; 
         }
         try {
@@ -2438,6 +2725,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     async function renderTimelineInSchedule() {
         const timeline = document.getElementById('timeline-inject');
         if (!timeline || !currentUser) return;
+        showSkeletonIfEmpty(timeline, skeletonRows(2));
 
         try {
             const localDate = new Date();
@@ -2484,12 +2772,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }
         } catch (error) {
             console.error('Error rendering timeline:', error);
+            timeline.innerHTML = errorStateHtml("Could not load today's schedule.", 'renderTimelineInSchedule');
         }
     }
 
     async function renderRecentDocumentsInSchedule() {
         const list = document.getElementById('recent-docs-inject');
         if (!list || !currentUser) return;
+        showSkeletonIfEmpty(list, skeletonRows(2));
 
         try {
 
@@ -2517,6 +2807,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }
         } catch (error) {
             console.error('Error rendering recent documents:', error);
+            list.innerHTML = errorStateHtml('Could not load recent documents.', 'renderRecentDocumentsInSchedule');
         }
     }
 
@@ -2561,7 +2852,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }
         } catch (error) {
             console.warn("Could not load my cases tab.");
-            container.innerHTML = '<p style="color:#ef4444; padding:20px; text-align:center;">Setup Note: Ensure foreign keys are correct.</p>';
+            container.innerHTML = errorStateHtml("Could not load your cases.", "renderMyCasesTab");
         }
     }
 
@@ -2665,7 +2956,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const container = document.querySelector('#sched-perf .content-card');
         if (!container || !currentUser) return;
 
-        container.innerHTML = '<p style="color:#64748b; padding:20px; text-align:center;">Loading performance data...</p>';
+        container.innerHTML = skeletonRows(4);
 
         try {
             const isLawyerView = globalUserRole === 'lawyer';
@@ -2808,7 +3099,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             `;
         } catch (error) {
             console.error('Error rendering performance tab:', error);
-            container.innerHTML = '<p style="color:#ef4444; padding:20px; text-align:center;">Could not load performance data.</p>';
+            container.innerHTML = errorStateHtml("Could not load performance data.", "renderPerformanceTab");
         }
     }
 
@@ -2915,7 +3206,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 ${body}`;
         } catch (error) {
             console.error('Error rendering attention card:', error);
-            card.innerHTML = '<p style="color:#ef4444; font-size:13px; margin:0;">Could not load pending items.</p>';
+            card.innerHTML = errorStateHtml("Could not load pending items.", "renderAdminAttention");
         }
     }
 
@@ -3008,6 +3299,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     async function renderNotificationsList() {
         const list = document.getElementById('notifications-list-inject');
         if (!list || !currentUser) return;
+        showSkeletonIfEmpty(list, skeletonRows(3));
 
         try {
             const { data: notes, error } = await supabaseClient
@@ -3046,7 +3338,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }).join('');
         } catch (error) {
             console.error('Error rendering notifications:', error);
-            list.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load notifications. Make sure notifications_email.sql has been run.</p>';
+            list.innerHTML = errorStateHtml("Could not load notifications.", "renderNotificationsList");
         }
     }
 
@@ -3075,6 +3367,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     async function renderEmailQueueList() {
         const list = document.getElementById('email-queue-list-inject');
         if (!list || !currentUser) return;
+        showSkeletonIfEmpty(list, skeletonRows(3));
 
         try {
             const [listRes, sentRes] = await Promise.all([
@@ -3118,14 +3411,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             `).join('');
         } catch (error) {
             console.error('Error rendering email queue:', error);
-            list.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not load the email queue. Make sure notifications_email.sql has been run.</p>';
+            list.innerHTML = errorStateHtml("Could not load the email queue.", "renderEmailQueueList");
         }
     }
 
     window.retryEmail = async function(id) {
         const { error } = await supabaseClient.rpc('retry_email', { p_id: id });
         if (error) {
-            alert('Could not retry this email: ' + error.message);
+            showToast('Could not retry this email: ' + error.message, 'error');
             return;
         }
         await renderEmailQueueList();
@@ -3144,7 +3437,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     .eq('user_id', currentUser.id)
                     .eq('is_read', false);
                 if (error) {
-                    alert('Could not mark notifications as read: ' + error.message);
+                    showToast('Could not mark notifications as read: ' + error.message, 'error');
                     return;
                 }
                 await renderNotificationsList();
@@ -3153,14 +3446,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (btnClearRead) {
             btnClearRead.addEventListener('click', async () => {
-                if (!confirm('Delete all notifications you have already read?')) return;
+                if (!(await confirmDialog({ title: 'Clear read notifications', confirmLabel: 'Delete', danger: true, message: 'Delete all notifications you have already read?' }))) return;
                 const { error } = await supabaseClient
                     .from('notifications')
                     .delete()
                     .eq('user_id', currentUser.id)
                     .eq('is_read', true);
                 if (error) {
-                    alert('Could not clear notifications: ' + error.message);
+                    showToast('Could not clear notifications: ' + error.message, 'error');
                     return;
                 }
                 await renderNotificationsList();
@@ -3182,10 +3475,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         } catch (e) {}
                         throw new Error(message);
                     }
-                    alert(`Test email sent to ${data.to}. Check your inbox.`);
+                    showToast(`Test email sent to ${data.to}. Check your inbox.`, 'success');
                 } catch (err) {
                     console.error('Test email error:', err);
-                    alert('The test email could not be sent: ' + err.message);
+                    showToast('The test email could not be sent: ' + err.message, 'error');
                 } finally {
                     btnSendTest.disabled = false;
                     btnSendTest.innerHTML = idleHtml;
@@ -3770,7 +4063,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         eventEndDateTimeISO = combineDateAndTime(finalEndDate, finalEndTime);
 
                         if (eventEndDateTimeISO && new Date(eventEndDateTimeISO) <= new Date(eventDateTimeISO)) {
-                            alert('The end date/time must be after the start date/time.');
+                            showToast('The end date/time must be after the start date/time.', 'warning');
                             if (submitBtn) {
                                 submitBtn.disabled = false;
                                 submitBtn.innerText = "Save Event";
@@ -3790,7 +4083,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     const eventDayAtMidnight = new Date(eventDay.getFullYear(), eventDay.getMonth(), eventDay.getDate());
 
                     if (eventDayAtMidnight < todayAtMidnight) {
-                        alert("You can't schedule an event on a past date. Please choose today or a future date.");
+                        showToast("You can't schedule an event on a past date. Please choose today or a future date.", 'warning');
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.innerText = "Save Event";
@@ -3807,7 +4100,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                             const clash = await checkClientDayConflict(existingClientId, date);
                             if (clash) {
                                 const who = (linkedCase && linkedCase.clients && linkedCase.clients.client_name) || 'This client';
-                                alert(`Cannot schedule this event: ${who} already has "${clash.conflictEvent.title}" at ${formatEventTime(clash.conflictEvent.start_date)} on ${formatDate(clash.conflictEvent.start_date)}. A client can only have one event per day.\n\nThe earliest day you can schedule this client is ${formatDate(clash.nextFreeDate.toISOString())}.`);
+                                showToast(`Cannot schedule this event: ${who} already has "${clash.conflictEvent.title}" at ${formatEventTime(clash.conflictEvent.start_date)} on ${formatDate(clash.conflictEvent.start_date)}. A client can only have one event per day.\n\nThe earliest day you can schedule this client is ${formatDate(clash.nextFreeDate.toISOString())}.`, 'warning');
                                 if (submitBtn) {
                                     submitBtn.disabled = false;
                                     submitBtn.innerText = "Create Event";
@@ -3838,7 +4131,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         console.error('Buffer check error:', bufferCheckError);
                     } else if (nearbyLawyerEvents && nearbyLawyerEvents.length > 0) {
                         const conflictEvent = nearbyLawyerEvents[0];
-                        alert(`Cannot schedule this event: this lawyer already has "${conflictEvent.title}" at ${formatEventTime(conflictEvent.start_date)} on ${formatDate(conflictEvent.start_date)}. Events for the same lawyer need enough gap between them based on this event's duration.`);
+                        showToast(`Cannot schedule this event: this lawyer already has "${conflictEvent.title}" at ${formatEventTime(conflictEvent.start_date)} on ${formatDate(conflictEvent.start_date)}. Events for the same lawyer need enough gap between them based on this event's duration.`, 'warning');
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.innerText = "Save Event";
@@ -3865,7 +4158,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         console.error('Room check error:', roomCheckError);
                     } else if (nearbyRoomEvents && nearbyRoomEvents.length > 0) {
                         const conflictEvent = nearbyRoomEvents[0];
-                        alert(`Cannot schedule this event: "${location}" is already booked for "${conflictEvent.title}" at ${formatEventTime(conflictEvent.start_date)} on ${formatDate(conflictEvent.start_date)}. Bookings for the same room need enough gap between them based on this event's duration.`);
+                        showToast(`Cannot schedule this event: "${location}" is already booked for "${conflictEvent.title}" at ${formatEventTime(conflictEvent.start_date)} on ${formatDate(conflictEvent.start_date)}. Bookings for the same room need enough gap between them based on this event's duration.`, 'warning');
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.innerText = "Save Event";
@@ -3916,12 +4209,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                     const { error: eventError } = await supabaseClient.from('calendar_events').insert([eventData]);
                     if (eventError) throw new Error(eventError.message);
-                    
-                    await logAuditActivity('INSERT', 'Calendar Events', `Scheduled event: ${title}`, null, null, eventData);
 
-                    alert(isGeneral
+                    showToast(isGeneral
                         ? 'Firm-wide event successfully added!'
-                        : 'Event successfully added' + (finalCaseNumber ? ` and linked to case #${finalCaseNumber}.` : '.'));
+                        : 'Event successfully added' + (finalCaseNumber ? ` and linked to case #${finalCaseNumber}.` : '.'), 'success');
                     
                     form.reset(); 
                     handleEventCaseSelectChange();
@@ -3960,7 +4251,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 } catch (error) {
                     console.error('Error saving:', error);
-                    alert('Error: \n' + error.message);
+                    showToast('Error: \n' + error.message, 'error');
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -4104,7 +4395,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const casesList = document.getElementById('cases-list-inject');
                 if (!casesList) return;
 
-        casesList.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading cases...</p>';
+        casesList.innerHTML = skeletonCards(3);
 
         try {
             const isLawyer = globalUserRole === 'lawyer' && currentUser;
@@ -4125,7 +4416,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         } catch (error) {
             console.error('Error loading cases tab:', error);
-            casesList.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Failed to load cases. Make sure supabase_setup.sql has been run.</p>';
+            casesList.innerHTML = errorStateHtml("Could not load cases.", "renderCasesTabView");
         }
     }
 
@@ -4137,26 +4428,43 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         const from = document.getElementById('cases-date-from')?.value || '';
         const to = document.getElementById('cases-date-to')?.value || '';
-        if (clearBtn) clearBtn.classList.toggle('hidden', !from && !to);
+        const term = (document.getElementById('cases-search')?.value || '').trim().toLowerCase();
+        const fStatus = document.getElementById('cases-filter-status')?.value || 'all';
+        const fType = document.getElementById('cases-filter-type')?.value || 'all';
+        const fParty = document.getElementById('cases-filter-party')?.value || 'all';
+        const fStage = document.getElementById('cases-filter-stage')?.value || 'all';
+        const filtersOn = !!(from || to || term) || fStatus !== 'all' || fType !== 'all' || fParty !== 'all' || fStage !== 'all';
+        if (clearBtn) clearBtn.classList.toggle('hidden', !filtersOn);
 
         const all = Object.values(window.__casesRegistry || {});
 
-  
         const cases = all.filter(c => {
             const opened = toLocalDateKey(c.date_filed || c.created_at);
             if (from && opened < from) return false;
             if (to && opened > to) return false;
+            if (fStatus !== 'all' && (c.status || 'active') !== fStatus) return false;
+            if (fType !== 'all' && c.case_type !== fType) return false;
+            if (fParty !== 'all' && c.party_type !== fParty) return false;
+            if (fStage !== 'all' && c.case_stage !== fStage) return false;
+            if (term) {
+                const lawyers = (c.case_lawyers || []).map(r => r.profiles && r.profiles.full_name);
+                const haystack = [
+                    c.title, c.case_number, c.court_case_no, c.court_branch, c.jurisdiction,
+                    c.clients && c.clients.client_name, ...lawyers
+                ].filter(Boolean).join(' ').toLowerCase();
+                if (!haystack.includes(term)) return false;
+            }
             return true;
         });
 
-        if (countEl) countEl.textContent = (from || to) ? `${cases.length} of ${all.length} cases` : `Total: ${all.length}`;
+        if (countEl) countEl.textContent = filtersOn ? `${cases.length} of ${all.length} cases` : `Total: ${all.length}`;
 
         if (all.length === 0) {
             casesList.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No cases yet.</p>';
             return;
         }
         if (cases.length === 0) {
-            casesList.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No cases were opened in this date range.</p>';
+            casesList.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No cases match your search or filters.</p>';
             return;
         }
 
@@ -4225,6 +4533,27 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const fromEl = document.getElementById('cases-date-from');
         const toEl = document.getElementById('cases-date-to');
         const clearBtn = document.getElementById('cases-date-clear');
+        const searchEl = document.getElementById('cases-search');
+        const statusEl = document.getElementById('cases-filter-status');
+        const typeEl = document.getElementById('cases-filter-type');
+        const partyEl = document.getElementById('cases-filter-party');
+        const stageEl = document.getElementById('cases-filter-stage');
+
+        const fillFilter = (el, allLabel, list) => {
+            if (!el) return;
+            el.innerHTML = `<option value="all">${allLabel}</option>` +
+                list.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+        };
+        fillFilter(typeEl, 'All case types', CASE_TYPES);
+        fillFilter(partyEl, 'All party types', PARTY_TYPES);
+        fillFilter(stageEl, 'All stages', CASE_STAGES);
+
+        let searchTimer = null;
+        if (searchEl) searchEl.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(paintCasesList, 150);
+        });
+        [statusEl, typeEl, partyEl, stageEl].forEach(el => { if (el) el.addEventListener('change', paintCasesList); });
 
         const onDateChange = () => {
             if (toEl && fromEl) toEl.min = fromEl.value || '';
@@ -4237,6 +4566,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             clearBtn.addEventListener('click', () => {
                 if (fromEl) { fromEl.value = ''; fromEl.max = ''; }
                 if (toEl) { toEl.value = ''; toEl.min = ''; }
+                if (searchEl) searchEl.value = '';
+                if (statusEl) statusEl.value = 'all';
+                if (typeEl) typeEl.value = 'all';
+                if (partyEl) partyEl.value = 'all';
+                if (stageEl) stageEl.value = 'all';
                 paintCasesList();
             });
         }
@@ -4253,11 +4587,16 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             if (error) throw error;
             
             const c = (window.__casesRegistry || {})[caseId];
-            await logAuditActivity('UPDATE', 'Cases', `Changed case status to ${newStatus}: ${c ? c.title : caseId}`, caseId, {status: currentStatus}, {status: newStatus});
+            const caseLabel = c ? ((c.case_number ? '#' + c.case_number + ' - ' : '') + c.title) : caseId;
+            if (newStatus === 'closed') {
+                await logAuditActivity('CLOSE', 'Cases', `Closed case: ${caseLabel}`, caseId, { status: currentStatus }, { status: newStatus });
+            } else {
+                await logAuditActivity('REOPEN', 'Cases', `Reopened case: ${caseLabel}`, caseId, { status: currentStatus }, { status: newStatus });
+            }
             
             await renderCasesTabView();
         } catch (error) {
-            alert('Could not update case status: ' + error.message);
+            showToast('Could not update case status: ' + error.message, 'error');
         }
     };
 
@@ -4324,7 +4663,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     async function renderClientsView() {
         const listEl = document.getElementById('clients-list-inject');
         if (!listEl) return;
-        listEl.innerHTML = '<p class="mc-empty">Loading clients...</p>';
+        listEl.innerHTML = skeletonRows(4);
 
         const subtitle = document.getElementById('clients-subtitle');
         if (subtitle) {
@@ -4351,7 +4690,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             console.error('Error loading clients:', err);
             const countEl = document.getElementById('clients-count');
             if (countEl) countEl.textContent = '';
-            listEl.innerHTML = '<p class="mc-empty" style="color:#ef4444;">Could not load clients. Check your connection and database permissions.</p>';
+            listEl.innerHTML = errorStateHtml("Could not load clients.", "renderClientsView");
         }
     }
 
@@ -4438,8 +4777,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             if (action === 'approve' || action === 'assign') {
                 await openTeamModal('client', client.id, { approve: action === 'approve' });
-        } else if (action === 'reject') {
-                const reason = prompt(`Reject ${client.client_name}?\n\nReason (optional):`);
+                } else if (action === 'reject') {
+                const reason = (await promptDialog({ title: 'Reject client', message: `Reject ${client.client_name}?`, label: 'Reason (optional)', placeholder: 'e.g., Incomplete documents', confirmLabel: 'Reject', danger: true, multiline: true }));
                 if (reason === null) return;
                 const { error } = await supabaseClient
                     .from('clients')
@@ -4451,34 +4790,17 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             } else if (action === 'edit') {
                 openEditClientModal(client);
             } else if (action === 'delete') {
-                if (!confirm(`Delete ${client.client_name}? This cannot be undone.`)) return;
-                
-                const numId = Number(client.id);
-                const caseIds = (client.cases || []).map(c => Number(c.id));
-                
-                if (caseIds.length > 0) {
-                    await supabaseClient.from('email_queue').delete().in('case_id', caseIds);
-                    await supabaseClient.from('documents').delete().in('case_id', caseIds);
-                    await supabaseClient.from('calendar_events').delete().in('case_id', caseIds);
-                    await supabaseClient.from('case_lawyers').delete().in('case_id', caseIds);
-                    await supabaseClient.from('cases').delete().eq('client_id', numId);
-                }
-                
-                await supabaseClient.from('email_queue').delete().eq('client_id', numId);
-                await supabaseClient.from('documents').delete().eq('client_id', numId);
-                await supabaseClient.from('client_lawyers').delete().eq('client_id', numId);
-
-                const { error } = await supabaseClient.from('clients').delete().eq('id', numId);
+                if (!(await confirmDialog({ title: 'Delete client', confirmLabel: 'Delete', danger: true, message: `Delete ${client.client_name}? This cannot be undone.` }))) return;
+                const { error } = await supabaseClient.from('clients').delete().eq('id', client.id);
                 if (error) {
-                    alert('Could not delete the client: ' + error.message);
-                    return;
+                    throw new Error(error.message + '\n\nA client that still has cases, documents or events cannot be deleted. Remove or reassign those first.');
                 }
-                await logAuditActivity('DELETE', 'Clients', `Deleted client: ${client.client_name}`, numId, client, null);
+                await logAuditActivity('DELETE', 'Clients', `Deleted client: ${client.client_name}`, client.id, { id: client.id, client_name: client.client_name }, null);
                 await renderClientsView();
             }
         } catch (err) {
             console.error('Client action failed:', err);
-            alert('Action failed: ' + err.message);
+            showToast('Action failed: ' + err.message, 'error');
         }
     }
 
@@ -4491,6 +4813,29 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         document.getElementById('ec-phone').value = client.client_phone || '';
         document.getElementById('ec-address').value = client.full_address || '';
         modal.classList.remove('hidden');
+    }
+
+    const teamModalState = { locked: false, syncCo: null };
+
+    function hideTeamError() {
+        const el = document.getElementById('team-error');
+        if (el) el.classList.add('hidden');
+    }
+
+    function showTeamError(message) {
+        const el = document.getElementById('team-error');
+        if (!el) return;
+        el.textContent = message;
+        el.classList.remove('hidden');
+    }
+
+    function setTeamModalLocked(locked) {
+        teamModalState.locked = !!locked;
+        const leadSel = document.getElementById('team-lead');
+        const submitBtn = document.getElementById('team-submit-btn');
+        if (leadSel) leadSel.disabled = teamModalState.locked;
+        if (submitBtn) submitBtn.disabled = teamModalState.locked;
+        if (typeof teamModalState.syncCo === 'function') teamModalState.syncCo();
     }
 
     async function openTeamModal(kind, id, { approve = false } = {}) {
@@ -4516,7 +4861,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         try {
             lawyers = await getActiveLawyersData();
         } catch (err) {
-            alert('Could not load lawyers: ' + err.message);
+            showToast('Could not load lawyers: ' + err.message, 'error');
             return;
         }
 
@@ -4530,20 +4875,41 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         coList.innerHTML = lawyers.length > 0
             ? lawyers.map(l => `
-                <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#334155; cursor:pointer;">
-                    <input type="checkbox" value="${l.id}" ${currentCo.includes(l.id) ? 'checked' : ''}> ${label(l)}
+                <label class="team-co-item">
+                    <input type="checkbox" value="${l.id}" ${currentCo.includes(l.id) ? 'checked' : ''}>
+                    <span class="team-co-text">
+                        <span class="team-co-name">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</span>
+                        ${l.specialization ? `<span class="team-co-spec">${escapeHtml(l.specialization)}</span>` : ''}
+                    </span>
                 </label>`).join('')
-            : '<p style="color:#94a3b8; font-size:12px; margin:0;">No active lawyers. Add one in Manage Lawyers first.</p>';
+            : '<p class="team-co-empty">No active lawyers. Add one in Manage Lawyers first.</p>';
 
-        const syncCo = () => {
-            coList.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        teamModalState.syncCo = () => {
+            coList.querySelectorAll('.team-co-item').forEach(item => {
+                const cb = item.querySelector('input[type="checkbox"]');
                 const isLead = cb.value === leadSel.value;
                 if (isLead) cb.checked = false;
-                cb.disabled = isLead;
+                cb.disabled = teamModalState.locked || isLead;
+                item.classList.toggle('is-disabled', cb.disabled);
             });
         };
-        leadSel.onchange = syncCo;
-        syncCo();
+        leadSel.onchange = () => { hideTeamError(); teamModalState.syncCo(); };
+        coList.onchange = hideTeamError;
+
+        // Existing assignments on a client are locked until the admin confirms their password.
+        const isLocked = kind === 'client' && !approve && rows.length > 0;
+        setTeamModalLocked(isLocked);
+        const noticeEl = document.getElementById('team-lock-notice');
+        if (noticeEl) noticeEl.classList.toggle('hidden', !isLocked);
+        const authEl = document.getElementById('team-unlock-auth');
+        if (authEl) authEl.classList.add('hidden');
+        const unlockBtnEl = document.getElementById('team-unlock-btn');
+        if (unlockBtnEl) unlockBtnEl.classList.remove('hidden');
+        const pwEl = document.getElementById('team-unlock-password');
+        if (pwEl) pwEl.value = '';
+        hideTeamError();
+        const unlockErr = document.getElementById('team-unlock-error');
+        if (unlockErr) unlockErr.classList.add('hidden');
 
         document.getElementById('team-kind').value = kind;
         document.getElementById('team-target-id').value = id;
@@ -4563,8 +4929,75 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (closeBtn) closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
 
+        const unlockBtn = document.getElementById('team-unlock-btn');
+        const authBox = document.getElementById('team-unlock-auth');
+        const pwInput = document.getElementById('team-unlock-password');
+        const confirmBtn = document.getElementById('team-unlock-confirm');
+        const unlockError = document.getElementById('team-unlock-error');
+
+        const showUnlockError = (msg) => {
+            if (!unlockError) return;
+            unlockError.textContent = msg;
+            unlockError.classList.remove('hidden');
+        };
+
+        if (unlockBtn && authBox) {
+            unlockBtn.addEventListener('click', () => {
+                authBox.classList.remove('hidden');
+                unlockBtn.classList.add('hidden');
+                if (pwInput) pwInput.focus();
+            });
+        }
+
+        const confirmUnlock = async () => {
+            if (!isAdminUser() || !currentUser || !currentUser.email) {
+                showUnlockError('Only an administrator can unlock this.');
+                return;
+            }
+            const password = pwInput ? pwInput.value : '';
+            if (!password) {
+                showUnlockError('Enter your password.');
+                return;
+            }
+            confirmBtn.disabled = true;
+            const idleText = confirmBtn.textContent;
+            confirmBtn.textContent = 'Checking...';
+            if (unlockError) unlockError.classList.add('hidden');
+            try {
+                const { error } = await supabaseClient.auth.signInWithPassword({
+                    email: currentUser.email,
+                    password: password
+                });
+                if (error) {
+                    showUnlockError('Incorrect password. Please try again.');
+                    return;
+                }
+                if (pwInput) pwInput.value = '';
+                setTeamModalLocked(false);
+                const notice = document.getElementById('team-lock-notice');
+                if (notice) notice.classList.add('hidden');
+                showToast('Unlocked. You can now change the assigned lawyers.', 'success');
+            } catch (err) {
+                showUnlockError('Could not verify your password. Please try again.');
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = idleText;
+            }
+        };
+
+        if (confirmBtn) confirmBtn.addEventListener('click', confirmUnlock);
+        if (pwInput) {
+            pwInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); confirmUnlock(); }
+            });
+        }
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (teamModalState.locked) {
+                showTeamError('This assignment is locked. Unlock it with your password to make changes.');
+                return;
+            }
             const kind = document.getElementById('team-kind').value;
             const id = document.getElementById('team-target-id').value;
             const approve = !!document.getElementById('team-approve').value;
@@ -4573,10 +5006,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 .map(cb => cb.value)
                 .filter(v => v !== lead);
 
-            if (approve && !lead) {
-                alert('Choose a lead lawyer before approving. The lead lawyer is who the client is assigned to.');
+            if (!lead) {
+                showTeamError(co.length > 0
+                    ? 'Choose a lead lawyer first. Co-lawyers cannot be saved without a lead lawyer.'
+                    : 'Choose a lead lawyer before saving.');
                 return;
             }
+            hideTeamError();
 
             const submitBtn = document.getElementById('team-submit-btn');
             const idle = submitBtn.textContent;
@@ -4603,9 +5039,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         p_case_id: id, p_lead: lead, p_co: co
                     });
                     if (error) throw error;
-                    
-                    const caseInfo = (window.__casesRegistry || {})[id];
-                    await logAuditActivity('UPDATE', 'Cases', `Updated lawyer team for case: ${caseInfo ? caseInfo.title : id}`, id, null, { team: 'Assigned new team' });
                 }
 
                 modal.classList.add('hidden');
@@ -4614,7 +5047,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 updateDashboardStats();
             } catch (err) {
                 console.error('Error saving lawyer team:', err);
-                alert('Could not save: ' + err.message);
+                showToast('Could not save: ' + err.message, 'error');
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = idle;
@@ -4645,7 +5078,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         clearCaseFormErrors();
         let firstInvalid = null;
 
-        CASE_REQUIRED_FIELDS.forEach(([id, message]) => {
+        // A new case created by an administrator must have a lead lawyer.
+        const leadWrap = document.getElementById('cf-lead-wrap');
+        const leadRequired = !!leadWrap && leadWrap.style.display !== 'none';
+        const requiredFields = CASE_REQUIRED_FIELDS.slice();
+        if (leadRequired) requiredFields.splice(1, 0, ['cf-lead', 'Please select a lead lawyer. A case cannot be saved without one.']);
+
+        requiredFields.forEach(([id, message]) => {
             const el = document.getElementById(id);
             if (!el) return;
             if ((el.value || '').trim() !== '') return;
@@ -4723,7 +5162,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (showLead && leadSel) {
             try {
                 const lawyers = await getActiveLawyersData();
-                leadSel.innerHTML = '<option value="">Use the client\'s assigned lawyers</option>' +
+                leadSel.innerHTML = '<option value="">Select a lead lawyer</option>' +
                     lawyers.map(l => `<option value="${l.id}">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</option>`).join('');
             } catch (err) {
                 leadSel.innerHTML = '<option value="">Could not load lawyers</option>';
@@ -4824,7 +5263,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         caseStage: caseStage, partyType: partyType
                     });
                     if (error) throw error;
-                    alert('Case saved.' + (data && data.case_number ? `\n\nCase Number: ${data.case_number}` : ''));
+                    showToast('Case saved.' + (data && data.case_number ? `\n\nCase Number: ${data.case_number}` : ''), 'success');
                 }
 
                 modal.classList.add('hidden');
@@ -4833,7 +5272,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 renderMyCasesTab();
             } catch (err) {
                 console.error('Error saving case:', err);
-                alert('Could not save the case: ' + err.message);
+                showToast('Could not save the case: ' + err.message, 'error');
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = idle;
@@ -4846,22 +5285,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     window.deleteCase = async function(caseId) {
         if (!isAdminUser()) return;
         const c = (window.__casesRegistry || {})[caseId];
-        if (!confirm(`Delete case "${c ? c.title : ''}"? This cannot be undone.`)) return;
-        
-        const numId = Number(caseId);
-
-        await supabaseClient.from('email_queue').delete().eq('case_id', numId);
-        await supabaseClient.from('documents').delete().eq('case_id', numId);
-        await supabaseClient.from('calendar_events').delete().eq('case_id', numId);
-        await supabaseClient.from('case_lawyers').delete().eq('case_id', numId);
-
-        const { error } = await supabaseClient.from('cases').delete().eq('id', numId);
+        if (!(await confirmDialog({ title: 'Delete case', confirmLabel: 'Delete', danger: true, message: `Delete case "${c ? c.title : ''}"? This cannot be undone.` }))) return;
+        const { error } = await supabaseClient.from('cases').delete().eq('id', caseId);
         if (error) {
-            alert('Could not delete the case: ' + error.message);
+            showToast('Could not delete the case: ' + error.message + '\n\nA case that still has documents or events linked to it cannot be deleted.', 'error');
             return;
         }
         
-        await logAuditActivity('DELETE', 'Cases', `Deleted case: ${c ? c.title : caseId}`, numId, c, null);
+        await logAuditActivity('DELETE', 'Cases', `Deleted case: ${c ? c.title : caseId}`, caseId, c, null);
         
         await renderCasesTabView();
         updateDashboardStats();
@@ -4927,7 +5358,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                     const dup = byEmail.data?.[0] || byPhone.data?.[0] || byName.data?.[0];
                     if (dup) {
-                        alert(`A client with this name, email or phone already exists: "${dup.client_name}" (${dup.client_email || 'no email'}). Find them in the Client Directory instead of adding a duplicate.`);
+                        showToast(`A client with this name, email or phone already exists: "${dup.client_name}" (${dup.client_email || 'no email'}). Find them in the Client Directory instead of adding a duplicate.`, 'warning');
                         return;
                     }
 
@@ -4972,13 +5403,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         }
                     }
 
-                    alert(message);
+                    showToast(message, 'success');
                     form.reset();
                     if (addModal) addModal.classList.add('hidden');
                     await renderClientsView();
                 } catch (error) {
                     console.error('Error adding client:', error);
-                    alert('Error adding client: ' + error.message);
+                    showToast('Error adding client: ' + error.message, 'error');
                 } finally {
                     submitBtn.disabled = false;
                     submitBtn.textContent = idleLabel;
@@ -5018,7 +5449,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     await renderClientsView();
                 } catch (err) {
                     console.error('Error editing client:', err);
-                    alert('Could not save changes: ' + err.message);
+                    showToast('Could not save changes: ' + err.message, 'error');
                 } finally {
                     submitBtn.disabled = false;
                 }
@@ -5048,7 +5479,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const caseEmailForm = document.getElementById('case-email-form');
         if (caseEmailForm) caseEmailForm.reset();
         modal.classList.remove('hidden');
-        listEl.innerHTML = '<p style="color:#94a3b8; text-align:center; padding:20px;">Loading emails...</p>';
+        listEl.innerHTML = skeletonRows(3);
 
         await loadCaseEmails(caseId);
     };
@@ -5090,7 +5521,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }
         } catch (error) {
             console.error('Error loading case emails:', error);
-            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Failed to load emails. Make sure the email_queue table has case_id/client_id/body columns (see migration).</p>';
+            listEl.innerHTML = errorStateHtml("Could not load the emails for this case.", null);
         }
     }
 
@@ -5121,7 +5552,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 if (!subject || !body || !caseId) return;
 
                 if (!recipientEmail) {
-                    alert('This case has no client email on file, so an update email cannot be sent.');
+                    showToast('This case has no client email on file, so an update email cannot be sent.', 'warning');
                     return;
                 }
 
@@ -5158,15 +5589,12 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         .insert([emailRow]);
 
                     if (error) throw error;
-                    
-                    await logAuditActivity('INSERT', 'Emails', `Queued case email to client: ${subject}`, caseId, null, emailRow);
-                    
                     subjectInput.value = '';
                     bodyInput.value = '';
                     if (attachmentInput) attachmentInput.value = '';
                     await loadCaseEmails(caseId);
                 } catch (error) {
-                    alert('Email could not be queued: ' + error.message);
+                    showToast('Email could not be queued: ' + error.message, 'error');
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -5292,7 +5720,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 e.preventDefault(); 
                 
                 if (!selectedFile) {
-                    alert("Please select or drag a file to upload first.");
+                    showToast("Please select or drag a file to upload first.", 'warning');
                     return;
                 }
 
@@ -5349,9 +5777,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         throw new Error("File uploaded, but failed to save details to database.");
                     }
 
-                    await logAuditActivity('INSERT', 'Documents', `Uploaded document: ${finalTitle}`, newDoc.id, null, docData);
+                    await logAuditActivity('INSERT', 'Documents', `Uploaded document: ${finalTitle}`);
 
-                    alert('Document successfully uploaded and saved!');
+                    showToast('Document successfully uploaded and saved!', 'success');
 
                     const fileForIndex = selectedFile;
                     resetUploadForm();
@@ -5366,7 +5794,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 } catch (error) {
                     console.error('Error saving document:', error);
-                    alert('Error: \n' + error.message);
+                    showToast('Error: \n' + error.message, 'error');
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -5451,7 +5879,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 try {
                     if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-                        throw new Error('The temporary password must be at least 8 characters and include a letter and a number.');
+                        throw new Error('The password must be at least 8 characters and include a letter and a number.');
                     }
 
                     const { error } = await supabaseClient.functions.invoke('create-user', {
@@ -5474,7 +5902,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         throw new Error('Failed to register user: ' + message);
                     }
 
-                    alert(`${isLawyerRole ? 'Lawyer Atty.' : 'Secretary'} ${formattedName} successfully registered!`);
+                    showToast(`${isLawyerRole ? 'Lawyer Atty.' : 'Secretary'} ${formattedName} successfully registered!`, 'success');
                     form.reset(); 
                     modal.classList.add('hidden'); 
                     
@@ -5485,7 +5913,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 } catch (error) {
                     console.error('Error adding user:', error);
-                    alert('Error: \n' + error.message);
+                    showToast('Error: \n' + error.message, 'error');
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -5528,7 +5956,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 if (!file) return;
 
                 if (file.size > 2 * 1024 * 1024) {
-                    alert('Please choose an image smaller than 2MB.');
+                    showToast('Please choose an image smaller than 2MB.', 'warning');
                     photoInput.value = '';
                     return;
                 }
@@ -5589,7 +6017,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     modal.classList.remove('hidden');
                 } catch (error) {
                     console.error('Error loading profile:', error);
-                    alert('Could not load your profile. Please try again.');
+                    showToast('Could not load your profile. Please try again.', 'error');
                 }
             });
         }
@@ -5650,10 +6078,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     await updateSidebarUserInfo();
                     await updateScheduleProfileHeader();
 
-                    alert('Profile successfully updated!');
+                    showToast('Profile successfully updated!', 'success');
                 } catch (error) {
                     console.error('Error updating profile:', error);
-                    alert('Error updating profile: ' + error.message);
+                    showToast('Error updating profile: ' + error.message, 'error');
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -5708,7 +6136,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                     await logAuditActivity('UPDATE', 'Profiles', `Edited ${isSecretaryEdit ? 'secretary' : 'lawyer'} profile: ${newName}`, lawyerId, oldData, patch);
 
-                    alert(isSecretaryEdit ? 'Secretary profile successfully updated!' : 'Lawyer profile successfully updated!');
+                    showToast(isSecretaryEdit ? 'Secretary profile successfully updated!' : 'Lawyer profile successfully updated!', 'success');
                     if (isSecretaryEdit) renderSecretariesList();
                     modal.classList.add('hidden');
                     
@@ -5718,7 +6146,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 } catch (error) {
                     console.error('Error updating lawyer:', error);
-                    alert('Error updating profile: ' + error.message);
+                    showToast('Error updating profile: ' + error.message, 'error');
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
@@ -5778,7 +6206,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 confirmBtn.disabled = true;
                 confirmBtn.innerText = "Archiving...";
 
-try {
+                try {
                     const { error } = await supabaseClient
                         .from('profiles')
                         .update({ status: 'inactive' })
@@ -5787,9 +6215,9 @@ try {
                     if (error) throw new Error(error.message);
 
                     const archiveName = document.getElementById('archive-lawyer-name-display').textContent;
-                    await logAuditActivity('UPDATE', 'Profiles', `Archived lawyer: ${archiveName}`, lawyerId, { status: 'active' }, { status: 'inactive' });
+                    await logAuditActivity('UPDATE', 'Profiles', `Archived lawyer: ${archiveName}`, lawyerId);
 
-                    alert('Lawyer successfully archived (set to inactive).');
+                    showToast('Lawyer successfully archived (set to inactive).', 'success');
                     modal.classList.add('hidden');
                     
                     renderManageLawyersList();
@@ -5798,7 +6226,7 @@ try {
 
                 } catch (error) {
                     console.error('Error archiving lawyer:', error);
-                    alert('Error archiving lawyer: ' + error.message);
+                    showToast('Error archiving lawyer: ' + error.message, 'error');
                 } finally {
                     confirmBtn.disabled = false;
                     confirmBtn.innerText = "Archive Account";
@@ -5974,14 +6402,14 @@ try {
                     return;
                 }
                 modal.close();
-                alert(hasWork
+                showToast(hasWork
                     ? `Atty. ${name} was archived. Transferred ${data.cases} case(s), ${data.clients} client(s) and ${data.events} upcoming event(s).`
-                    : `Atty. ${name} was archived.`);
+                    : `Atty. ${name} was archived.`, 'success');
                 refreshUserDirectories();
             });
         } catch (err) {
             console.error('Archive modal error:', err);
-            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not check this lawyer\'s assignments. Please try again.</p>';
+            modal.body.innerHTML = errorStateHtml("Could not check this lawyer's assignments.", null);
         }
     };
 
@@ -6048,16 +6476,13 @@ try {
                     confirmBtn.textContent = 'Change role';
                     return;
                 }
-                
-                await logAuditActivity('UPDATE', 'Profiles', `Changed role for: ${name} to ${label(toRole)}`, id, { role: currentRole }, { role: toRole });
-                
                 modal.close();
-                alert(`${name} is now a ${label(toRole).toLowerCase()}.`);
+                showToast(`${name} is now a ${label(toRole).toLowerCase()}.`, 'success');
                 refreshUserDirectories();
             });
         } catch (err) {
             console.error('Change role modal error:', err);
-            modal.body.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Could not check this account\'s assignments. Please try again.</p>';
+            modal.body.innerHTML = errorStateHtml("Could not check this account's assignments.", null);
         }
     };
 
@@ -6077,8 +6502,8 @@ try {
     window.openResetPasswordModal = function(id, name) {
         if (globalRoleName !== 'admin') return;
         const modal = openUserModal('Reset Password', escapeHtml(name), `
-            <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">Set a temporary password. They will be asked to choose their own the next time they sign in.</p>
-            <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Temporary password</label>
+            <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">Set a password. They will be asked to choose their own the next time they sign in.</p>
+            <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Password</label>
             <div style="display:flex; gap:8px; margin-bottom:6px;">
                 <input type="text" id="um-pw" autocomplete="off" style="flex:1; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; font-family:monospace; background:#f8fafc;">
                 <button type="button" id="um-pw-generate" style="padding:10px 12px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Generate</button>
@@ -6127,11 +6552,9 @@ try {
                 confirmBtn.textContent = 'Reset password';
                 return;
             }
-            
-            await logAuditActivity('UPDATE', 'Profiles', `Reset password for: Atty. ${name}`, id, null, { action: 'password_reset' });
-            
             modal.close();
-            alert(`Password reset for ${name}. Give them the temporary password privately.`);        });
+            showToast(`Password reset for ${name}. Give them the password privately.`, 'success');
+        });
     };
 
     async function renderManageLawyersList() {
@@ -6139,7 +6562,7 @@ try {
         const countEl = document.getElementById('manage-lawyers-count');
         if (!listContainer) return;
 
-        listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">Loading directory...</p>';
+        listContainer.innerHTML = skeletonRows(4);
 
         try {
             const { data: lawyers, error } = await supabaseClient
@@ -6183,7 +6606,7 @@ try {
             }
         } catch (err) {
             console.error('Error loading lawyer directory:', err);
-            listContainer.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Error loading directory.</p>';
+            listContainer.innerHTML = errorStateHtml("Could not load the lawyer directory.", "renderManageLawyersList");
         }
     }
 
@@ -6198,7 +6621,7 @@ try {
             return;
         }
 
-        listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">Loading secretaries...</p>';
+        listContainer.innerHTML = skeletonRows(4);
         try {
             const { data: people, error } = await supabaseClient
                 .from('profiles')
@@ -6242,7 +6665,7 @@ try {
             }).join('');
         } catch (err) {
             console.error('Error loading secretaries:', err);
-            listContainer.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Error loading secretaries.</p>';
+            listContainer.innerHTML = errorStateHtml("Could not load secretaries.", "renderSecretariesList");
         }
     }
 
@@ -6251,10 +6674,10 @@ try {
         const p = (window.__secretaries || {})[profileId];
         if (!p) return;
         const next = p.status === 'inactive' ? 'active' : 'inactive';
-        if (!confirm(`${next === 'inactive' ? 'Archive' : 'Restore'} ${p.full_name}?`)) return;
+        if (!(await confirmDialog({ title: next === 'inactive' ? 'Archive secretary' : 'Restore secretary', confirmLabel: next === 'inactive' ? 'Archive' : 'Restore', danger: next === 'inactive', message: `${next === 'inactive' ? 'Archive' : 'Restore'} ${p.full_name}?` }))) return;
         const { error } = await supabaseClient.from('profiles').update({ status: next }).eq('id', profileId);
         if (error) {
-            alert('Could not update: ' + error.message);
+            showToast('Could not update: ' + error.message, 'error');
             return;
         }
         renderSecretariesList();
@@ -6265,7 +6688,7 @@ try {
         const countEl = document.getElementById('manage-archived-count');
         if (!listContainer) return;
 
-        listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">Loading archived lawyers...</p>';
+        listContainer.innerHTML = skeletonRows(4);
 
         try {
             const { data: lawyers, error } = await supabaseClient
@@ -6307,12 +6730,12 @@ try {
             }
         } catch (err) {
             console.error('Error loading archived lawyers:', err);
-            listContainer.innerHTML = '<p style="color:#ef4444; text-align:center; padding:30px;">Error loading archived lawyers.</p>';
+            listContainer.innerHTML = errorStateHtml("Could not load archived lawyers.", "renderArchivedLawyersList");
         }
     }
 
     window.restoreArchivedLawyer = async function(id, name) {
-        if (!confirm(`Are you sure you want to restore Atty. ${name}? Their account will be reactivated.`)) return;
+        if (!(await confirmDialog({ title: 'Restore lawyer', confirmLabel: 'Restore', message: `Are you sure you want to restore Atty. ${name}? Their account will be reactivated.` }))) return;
 
         try {
                 const { error } = await supabaseClient
@@ -6320,12 +6743,12 @@ try {
                 .update({ status: 'active' })
                 .eq('id', id);
 
-        if (error) throw new Error(error.message);
+            if (error) throw new Error(error.message);
 
-            await logAuditActivity('UPDATE', 'Profiles', `Restored lawyer: Atty. ${name}`, id, {status: 'inactive'}, {status: 'active'});
+            await logAuditActivity('UPDATE', 'Profiles', `Restored lawyer: Atty. ${name}`, id);
 
-            alert(`Atty. ${name} has been successfully restored!`);
-
+            showToast(`Atty. ${name} has been successfully restored!`, 'success');
+            
             renderManageLawyersList();
             renderArchivedLawyersList();
             renderLawyerStatusWidget();
@@ -6333,7 +6756,7 @@ try {
 
         } catch (error) {
             console.error('Error restoring lawyer:', error);
-            alert('Error restoring lawyer: ' + error.message);
+            showToast('Error restoring lawyer: ' + error.message, 'error');
         }
     };
 
@@ -6379,174 +6802,226 @@ try {
         checkAuthAndInit();
     });
 
-let currentAuditActionFilter = 'all';
-let currentAuditTimeFilter = 'all';
+const AUDIT_LOG_LIMIT = 200;
+let auditRequestCounter = 0;
+let auditFiltersReady = false;
+
+function getAuditFilters() {
+        const val = (id, fallback) => {
+            const el = document.getElementById(id);
+            return el ? el.value : fallback;
+        };
+        return {
+            action: val('audit-filter-action', 'all'),
+            period: val('audit-filter-period', 'all'),
+            from: val('audit-filter-from', ''),
+            to: val('audit-filter-to', ''),
+            entity: val('audit-filter-entity', 'all')
+        };
+    }
+
+    function auditFiltersActive(f) {
+        return f.action !== 'all' || f.period !== 'all' || f.entity !== 'all';
+    }
+
+    function getAuditDateRange(f) {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const dayMs = 24 * 60 * 60 * 1000;
+
+        switch (f.period) {
+            case 'today':
+                return { from: startOfToday, to: new Date(startOfToday.getTime() + dayMs) };
+            case '7d':
+                return { from: new Date(startOfToday.getTime() - 6 * dayMs), to: null };
+            case '30d':
+                return { from: new Date(startOfToday.getTime() - 29 * dayMs), to: null };
+            case 'this_month':
+                return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: null };
+            case 'last_month':
+                return {
+                    from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+                    to: new Date(now.getFullYear(), now.getMonth(), 1)
+                };
+            case 'custom': {
+                let from = null, to = null;
+                if (f.from) {
+                    const [y, mo, d] = f.from.split('-').map(Number);
+                    from = new Date(y, mo - 1, d);
+                }
+                if (f.to) {
+                    const [y, mo, d] = f.to.split('-').map(Number);
+                    to = new Date(y, mo - 1, d + 1); // include the whole "to" day
+                }
+                return { from, to };
+            }
+            default:
+                return { from: null, to: null };
+        }
+    }
+
+    function initAuditFilters() {
+        if (auditFiltersReady) return;
+        const actionEl = document.getElementById('audit-filter-action');
+        const periodEl = document.getElementById('audit-filter-period');
+        const entityEl = document.getElementById('audit-filter-entity');
+        const fromEl = document.getElementById('audit-filter-from');
+        const toEl = document.getElementById('audit-filter-to');
+        const clearBtn = document.getElementById('audit-filter-clear');
+        if (!actionEl || !periodEl || !entityEl) return;
+        auditFiltersReady = true;
+
+        const sync = () => {
+            const isCustom = periodEl.value === 'custom';
+            document.querySelectorAll('.audit-custom-date').forEach(el => el.classList.toggle('hidden', !isCustom));
+            if (clearBtn) clearBtn.classList.toggle('hidden', !auditFiltersActive(getAuditFilters()));
+        };
+        const refresh = () => { sync(); renderAuditsView(); };
+
+        [actionEl, entityEl, periodEl].forEach(el => el.addEventListener('change', refresh));
+        if (fromEl) fromEl.addEventListener('change', refresh);
+        if (toEl) toEl.addEventListener('change', refresh);
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                actionEl.value = 'all';
+                periodEl.value = 'all';
+                entityEl.value = 'all';
+                if (fromEl) fromEl.value = '';
+                if (toEl) toEl.value = '';
+                refresh();
+            });
+        }
+    }
 
 async function renderAuditsView() {
-    const listEl = document.getElementById('audits-list-inject');
-    const countEl = document.getElementById('audits-count');
-    if (!listEl) return;
+        const listEl = document.getElementById('audits-list-inject');
+        const countEl = document.getElementById('audits-count');
+        if (!listEl) return;
 
-    if (globalRoleName !== 'admin' && globalRoleName !== 'secretary') {
-        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Unauthorized access.</p>';
-        return;
-    }
-
-    let filterContainer = document.getElementById('audit-filters-container');
-    if (!filterContainer) {
-        filterContainer = document.createElement('div');
-        filterContainer.id = 'audit-filters-container';
-        filterContainer.style.cssText = 'display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;';
-        filterContainer.innerHTML = `
-            <select id="audit-action-filter" style="padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#f8fafc; color:#334155; outline:none; cursor:pointer;">
-                <option value="all">All Actions</option>
-                <option value="INSERT">Added</option>
-                <option value="UPDATE">Updated</option>
-                <option value="DELETE">Deleted</option>
-            </select>
-            <select id="audit-time-filter" style="padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#f8fafc; color:#334155; outline:none; cursor:pointer;">
-                <option value="all">All Time</option>
-                <option value="7">Past 7 days</option>
-                <option value="30">Past month</option>
-            </select>
-        `;
-        listEl.parentNode.insertBefore(filterContainer, listEl);
-
-        document.getElementById('audit-action-filter').addEventListener('change', (e) => {
-            currentAuditActionFilter = e.target.value;
-            renderAuditsView();
-        });
-        document.getElementById('audit-time-filter').addEventListener('change', (e) => {
-            currentAuditTimeFilter = e.target.value;
-            renderAuditsView();
-        });
-    }
-
-    listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading audit logs...</p>';
-
-    try {
-        let query = supabaseClient
-            .from('audit_logs')
-            .select('*')
-            .order('changed_at', { ascending: false })
-            .limit(100);
-
-        if (currentAuditActionFilter !== 'all') {
-            query = query.eq('action', currentAuditActionFilter);
-        }
-
-        if (currentAuditTimeFilter !== 'all') {
-            const days = parseInt(currentAuditTimeFilter);
-            const pastDate = new Date();
-            pastDate.setDate(pastDate.getDate() - days);
-            query = query.gte('changed_at', pastDate.toISOString());
-        }
-
-        const { data: logs, error: logsError } = await query;
-
-        if (logsError) throw logsError;
-
-        if (countEl) countEl.textContent = `Showing ${logs.length} activities`;
-
-        if (!logs || logs.length === 0) {
-            listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No activity found for these filters.</p>';
+        if (globalRoleName !== 'admin' && globalRoleName !== 'secretary') {
+            listEl.innerHTML = errorStateHtml("You do not have access to this page.", null, "fa-lock");
             return;
         }
 
-        const userIds = [...new Set(logs.map(log => log.changed_by).filter(Boolean))];
-        let profileMap = {};
-        
-        if (userIds.length > 0) {
-            const { data: profiles, error: profilesError } = await supabaseClient
-                .from('profiles')
-                .select('id, full_name')
-                .in('id', userIds);
-                
-            if (!profilesError && profiles) {
-                profiles.forEach(p => {
-                    profileMap[p.id] = p.full_name;
-                });
+        listEl.innerHTML = skeletonRows(5);
+
+        try {
+            initAuditFilters();
+            const filters = getAuditFilters();
+            const range = getAuditDateRange(filters);
+            const hasFilters = auditFiltersActive(filters);
+            const requestId = ++auditRequestCounter;
+
+            let query = supabaseClient
+                .from('audit_logs')
+                .select('*')
+                .order('changed_at', { ascending: false })
+                .limit(AUDIT_LOG_LIMIT);
+
+            if (filters.action !== 'all') query = query.eq('action', filters.action);
+            if (filters.entity !== 'all') query = query.ilike('table_name', filters.entity);
+            query = query.neq('table_name', 'documents');
+            if (range.from) query = query.gte('changed_at', range.from.toISOString());
+            if (range.to) query = query.lt('changed_at', range.to.toISOString());
+
+            const { data: logs, error: logsError } = await query;
+
+
+            if (requestId !== auditRequestCounter) return;
+            if (logsError) throw logsError;
+
+            if (countEl) {
+                const n = logs ? logs.length : 0;
+                const capped = n >= AUDIT_LOG_LIMIT ? ` (latest ${AUDIT_LOG_LIMIT} shown)` : '';
+                countEl.textContent = hasFilters
+                    ? `${n} matching ${n === 1 ? 'activity' : 'activities'}${capped}`
+                    : `Showing last ${n} activities`;
             }
-        }
 
-        listEl.innerHTML = logs.map(log => {
-            const userName = profileMap[log.changed_by] || 'System';
+            if (!logs || logs.length === 0) {
+                listEl.innerHTML = hasFilters
+                    ? '<p style="color:#64748b; text-align:center; padding:20px;">No activity matches these filters.</p>'
+                    : '<p style="color:#64748b; text-align:center; padding:20px;">No recent activity found.</p>';
+                return;
+            }
+
+            const userIds = [...new Set(logs.map(log => log.changed_by).filter(Boolean))];
+            let profileMap = {};
             
-            let actionColor = '#3b82f6'; 
-            let actionLabel = 'Updated';
-            if (log.action === 'DELETE') { actionColor = '#ef4444'; actionLabel = 'Deleted'; }
-            if (log.action === 'INSERT') { actionColor = '#22c55e'; actionLabel = 'Added'; }
-
-            const entityName = (log.table_name || 'record').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-            const displayRecordId = log.record_id || log.new_data?.original_int_id || 'Unknown';
-            const logDetails = log.new_data?.summary || `Record ID: ${displayRecordId}`;
-
-            return `
-                <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
-                    <div style="background: ${actionColor}20; color: ${actionColor}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
-                        <i class="fa-solid fa-clock-rotate-left"></i>
-                    </div>
-                    <div>
-                        <h4 style="margin: 0 0 4px 0; font-size: 14px; color: #0f172a;">
-                            <strong style="color: ${actionColor};">[${actionLabel}]</strong> 
-                            ${entityName}
-                        </h4>
-                        <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
-                            ${escapeHtml(logDetails)}
-                        </p>
-                        <p style="margin: 0; font-size: 11px; color: #64748b;">
-                            By: <strong>${escapeHtml(userName)}</strong> 
-                            • ${formatDate(log.changed_at)} at ${formatEventTime(log.changed_at)}
-                        </p>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-    } catch (err) {
-        console.error('Error loading audit logs:', err);
-        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Error loading logs. Check the console for details.</p>';
-    }
-}
-
-async function logAuditActivity(action, entityType, summaryText, recordId = null, oldData = null, newData = null) {
-    if (!currentUser) return;
-    try {
-        let detailsText = summaryText;
-        
-        const safeOldData = oldData ? JSON.parse(JSON.stringify(oldData)) : null;
-        const safeNewData = newData ? JSON.parse(JSON.stringify(newData)) : null;
-        
-        if (action === 'UPDATE' && safeOldData && safeNewData) {
-            const changes = [];
-            for (const key in safeNewData) {
-                if (key !== 'id' && key !== 'updated_at' && safeNewData[key] !== undefined) {
-                    const oldVal = safeOldData[key] ? String(safeOldData[key]) : '(empty)';
-                    const newVal = safeNewData[key] ? String(safeNewData[key]) : '(empty)';
+            if (userIds.length > 0) {
+                const { data: profiles, error: profilesError } = await supabaseClient
+                    .from('profiles')
+                    .select('id, full_name')
+                    .in('id', userIds);
                     
-                    if (oldVal !== newVal && typeof safeNewData[key] !== 'object') {
-                        const niceKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                        changes.push(`${niceKey}: "${oldVal}" ➔ "${newVal}"`);
-                    }
+                if (!profilesError && profiles) {
+                    profiles.forEach(p => {
+                        profileMap[p.id] = p.full_name;
+                    });
                 }
             }
-            if (changes.length > 0) detailsText += ` | Changes: ${changes.join(', ')}`;
+            listEl.innerHTML = logs.map(log => {
+                const userName = profileMap[log.changed_by] || 'System';
+                
+                let actionColor = '#3b82f6'; 
+                let actionLabel = 'Updated';
+                if (log.action === 'DELETE') { actionColor = '#ef4444'; actionLabel = 'Deleted'; }
+                if (log.action === 'INSERT') { actionColor = '#22c55e'; actionLabel = 'Added'; }
+                if (log.action === 'CLOSE') { actionColor = '#f59e0b'; actionLabel = 'Closed'; }
+                if (log.action === 'REOPEN') { actionColor = '#0ea5e9'; actionLabel = 'Reopened'; }
+
+                const entityName = (log.table_name || 'record').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                
+                const displayRecordId = log.record_id || log.new_data?.original_int_id || 'Unknown';
+                const logDetails = log.new_data?.summary || `Record ID: ${displayRecordId}`;
+
+                return `
+                    <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; display: flex; align-items: flex-start; gap: 12px;">
+                        <div style="background: ${actionColor}20; color: ${actionColor}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
+                            <i class="fa-solid fa-clock-rotate-left"></i>
+                        </div>
+                        <div>
+                            <h4 style="margin: 0 0 4px 0; font-size: 14px; color: #0f172a;">
+                                <strong style="color: ${actionColor};">[${actionLabel}]</strong> 
+                                ${entityName}
+                            </h4>
+                            <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
+                                ${escapeHtml(logDetails)}
+                            </p>
+                            <p style="margin: 0; font-size: 11px; color: #64748b;">
+                                By: <strong>${escapeHtml(userName)}</strong> 
+                                • ${formatDate(log.changed_at)} at ${formatEventTime(log.changed_at)}
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+        } catch (err) {
+            console.error('Error loading audit logs:', err);
+            listEl.innerHTML = errorStateHtml("Could not load the audit logs.", "renderAuditsView");
         }
-
-        const payloadNewData = safeNewData ? { summary: detailsText, ...safeNewData } : { summary: detailsText };
-
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(recordId);
-        if (!isUUID && recordId) payloadNewData.original_int_id = recordId;
-
-        await supabaseClient.from('audit_logs').insert([{
-            action: action,
-            table_name: entityType.toLowerCase().replace(' ', '_'),
-            new_data: payloadNewData,
-            old_data: safeOldData,
-            record_id: isUUID ? recordId : null,
-            changed_by: currentUser.id
-        }]);
-    } catch (err) {
-        console.error('Failed to log activity:', err);
     }
-}
+
+
+    const APP_LOGGED_EVENTS = ['cases:CLOSE', 'cases:REOPEN', 'clients:DELETE'];
+
+    async function logAuditActivity(action, entity, summary, recordId, oldData, newData) {
+        try {
+            const key = String(entity || '').toLowerCase() + ':' + action;
+            if (!APP_LOGGED_EVENTS.includes(key)) return;
+            if (!currentUser || !recordId) return;
+            const { error } = await supabaseClient.from('audit_logs').insert([{
+                table_name: String(entity).toLowerCase(),
+                record_id: String(recordId),
+                action: action,
+                old_data: oldData || null,
+                new_data: Object.assign({}, newData || {}, { summary: summary }),
+                changed_by: currentUser.id
+            }]);
+            if (error) console.warn('Audit log was not saved:', error.message);
+        } catch (err) {
+            console.warn('Audit log was not saved:', err);
+        }
+    }

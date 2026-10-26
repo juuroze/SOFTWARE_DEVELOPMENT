@@ -6,7 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JuriSync - Law Firm Management</title>
     
-    <link rel="stylesheet" href="style.css">
+    <style>
+        .mobile-topbar, .sidebar-backdrop, .app-loader { display: none; }
+    </style>
+    <link rel="stylesheet" href="style.css?v=ui1">
     <link 
         rel="stylesheet" 
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
@@ -17,11 +20,28 @@
     ></script>
 </head>
 
-<body>
+<body class="app-loading">
+
+    <div class="app-loader" role="status" aria-live="polite">
+        <div class="app-loader-spinner"></div>
+        <p>Loading JuriSync...</p>
+    </div>
+    <script>
+        setTimeout(function () { document.body.classList.remove('app-loading'); }, 15000);
+    </script>
 
     <div class="container">
 
-        <nav class="sidebar">
+        <header class="mobile-topbar">
+            <button type="button" id="mobile-menu-btn" aria-label="Open menu" aria-controls="app-sidebar" aria-expanded="false">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <img src="logo11.png" alt="JuriSync Logo">
+            <span>JuriSync</span>
+        </header>
+        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+        <nav class="sidebar" id="app-sidebar">
 
             <div class="sidebar-header">
                 <div class="brand-wrapper-sidebar">
@@ -338,6 +358,30 @@
                 </header>
 
                 <div class="cases-toolbar">
+                    <div class="cases-search-field">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="search" id="cases-search" placeholder="Search by case title, case number, client, court or lawyer" autocomplete="off">
+                    </div>
+                    <div class="cases-date-field">
+                        <label for="cases-filter-status">Status</label>
+                        <select id="cases-filter-status">
+                            <option value="all">All statuses</option>
+                            <option value="active">Active</option>
+                            <option value="closed">Closed</option>
+                        </select>
+                    </div>
+                    <div class="cases-date-field">
+                        <label for="cases-filter-type">Case type</label>
+                        <select id="cases-filter-type"></select>
+                    </div>
+                    <div class="cases-date-field">
+                        <label for="cases-filter-party">Party type</label>
+                        <select id="cases-filter-party"></select>
+                    </div>
+                    <div class="cases-date-field">
+                        <label for="cases-filter-stage">Case stage</label>
+                        <select id="cases-filter-stage"></select>
+                    </div>
                     <div class="cases-date-field">
                         <label for="cases-date-from">Filed from</label>
                         <input type="date" id="cases-date-from">
@@ -346,7 +390,7 @@
                         <label for="cases-date-to">Filed to</label>
                         <input type="date" id="cases-date-to">
                     </div>
-                    <button type="button" id="cases-date-clear" class="cases-clear-btn hidden">Clear dates</button>
+                    <button type="button" id="cases-date-clear" class="cases-clear-btn hidden">Clear filters</button>
                     <span id="cases-count" class="cases-count"></span>
                 </div>
 
@@ -531,6 +575,51 @@
                     <div class="card-title-flex">
                         <h3><i class="fa-solid fa-list-check"></i> Recent Activity</h3>
                         <span id="audits-count" class="cases-count"></span>
+                    </div>
+
+                    <div class="cases-toolbar audit-filters">
+                        <div class="cases-date-field">
+                            <label for="audit-filter-action">Action</label>
+                            <select id="audit-filter-action">
+                                <option value="all">All actions</option>
+                                <option value="INSERT">Added only</option>
+                                <option value="UPDATE">Updated only</option>
+                                <option value="DELETE">Deleted only</option>
+                                <option value="CLOSE">Case closed only</option>
+                                <option value="REOPEN">Case reopened only</option>
+                            </select>
+                        </div>
+                        <div class="cases-date-field">
+                            <label for="audit-filter-period">Date</label>
+                            <select id="audit-filter-period">
+                                <option value="all">All time</option>
+                                <option value="today">Today</option>
+                                <option value="7d">Past 7 days</option>
+                                <option value="30d">Past 30 days</option>
+                                <option value="this_month">This month</option>
+                                <option value="last_month">Last month</option>
+                                <option value="custom">Custom range</option>
+                            </select>
+                        </div>
+                        <div class="cases-date-field audit-custom-date hidden">
+                            <label for="audit-filter-from">From</label>
+                            <input type="date" id="audit-filter-from">
+                        </div>
+                        <div class="cases-date-field audit-custom-date hidden">
+                            <label for="audit-filter-to">To</label>
+                            <input type="date" id="audit-filter-to">
+                        </div>
+                        <div class="cases-date-field">
+                            <label for="audit-filter-entity">Record type</label>
+                            <select id="audit-filter-entity">
+                                <option value="all">All records</option>
+                                <option value="cases">Cases</option>
+                                <option value="clients">Clients</option>
+                                <option value="calendar_events">Calendar events</option>
+                                <option value="profiles">Users / profiles</option>
+                            </select>
+                        </div>
+                        <button type="button" id="audit-filter-clear" class="cases-clear-btn hidden">Clear filters</button>
                     </div>
                     <div id="audits-list-inject" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
                         <p style="color:#64748b; text-align:center; padding:20px;">Loading audit logs...</p>
@@ -794,7 +883,7 @@
                     </div>
 
                     <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Temporary Password</label>
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Password</label>
                         <input type="password" id="add-lawyer-password" required placeholder="Minimum 6 characters" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
                     </div>
 
@@ -1008,6 +1097,24 @@
                     <input type="hidden" id="team-target-id">
                     <input type="hidden" id="team-approve">
 
+                    <div id="team-lock-notice" class="team-lock-notice hidden">
+                        <div class="team-lock-row">
+                            <div class="team-lock-text">
+                                <i class="fa-solid fa-lock"></i>
+                                <span>Lawyers are already assigned. Editing is locked.</span>
+                            </div>
+                            <button type="button" id="team-unlock-btn" class="team-unlock-btn">Unlock to edit</button>
+                        </div>
+                        <div id="team-unlock-auth" class="team-unlock-auth hidden">
+                            <label for="team-unlock-password">Enter your admin password to make changes</label>
+                            <div class="team-unlock-fields">
+                                <input type="password" id="team-unlock-password" autocomplete="current-password" placeholder="Admin password">
+                                <button type="button" id="team-unlock-confirm" class="team-unlock-confirm">Confirm</button>
+                            </div>
+                            <p id="team-unlock-error" class="team-inline-error hidden" role="alert"></p>
+                        </div>
+                    </div>
+
                     <div class="mc-field">
                         <label for="team-lead">Lead lawyer</label>
                         <div class="mc-select-wrap">
@@ -1017,9 +1124,11 @@
                     </div>
 
                     <div class="mc-field">
-                        <label>Co-lawyers <span class="mc-optional">(optional)</span></label>
-                        <div id="team-co-list" style="max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px;"></div>
+                        <label>Co-lawyers <span class="mc-optional">(optional, needs a lead lawyer)</span></label>
+                        <div id="team-co-list" class="team-co-list"></div>
                     </div>
+
+                    <p id="team-error" class="team-inline-error hidden" role="alert"></p>
 
                     <button type="submit" class="mc-submit" id="team-submit-btn">Save</button>
                 </form>
@@ -1048,7 +1157,7 @@
                     </div>
 
                     <div class="mc-field" id="cf-lead-wrap" style="display: none;">
-                        <label for="cf-lead">Lead lawyer <span class="mc-optional">(defaults to the client's assigned lawyers)</span></label>
+                        <label for="cf-lead">Lead lawyer <span class="mc-optional">(required)</span></label>
                         <div class="mc-select-wrap">
                             <select id="cf-lead"></select>
                             <i class="fa-solid fa-chevron-down"></i>
@@ -1165,7 +1274,7 @@
 
     </div>
     
-    <script src="main.js"></script>
+    <script src="main.js?v=ui1"></script>
     
 </body>
 </html>

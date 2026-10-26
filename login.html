@@ -18,6 +18,8 @@
         </div>
         <h2>JuriSync</h2>
         <p>Sign in to manage your calendar and cases</p>
+
+        <div id="login-message" class="login-message" role="alert"></div>
         
         <form id="login-form" autocomplete="off">
             <div class="form-group">
@@ -52,6 +54,21 @@
         const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5'; 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+        const loginMessageEl = document.getElementById('login-message');
+
+        function showLoginMessage(text, kind) {
+            loginMessageEl.textContent = text;
+            loginMessageEl.className = 'login-message ' + (kind || 'error');
+        }
+
+        try {
+            const notice = localStorage.getItem('jurisync-login-notice');
+            if (notice) {
+                showLoginMessage(notice, 'info');
+                localStorage.removeItem('jurisync-login-notice');
+            }
+        } catch (e) {}
+
         const togglePasswordBtn = document.getElementById('toggle-password-visibility');
         const passwordInputEl = document.getElementById('password');
         const togglePasswordIcon = document.getElementById('toggle-password-icon');
@@ -73,6 +90,7 @@
             const passwordInput = document.getElementById('password').value;
             const loginBtn = document.querySelector('.btn-login');
             
+            loginMessageEl.className = 'login-message';
             loginBtn.disabled = true;
             loginBtn.innerText = 'Signing In...';
 
@@ -82,7 +100,7 @@
             });
 
             if (authError) {
-                alert('Login failed: ' + authError.message);
+                showLoginMessage('Login failed: ' + authError.message, 'error');
                 loginBtn.disabled = false;
                 loginBtn.innerText = 'Sign In';
                 return;
@@ -99,7 +117,7 @@
             if (profileError || !profileData) {
                 console.error('Profile load error:', profileError ? profileError.message : 'no profile row');
                 await supabaseClient.auth.signOut();
-                alert('Your account is signed in, but no profile was found. Please contact your administrator.');
+                showLoginMessage('Your account is signed in, but no profile was found. Please contact your administrator.', 'error');
                 loginBtn.disabled = false;
                 loginBtn.innerText = 'Sign In';
                 return;
@@ -107,7 +125,7 @@
 
             if (profileData.status === 'inactive') {
                 await supabaseClient.auth.signOut();
-                alert('This account has been archived. Please contact your administrator.');
+                showLoginMessage('This account has been archived. Please contact your administrator.', 'error');
                 loginBtn.disabled = false;
                 loginBtn.innerText = 'Sign In';
                 return;
