@@ -135,6 +135,13 @@
                 return;
             }
 
+            
+            const { data: aal } = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
+            if (!aal || aal.currentLevel !== 'aal2') {
+                window.location.href = 'client-login.html';
+                return;
+            }
+
             await supabaseClient.rpc('link_my_client_account');
 
             const { data: client } = await supabaseClient
