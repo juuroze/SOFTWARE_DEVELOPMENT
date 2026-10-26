@@ -6379,88 +6379,135 @@ try {
         checkAuthAndInit();
     });
 
-async function renderAuditsView() {
-        const listEl = document.getElementById('audits-list-inject');
-        const countEl = document.getElementById('audits-count');
-        if (!listEl) return;
+let currentAuditActionFilter = 'all';
+let currentAuditTimeFilter = 'all';
 
-        if (globalRoleName !== 'admin' && globalRoleName !== 'secretary') {
-            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Unauthorized access.</p>';
+async function renderAuditsView() {
+    const listEl = document.getElementById('audits-list-inject');
+    const countEl = document.getElementById('audits-count');
+    if (!listEl) return;
+
+    if (globalRoleName !== 'admin' && globalRoleName !== 'secretary') {
+        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Unauthorized access.</p>';
+        return;
+    }
+
+    let filterContainer = document.getElementById('audit-filters-container');
+    if (!filterContainer) {
+        filterContainer = document.createElement('div');
+        filterContainer.id = 'audit-filters-container';
+        filterContainer.style.cssText = 'display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;';
+        filterContainer.innerHTML = `
+            <select id="audit-action-filter" style="padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#f8fafc; color:#334155; outline:none; cursor:pointer;">
+                <option value="all">All Actions</option>
+                <option value="INSERT">Added</option>
+                <option value="UPDATE">Updated</option>
+                <option value="DELETE">Deleted</option>
+            </select>
+            <select id="audit-time-filter" style="padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:#f8fafc; color:#334155; outline:none; cursor:pointer;">
+                <option value="all">All Time</option>
+                <option value="7">Past 7 days</option>
+                <option value="30">Past month</option>
+            </select>
+        `;
+        listEl.parentNode.insertBefore(filterContainer, listEl);
+
+        document.getElementById('audit-action-filter').addEventListener('change', (e) => {
+            currentAuditActionFilter = e.target.value;
+            renderAuditsView();
+        });
+        document.getElementById('audit-time-filter').addEventListener('change', (e) => {
+            currentAuditTimeFilter = e.target.value;
+            renderAuditsView();
+        });
+    }
+
+    listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading audit logs...</p>';
+
+    try {
+        let query = supabaseClient
+            .from('audit_logs')
+            .select('*')
+            .order('changed_at', { ascending: false })
+            .limit(100);
+
+        if (currentAuditActionFilter !== 'all') {
+            query = query.eq('action', currentAuditActionFilter);
+        }
+
+        if (currentAuditTimeFilter !== 'all') {
+            const days = parseInt(currentAuditTimeFilter);
+            const pastDate = new Date();
+            pastDate.setDate(pastDate.getDate() - days);
+            query = query.gte('changed_at', pastDate.toISOString());
+        }
+
+        const { data: logs, error: logsError } = await query;
+
+        if (logsError) throw logsError;
+
+        if (countEl) countEl.textContent = `Showing ${logs.length} activities`;
+
+        if (!logs || logs.length === 0) {
+            listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No activity found for these filters.</p>';
             return;
         }
 
-        listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">Loading audit logs...</p>';
-
-        try {
-            const { data: logs, error: logsError } = await supabaseClient
-                .from('audit_logs')
-                .select('*')
-                .order('changed_at', { ascending: false })
-                .limit(100);
-
-            if (logsError) throw logsError;
-
-            if (countEl) countEl.textContent = `Showing last ${logs.length} activities`;
-
-            if (!logs || logs.length === 0) {
-                listEl.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No recent activity found.</p>';
-                return;
-            }
-
-            const userIds = [...new Set(logs.map(log => log.changed_by).filter(Boolean))];
-            let profileMap = {};
-            
-            if (userIds.length > 0) {
-                const { data: profiles, error: profilesError } = await supabaseClient
-                    .from('profiles')
-                    .select('id, full_name')
-                    .in('id', userIds);
-                    
-                if (!profilesError && profiles) {
-                    profiles.forEach(p => {
-                        profileMap[p.id] = p.full_name;
-                    });
-                }
-            }
-            listEl.innerHTML = logs.map(log => {
-                const userName = profileMap[log.changed_by] || 'System';
+        const userIds = [...new Set(logs.map(log => log.changed_by).filter(Boolean))];
+        let profileMap = {};
+        
+        if (userIds.length > 0) {
+            const { data: profiles, error: profilesError } = await supabaseClient
+                .from('profiles')
+                .select('id, full_name')
+                .in('id', userIds);
                 
-                let actionColor = '#3b82f6'; 
-                let actionLabel = 'Updated';
-                if (log.action === 'DELETE') { actionColor = '#ef4444'; actionLabel = 'Deleted'; }
-                if (log.action === 'INSERT') { actionColor = '#22c55e'; actionLabel = 'Added'; }
-
-                const entityName = (log.table_name || 'record').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-                
-                const displayRecordId = log.record_id || log.new_data?.original_int_id || 'Unknown';
-                const logDetails = log.new_data?.summary || `Record ID: ${displayRecordId}`;
-
-                return `
-                    <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; display: flex; align-items: flex-start; gap: 12px;">                        <div style="background: ${actionColor}20; color: ${actionColor}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                        </div>
-                        <div>
-                            <h4 style="margin: 0 0 4px 0; font-size: 14px; color: #0f172a;">
-                                <strong style="color: ${actionColor};">[${actionLabel}]</strong> 
-                                ${entityName}
-                            </h4>
-                            <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
-                                ${escapeHtml(logDetails)}
-                            </p>
-                            <p style="margin: 0; font-size: 11px; color: #64748b;">
-                                By: <strong>${escapeHtml(userName)}</strong> 
-                                • ${formatDate(log.changed_at)} at ${formatEventTime(log.changed_at)}
-                            </p>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-        } catch (err) {
-            console.error('Error loading audit logs:', err);
-            listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Error loading logs. Check the console for details.</p>';
+            if (!profilesError && profiles) {
+                profiles.forEach(p => {
+                    profileMap[p.id] = p.full_name;
+                });
+            }
         }
+
+        listEl.innerHTML = logs.map(log => {
+            const userName = profileMap[log.changed_by] || 'System';
+            
+            let actionColor = '#3b82f6'; 
+            let actionLabel = 'Updated';
+            if (log.action === 'DELETE') { actionColor = '#ef4444'; actionLabel = 'Deleted'; }
+            if (log.action === 'INSERT') { actionColor = '#22c55e'; actionLabel = 'Added'; }
+
+            const entityName = (log.table_name || 'record').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+            const displayRecordId = log.record_id || log.new_data?.original_int_id || 'Unknown';
+            const logDetails = log.new_data?.summary || `Record ID: ${displayRecordId}`;
+
+            return `
+                <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
+                    <div style="background: ${actionColor}20; color: ${actionColor}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <div>
+                        <h4 style="margin: 0 0 4px 0; font-size: 14px; color: #0f172a;">
+                            <strong style="color: ${actionColor};">[${actionLabel}]</strong> 
+                            ${entityName}
+                        </h4>
+                        <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
+                            ${escapeHtml(logDetails)}
+                        </p>
+                        <p style="margin: 0; font-size: 11px; color: #64748b;">
+                            By: <strong>${escapeHtml(userName)}</strong> 
+                            • ${formatDate(log.changed_at)} at ${formatEventTime(log.changed_at)}
+                        </p>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error('Error loading audit logs:', err);
+        listEl.innerHTML = '<p style="color:#ef4444; text-align:center; padding:20px;">Error loading logs. Check the console for details.</p>';
     }
+}
 
 async function logAuditActivity(action, entityType, summaryText, recordId = null, oldData = null, newData = null) {
     if (!currentUser) return;
