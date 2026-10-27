@@ -122,7 +122,6 @@
                 <header class="view-header">
                     <div>
                         <h1>Dashboard</h1>
-                        <p>Strategic overview of legal proceedings and firm calendar.</p>
                     </div>
                 </header>
 
@@ -140,6 +139,44 @@
                     </div>
                 </div>
 
+                <div class="schedule-stats-row">
+                    <div class="sched-stat-card" id="stat-card-cases" style="cursor: pointer;">
+                        <div>
+                            <h3 style="color: #3b82f6;">0</h3>
+                            <p>Active Cases</p>
+                        </div>
+                        <span class="stat-icon" style="background: #eff6ff; color: #3b82f6;"><i class="fa-regular fa-file-lines"></i></span>
+                    </div>
+                    <div class="sched-stat-card" id="stat-card-deadlines" style="cursor: pointer;">
+                        <div>
+                            <h3 style="color: #ef4444;">0</h3>
+                            <p>Deadlines</p>
+                        </div>
+                        <span class="stat-icon" style="background: #fef2f2; color: #ef4444;"><i class="fa-solid fa-circle-exclamation"></i></span>
+                    </div>
+                    <div class="sched-stat-card" id="stat-card-completed" style="cursor: pointer;">
+                        <div>
+                            <h3 style="color: #22c55e;">0</h3>
+                            <p>Completed</p>
+                        </div>
+                        <span class="stat-icon" style="background: #f0fdf4; color: #22c55e;"><i class="fa-regular fa-circle-check"></i></span>
+                    </div>
+                    <div class="sched-stat-card" id="stat-card-clients" style="cursor: pointer;">
+                        <div>
+                            <h3 style="color: #a855f7;">0</h3>
+                            <p>Active Clients</p>
+                        </div>
+                        <span class="stat-icon" style="background: #faf5ff; color: #a855f7;"><i class="fa-solid fa-users"></i></span>
+                    </div>
+                    <div class="sched-stat-card" id="stat-card-lawyers" style="cursor: pointer; display: none;">
+                        <div>
+                            <h3 style="color: #f97316;">0</h3>
+                            <p>Active Lawyers</p>
+                        </div>
+                        <span class="stat-icon" style="background: #fff7ed; color: #f97316;"><i class="fa-solid fa-user-tie"></i></span>
+                    </div>
+                </div>
+
             <div class="content-card" id="dashboard-deadlines-card" style="margin-bottom: 25px;">
                 <div class="card-title-flex">
                 <h3>Deadlines</h3>
@@ -150,44 +187,6 @@
                     <button class="btn-full-width-outline" id="btn-dash-view-calendar" style="margin-top: 15px;">
                         View Full Calendar
                     </button>
-                </div>
-
-                <div class="schedule-stats-row">
-                    <div class="sched-stat-card" id="stat-card-cases" style="cursor: pointer;">
-                        <div>
-                            <h3 style="color: #3b82f6;">0</h3>
-                            <p>Active Cases</p>
-                        </div>
-                        <i class="fa-regular fa-file-lines" style="color: #94a3b8; font-size: 20px;"></i>
-                    </div>
-                    <div class="sched-stat-card" id="stat-card-deadlines" style="cursor: pointer;">
-                        <div>
-                            <h3 style="color: #ef4444;">0</h3>
-                            <p>Deadlines</p>
-                        </div>
-                        <i class="fa-solid fa-circle-exclamation" style="color: #fca5a5; font-size: 20px;"></i>
-                    </div>
-                    <div class="sched-stat-card" id="stat-card-completed" style="cursor: pointer;">
-                        <div>
-                            <h3 style="color: #22c55e;">0</h3>
-                            <p>Completed</p>
-                        </div>
-                        <i class="fa-regular fa-circle-check" style="color: #86efac; font-size: 20px;"></i>
-                    </div>
-                    <div class="sched-stat-card" id="stat-card-clients" style="cursor: pointer;">
-                        <div>
-                            <h3 style="color: #a855f7;">0</h3>
-                            <p>Active Clients</p>
-                        </div>
-                        <i class="fa-solid fa-users" style="color: #d8b4fe; font-size: 20px;"></i>
-                    </div>
-                    <div class="sched-stat-card" id="stat-card-lawyers" style="cursor: pointer; display: none;">
-                        <div>
-                            <h3 style="color: #f97316;">0</h3>
-                            <p>Active Lawyers</p>
-                        </div>
-                        <i class="fa-solid fa-user-tie" style="color: #fdba74; font-size: 20px;"></i>
-                    </div>
                 </div>
 
                 <div class="schedule-tabs-container">
@@ -234,7 +233,6 @@
                 <header class="view-header flex-between">
                     <div>
                         <h1>Firm-wide Calendar</h1>
-                        <p>Intelligent tracking for hearings, deadlines, and meetings.</p>
                     </div>
                     <button class="btn-primary-black btn-add-event" id="btn-add-event-header" style="display: none;">
                         <i class="fa-solid fa-plus"></i> New Docket Entry
@@ -283,7 +281,7 @@
                         <div class="widget-card">
                             <h4>
                                 <i class="fa-solid fa-location-dot"></i> 
-                                Resources
+                                Location
                             </h4>
                             <div id="widget-resources-list">
                                 </div>
@@ -305,7 +303,6 @@
                 <header class="view-header flex-between">
                     <div>
                         <h1>Document Repository</h1>
-                        <p>Centralized storage for all case-related documents</p>
                     </div>
                     <button class="btn-primary-black" id="btn-upload-doc" style="display: none;">
                         <i class="fa-solid fa-upload"></i> Upload Document
@@ -350,7 +347,6 @@
                 <header class="view-header flex-between">
                     <div>
                         <h1>Cases</h1>
-                        <p id="cases-subtitle">Case details, status and the lawyers handling each case.</p>
                     </div>
                     <button type="button" class="btn-primary-black" id="btn-new-case" style="display: none;">
                         <i class="fa-solid fa-plus"></i> New Case
@@ -402,7 +398,6 @@
                 <header class="view-header flex-between">
                     <div>
                         <h1>Clients</h1>
-                        <p id="clients-subtitle">Client records and their assigned lawyers.</p>
                     </div>
                     <button type="button" class="btn-primary-black" id="btn-add-client" style="display: none;">
                         <i class="fa-solid fa-user-plus"></i> Add Client
@@ -437,7 +432,6 @@
                             Loading...
                         </span>
                     </div>
-                    <p>Your daily summary of alerts and reminders.</p>
                 </header>
 
                 <div class="notif-toggles">
@@ -507,7 +501,6 @@
                 <header class="view-header flex-between">
                     <div>
                         <h1>Manage Lawyers</h1>
-                        <p>Your team's professional directory and management.</p>
                     </div>
                     <button class="btn-primary-black" id="btn-open-add-lawyer-modal">
                         <i class="fa-solid fa-user-plus"></i> Add New User
@@ -567,7 +560,6 @@
                 <header class="view-header flex-between">
                     <div>
                         <h1>Audit Logs</h1>
-                        <p>Track system activities, including additions, edits, and deletions.</p>
                     </div>
                 </header>
 
@@ -587,6 +579,7 @@
                                 <option value="DELETE">Deleted only</option>
                                 <option value="CLOSE">Case closed only</option>
                                 <option value="REOPEN">Case reopened only</option>
+                                <option value="RESCHEDULE">Event rescheduled only</option>
                             </select>
                         </div>
                         <div class="cases-date-field">
@@ -730,13 +723,12 @@
                     </div>
 
                     <div class="form-group" style="margin-bottom: 24px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Location/Resource</label>
+                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Location</label>
                         <div style="position: relative;">
                             <select id="event-location" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
                                 <option value="">Select location</option>
                                 <option value="Conference Room A">Conference Room A</option>
                                 <option value="Conference Room B">Conference Room B</option>
-                                <option value="Courtroom 3B">Courtroom 3B</option>
                             </select>
                             <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
                         </div>
@@ -1186,43 +1178,20 @@
                         </div>
                     </div>
 
-                    <div class="mc-row">
-                        <div class="mc-field mc-grow-2">
-                            <label for="cf-court">Court and Branch No. / Agency</label>
-                            <input type="text" id="cf-court" maxlength="200" placeholder="e.g., RTC Branch 12, Quezon City">
-                        </div>
-                        <div class="mc-field">
-                            <label for="cf-jurisdiction">Jurisdiction</label>
-                            <input type="text" id="cf-jurisdiction" maxlength="120" placeholder="e.g., Quezon City">
-                        </div>
+                    <div class="mc-field">
+                        <label for="cf-court">Court and Branch No. / Agency</label>
+                        <input type="text" id="cf-court" maxlength="200" placeholder="e.g., RTC Branch 12, Quezon City">
                     </div>
 
                     <div class="mc-row">
-                        <div class="mc-field">
-                            <label for="cf-court-no">Case No.</label>
-                            <input type="text" id="cf-court-no" maxlength="80" placeholder="e.g., Civil Case No. Q-24-12345">
-                        </div>
                         <div class="mc-field">
                             <label for="cf-date">Date filed</label>
                             <input type="date" id="cf-date">
                         </div>
-                    </div>
-
-                    <div class="mc-row">
                         <div class="mc-field">
                             <label for="cf-stage">Case stage</label>
                             <div class="mc-select-wrap">
                                 <select id="cf-stage"></select>
-                                <i class="fa-solid fa-chevron-down"></i>
-                            </div>
-                        </div>
-                        <div class="mc-field">
-                            <label for="cf-status">Case status</label>
-                            <div class="mc-select-wrap">
-                                <select id="cf-status">
-                                    <option value="active">Active</option>
-                                    <option value="closed">Closed</option>
-                                </select>
                                 <i class="fa-solid fa-chevron-down"></i>
                             </div>
                         </div>

@@ -1049,7 +1049,7 @@ const row = Array.isArray(data) ? data[0] : data;
                     const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:10px; padding:3px 8px; border-radius:10px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:3px;"></i>${statusInfo.label}</span>`;
                     
                     return `
-                        <div style="background:#fff; border:1px solid #f1f5f9; padding:20px; border-radius:15px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
+                        <div style="background:#fff; border:1px solid #e2e8f0; border-left:4px solid ${statusInfo.color}; padding:18px 20px; border-radius:12px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
                             <div>
                                 <h4 style="font-size:15px;">
                                     ${escapeHtml(d.title || 'Untitled Event')} 
@@ -1456,6 +1456,10 @@ const row = Array.isArray(data) ? data[0] : data;
             `;
         }
 
+        const rescheduleHtml = (statusInfo.label === 'Upcoming' && canRescheduleEvent(ev))
+            ? `<div style="margin-top: 12px; display: flex; justify-content: flex-end;"><button type="button" class="ct-text-btn ct-blue" data-reschedule-id="${ev.id}"><i class="fa-solid fa-calendar-days"></i> Reschedule</button></div>`
+            : '';
+
         return `
             <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
@@ -1469,9 +1473,230 @@ const row = Array.isArray(data) ? data[0] : data;
                 </div>
                 ${caseDetailsHtml}
                 ${attachmentHtml}
+                ${rescheduleHtml}
             </div>
         `;
     }
+
+    function canRescheduleEvent(ev) {
+        if (!currentUser || !ev) return false;
+        if (globalRoleName === 'admin') return true;
+        return globalRoleName === 'lawyer' && !ev.is_general && ev.assigned_to === currentUser.id;
+    }
+
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    async function findRescheduleConflict(ev, startISO, endISO, dateVal) {
+        const duration = new Date(endISO) - new Date(startISO);
+        const start = new Date(startISO);
+        const rangeStart = new Date(start.getTime() - duration + 1000).toISOString();
+        const rangeEnd = new Date(start.getTime() + duration - 1000).toISOString();
+
+        if (ev.client_id) {
+            const clash = await checkClientDayConflict(ev.client_id, dateVal, ev.id);
+            if (clash) {
+                return `This client already has "${clash.conflictEvent.title}" at ${formatEventTime(clash.conflictEvent.start_date)} on ${formatDate(clash.conflictEvent.start_date)}. A client can only have one event per day.\n\nThe earliest free day for this client is ${formatDate(clash.nextFreeDate.toISOString())}.`;
+            }
+        }
+
+        if (!ev.is_general && ev.assigned_to) {
+            const { data, error } = await supabaseClient
+                .from('calendar_events')
+                .select('id, title, start_date')
+                .eq('assigned_to', ev.assigned_to)
+                .neq('id', ev.id)
+                .gte('start_date', rangeStart)
+                .lte('start_date', rangeEnd);
+            if (error) throw error;
+            if (data && data.length > 0) {
+                return `This lawyer already has "${data[0].title}" at ${formatEventTime(data[0].start_date)} on ${formatDate(data[0].start_date)}. Events for the same lawyer need enough gap between them based on this event's duration.`;
+            }
+        }
+
+        if (CONFERENCE_ROOMS.includes(ev.location)) {
+            const { data, error } = await supabaseClient
+                .from('calendar_events')
+                .select('id, title, start_date')
+                .eq('location', ev.location)
+                .neq('id', ev.id)
+                .gte('start_date', rangeStart)
+                .lte('start_date', rangeEnd);
+            if (error) throw error;
+            if (data && data.length > 0) {
+                return `"${ev.location}" is already booked for "${data[0].title}" at ${formatEventTime(data[0].start_date)} on ${formatDate(data[0].start_date)}. Bookings for the same location need enough gap between them based on this event's duration.`;
+            }
+        }
+        return null;
+    }
+
+    async function openRescheduleModal(eventId) {
+        let ev;
+        try {
+            const { data, error } = await supabaseClient
+                .from('calendar_events')
+                .select('id, title, start_date, end_date, location, assigned_to, is_general, client_id')
+                .eq('id', eventId)
+                .single();
+            if (error) throw error;
+            ev = data;
+        } catch (err) {
+            showToast('Could not load this event: ' + err.message, 'error');
+            return;
+        }
+
+        if (!canRescheduleEvent(ev)) {
+            showToast('You can only reschedule your own upcoming events.', 'warning');
+            return;
+        }
+        if (getEventStatusInfo(ev.start_date, ev.end_date).label !== 'Upcoming') {
+            showToast('Only upcoming events can be rescheduled.', 'warning');
+            return;
+        }
+
+        const existing = document.getElementById('reschedule-modal');
+        if (existing) existing.remove();
+
+        const oldStart = new Date(ev.start_date);
+        const todayKey = toLocalDateKey(new Date());
+        const overlay = document.createElement('div');
+        overlay.id = 'reschedule-modal';
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content mc-modal">
+                <div class="modal-header mc-modal-head">
+                    <div>
+                        <h2>Reschedule event</h2>
+                        <p>${escapeHtml(ev.title)} • currently ${formatDate(ev.start_date)}, ${formatEventTime(ev.start_date)}</p>
+                    </div>
+                    <button type="button" class="btn-close" data-rs-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <form class="mc-form" id="reschedule-form" autocomplete="off">
+                    <div class="mc-row">
+                        <div class="mc-field">
+                            <label for="rs-date">New date</label>
+                            <input type="date" id="rs-date" required min="${todayKey}" value="${toLocalDateKey(oldStart)}">
+                        </div>
+                        <div class="mc-field">
+                            <label for="rs-time">Start time</label>
+                            <input type="time" id="rs-time" required value="${pad2(oldStart.getHours())}:${pad2(oldStart.getMinutes())}">
+                        </div>
+                    </div>
+                    <div class="mc-row">
+                        <div class="mc-field">
+                            <label for="rs-end-date">End date <span class="mc-optional">(optional)</span></label>
+                            <input type="date" id="rs-end-date" min="${todayKey}">
+                        </div>
+                        <div class="mc-field">
+                            <label for="rs-end-time">End time <span class="mc-optional">(optional)</span></label>
+                            <input type="time" id="rs-end-time">
+                        </div>
+                    </div>
+                    <p class="cv-hint">Leave the end blank to keep the same duration.</p>
+                    <button type="submit" class="mc-submit">Save new schedule</button>
+                </form>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+        overlay.querySelector('[data-rs-close]').addEventListener('click', close);
+
+        const form = overlay.querySelector('#reschedule-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const val = id => (overlay.querySelector('#' + id)?.value || '').trim();
+            const dateVal = val('rs-date');
+            const timeVal = val('rs-time');
+            const endDateVal = val('rs-end-date');
+            const endTimeVal = val('rs-end-time');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const idle = submitBtn.textContent;
+
+            if (!dateVal || !timeVal) {
+                showToast('Please choose the new date and start time.', 'warning');
+                return;
+            }
+
+            const startISO = combineDateAndTime(dateVal, timeVal);
+            if (dateVal < todayKey) {
+                showToast("You can't reschedule an event to a past date.", 'warning');
+                return;
+            }
+
+            const oldEnd = ev.end_date ? new Date(ev.end_date) : null;
+            let duration = oldEnd ? oldEnd - oldStart : 60 * 60 * 1000;
+            if (!(duration > 0)) duration = 60 * 60 * 1000;
+
+            let endISO;
+            if (endDateVal || endTimeVal) {
+                endISO = combineDateAndTime(endDateVal || dateVal, endTimeVal || timeVal);
+                if (new Date(endISO) <= new Date(startISO)) {
+                    showToast('The end date/time must be after the start date/time.', 'warning');
+                    return;
+                }
+            } else {
+                endISO = new Date(new Date(startISO).getTime() + duration).toISOString();
+            }
+
+            if (new Date(startISO).getTime() === oldStart.getTime() && oldEnd && new Date(endISO).getTime() === oldEnd.getTime()) {
+                showToast('That is the same schedule as before. Choose a different date or time.', 'info');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Checking...';
+            try {
+                const conflict = await findRescheduleConflict(ev, startISO, endISO, dateVal);
+                if (conflict) {
+                    showToast('Cannot reschedule: ' + conflict, 'warning', { duration: 10000 });
+                    return;
+                }
+
+                submitBtn.textContent = 'Saving...';
+                const { data: updated, error } = await supabaseClient
+                    .from('calendar_events')
+                    .update({ start_date: startISO, end_date: endISO })
+                    .eq('id', ev.id)
+                    .select('id');
+                if (error) throw error;
+                if (!updated || updated.length === 0) {
+                    throw new Error('The event was not updated. You may not have permission to change it.');
+                }
+
+                await logAuditActivity('RESCHEDULE', 'calendar_events', `Rescheduled event: ${ev.title} to ${formatDate(startISO)}, ${formatEventTime(startISO)}`, ev.id, { start_date: ev.start_date, end_date: ev.end_date }, { start_date: startISO, end_date: endISO });
+
+                showToast(`"${ev.title}" was rescheduled to ${formatDate(startISO)}, ${formatEventTime(startISO)}.`, 'success');
+                close();
+                const dayModal = document.getElementById('day-details-modal');
+                if (dayModal) dayModal.classList.add('hidden');
+
+                generateCalendarGrid();
+                renderResourcesWidget();
+                renderScheduleSummaryWidget();
+                renderLawyerStatusWidget();
+                updateDashboardStats();
+                renderDashboardContent();
+                updateScheduleStats();
+                const timeline = document.getElementById('timeline-inject');
+                if (timeline && !timeline.parentElement.classList.contains('hidden')) {
+                    if (typeof renderTimelineInSchedule === 'function') renderTimelineInSchedule();
+                }
+            } catch (err) {
+                console.error('Reschedule failed:', err);
+                showToast('Could not reschedule: ' + err.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = idle;
+            }
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-reschedule-id]');
+        if (btn) openRescheduleModal(btn.getAttribute('data-reschedule-id'));
+    });
 
     window.openDayDetails = async function(dateString) {
         const modal = document.getElementById('day-details-modal');
@@ -3373,7 +3598,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             const [listRes, sentRes] = await Promise.all([
                 supabaseClient
                     .from('email_queue')
-                    .select('id, subject, recipient_email, status, attempts, last_error, kind, sent_at, next_attempt_at, created_at')
+                    .select('id, subject, recipient_email, status, attempts, category, sent_at, created_at')
                     .order('created_at', { ascending: false })
                     .limit(100),
                 supabaseClient
@@ -3398,7 +3623,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         <i class="fa-regular fa-envelope" style="color:#94a3b8; font-size:16px; margin-top:2px;"></i>
                         <div style="min-width:0;">
                             <h4 style="font-size:14px; color:#0f172a; margin:0 0 5px 0; font-weight:600; word-break:break-word;">${escapeHtml(m.subject)}</h4>
-                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">${m.kind === 'reminder' ? 'Reminder' : 'Case update'} • To: ${escapeHtml(m.recipient_email)}</p>
+                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">${m.category === 'reminder' ? 'Reminder' : 'Case update'} • To: ${escapeHtml(m.recipient_email)}</p>
                             <p style="font-size:12px; color:#64748b; margin:0; font-weight:500;">${escapeHtml(emailTimeText(m))}</p>
                             ${m.last_error && m.status !== 'sent' ? `<p style="font-size:12px; color:#dc2626; margin:6px 0 0 0;">${escapeHtml(m.last_error)}</p>` : ''}
                         </div>
@@ -3567,7 +3792,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         return data && data.length > 0 ? data[0].id : null;
     }
 
-    async function checkClientDayConflict(clientId, dateStr) {
+    async function checkClientDayConflict(clientId, dateStr, excludeEventId = null) {
         const { startISO } = getDayRange(dateStr);
 
 
@@ -3590,10 +3815,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         if (error) throw new Error(error.message);
 
-        const conflictEvent = (events || []).find(e => toLocalDateKey(e.start_date) === dateStr);
+        const relevantEvents = (events || []).filter(e => !excludeEventId || e.id !== excludeEventId);
+        const conflictEvent = relevantEvents.find(e => toLocalDateKey(e.start_date) === dateStr);
         if (!conflictEvent) return null;
 
-        const busyDays = new Set((events || []).map(e => toLocalDateKey(e.start_date)));
+        const busyDays = new Set(relevantEvents.map(e => toLocalDateKey(e.start_date)));
         const next = new Date(`${dateStr}T00:00:00`);
         do {
             next.setDate(next.getDate() + 1);
@@ -3746,11 +3972,36 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         handleEventCaseSelectChange();
     }
 
+    const CONFERENCE_ROOMS = ['Conference Room A', 'Conference Room B'];
+
+    function syncEventLocationWithCase(c) {
+        const loc = document.getElementById('event-location');
+        if (!loc) return;
+        const previousCourt = loc.dataset.autoCourt || '';
+        const wasAuto = previousCourt !== '' && loc.value === previousCourt;
+        Array.from(loc.options).forEach(o => { if (o.dataset.court === '1') o.remove(); });
+        loc.dataset.autoCourt = '';
+
+        const court = c && c.court_branch ? String(c.court_branch).trim() : '';
+        if (!court) {
+            if (wasAuto) loc.value = '';
+            return;
+        }
+        const opt = document.createElement('option');
+        opt.value = court;
+        opt.textContent = court + ' (Court)';
+        opt.dataset.court = '1';
+        loc.insertBefore(opt, loc.options[1] || null);
+        loc.dataset.autoCourt = court;
+        if (loc.value === '' || wasAuto) loc.value = court;
+    }
+
     function handleEventCaseSelectChange() {
         const caseSelect = document.getElementById('event-existing-case');
         const info = document.getElementById('event-case-info');
-        if (!info) return;
         const c = caseSelect ? (window.__eventCasesMap || {})[caseSelect.value] : null;
+        syncEventLocationWithCase(c);
+        if (!info) return;
         if (!c) {
             info.classList.add('hidden');
             info.innerHTML = '';
@@ -4141,7 +4392,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 }
 
                 
-                if (location && location.trim() !== '' && eventDateTimeISO) {
+                if (CONFERENCE_ROOMS.includes(location) && eventDateTimeISO) {
                     const bufferMs = eventEndDateTimeISO ? (new Date(eventEndDateTimeISO) - new Date(eventDateTimeISO)) : (60 * 60 * 1000);
                     const newStart = new Date(eventDateTimeISO);
                     const rangeStart = new Date(newStart.getTime() - bufferMs + 1000).toISOString();
@@ -4195,8 +4446,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         end_date: eventEndDateTimeISO,
                         priority: priority,
                         location: location,
-                        is_general: isGeneral,
-                        is_conflict: false
+                        is_general: isGeneral
                     };
 
                     if (!isGeneral) {
@@ -4276,18 +4526,18 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             const { data: events } = await supabaseClient
                 .from('calendar_events')
-                .select('id, title, location, start_date, is_general, is_conflict, profiles(full_name), cases(clients(client_name))')
+                .select('id, title, location, start_date, end_date, is_general, assigned_to, profiles(full_name), cases(clients(client_name))')
                 .gte('start_date', todayStart)
                 .lte('start_date', todayEnd)
                 .order('start_date', { ascending: true });
 
-            const allRooms = ["Conference Room A", "Conference Room B", "Courtroom 3B"];
+            const allRooms = CONFERENCE_ROOMS;
             const now = new Date();
             const roomBufferMs = 60 * 60 * 1000;
 
             window.__roomEventsRegistry = {};
 
-            list.innerHTML = allRooms.map(room => {
+            const roomsHtml = allRooms.map(room => {
                 const roomEvents = (events || []).filter(e => (e.location || '').trim().toLowerCase() === room.toLowerCase());
 
                 const currentBooking = roomEvents.find(e => {
@@ -4339,6 +4589,69 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     </div>
                 `;
             }).join('');
+
+            const isLawyerView = globalUserRole === 'lawyer' && currentUser;
+            let courtQuery = supabaseClient
+                .from('calendar_events')
+                .select('id, title, location, start_date, end_date, is_general, assigned_to, profiles(full_name), cases(clients(client_name))')
+                .gte('start_date', todayStart)
+                .not('location', 'is', null)
+                .not('location', 'in', `(${CONFERENCE_ROOMS.map(r => `"${r}"`).join(',')})`)
+                .order('start_date', { ascending: true })
+                .limit(40);
+            if (isLawyerView) courtQuery = courtQuery.or(`assigned_to.eq.${currentUser.id},is_general.eq.true`);
+            const { data: courtData } = await courtQuery;
+            const courtEvents = (courtData || []).filter(e => (e.location || '').trim() !== '');
+
+            const courtGroups = {};
+            courtEvents.forEach(e => {
+                const key = e.location.trim().toLowerCase();
+                if (!courtGroups[key]) courtGroups[key] = { name: e.location.trim(), events: [] };
+                courtGroups[key].events.push(e);
+            });
+
+            const dateLabel = (iso) => toLocalDateKey(iso) === todayStr
+                ? 'Today'
+                : new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+            let courtsHtml = '<div class="loc-subhead">Courts and other locations</div>';
+            const groups = Object.values(courtGroups);
+            if (groups.length === 0) {
+                courtsHtml += '<p class="loc-empty">No court locations scheduled yet.</p>';
+            } else {
+                courtsHtml += groups.map(g => {
+                    const shown = g.events.slice(0, 4);
+                    const rows = shown.map(e => {
+                        window.__roomEventsRegistry[e.id] = { ...e, roomName: g.name };
+                        const end = e.end_date ? new Date(e.end_date) : new Date(new Date(e.start_date).getTime() + roomBufferMs);
+                        const done = now >= end;
+                        const who = e.is_general ? 'Firm-wide' : (e.profiles?.full_name ? `Atty. ${e.profiles.full_name}` : 'Unassigned');
+                        return `
+                            <div class="loc-event${done ? ' loc-event-done' : ''}" onclick="openRoomBookingDetails('${e.id}')" title="Click to view details">
+                                <span class="loc-event-date">
+                                    <strong>${dateLabel(e.start_date)}</strong>
+                                    <small>${formatEventTime(e.start_date)}</small>
+                                </span>
+                                <span class="loc-event-main">
+                                    <span class="loc-event-title">${escapeHtml(e.title || 'Booked')}</span>
+                                    <span class="loc-event-who"><i class="fa-solid fa-gavel"></i> ${escapeHtml(who)}</span>
+                                </span>
+                            </div>`;
+                    }).join('');
+                    const more = g.events.length > shown.length ? `<div class="loc-more">+${g.events.length - shown.length} more</div>` : '';
+                    return `
+                        <div class="loc-court">
+                            <div class="loc-court-head">
+                                <span class="loc-court-name"><i class="fa-solid fa-landmark"></i> ${escapeHtml(g.name)}</span>
+                                <span class="loc-court-count">${g.events.length}</span>
+                            </div>
+                            ${rows}
+                            ${more}
+                        </div>`;
+                }).join('');
+            }
+
+            list.innerHTML = roomsHtml + courtsHtml;
 
         } catch (error) {
             console.error('Error rendering resources:', error);
@@ -4449,7 +4762,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             if (term) {
                 const lawyers = (c.case_lawyers || []).map(r => r.profiles && r.profiles.full_name);
                 const haystack = [
-                    c.title, c.case_number, c.court_case_no, c.court_branch, c.jurisdiction,
+                    c.title, c.case_number, c.court_branch,
                     c.clients && c.clients.client_name, ...lawyers
                 ].filter(Boolean).join(' ').toLowerCase();
                 if (!haystack.includes(term)) return false;
@@ -4468,51 +4781,87 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             return;
         }
 
-        casesList.innerHTML = cases.map(c => {
-            const isClosed = c.status === 'closed';
-            const statusStyle = isClosed
-                ? 'background:#f1f5f9; color:#64748b;'
-                : 'background:#dcfce7; color:#16a34a;';
-            const clientName = escapeHtml(c.clients?.client_name || 'No Client');
-            const canEditCase = globalRoleName === 'admin' || globalRoleName === 'lawyer';
-            const outline = 'padding:8px 14px; border:1px solid #e2e8f0; background:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;';
+        const sort = window.__casesSort || { key: 'date_filed', dir: 'desc' };
+        const sortValue = {
+            title: c => (c.title || '').toLowerCase(),
+            client: c => ((c.clients && c.clients.client_name) || '').toLowerCase(),
+            case_type: c => (c.case_type || '').toLowerCase(),
+            case_stage: c => (c.case_stage || '').toLowerCase(),
+            date_filed: c => new Date(c.date_filed || c.created_at || 0).getTime(),
+            status: c => (c.status || 'active')
+        }[sort.key] || (() => 0);
+        cases.sort((a, b) => {
+            const x = sortValue(a), y = sortValue(b);
+            const r = x < y ? -1 : (x > y ? 1 : 0);
+            return sort.dir === 'asc' ? r : -r;
+        });
 
-            const buttons = [];
-            if (globalRoleName === 'admin') {
-                buttons.push(`<button onclick="openCaseTeam('${c.id}')" style="${outline}"><i class="fa-solid fa-gavel"></i> Lawyers</button>`);
-            }
+        const th = (key, label) => {
+            const active = sort.key === key;
+            const arrow = active ? (sort.dir === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down') : 'fa-sort';
+            return `<th class="ct-sortable${active ? ' ct-sorted' : ''}" data-case-sort="${key}" tabindex="0" role="button" aria-label="Sort by ${label}">${label} <i class="fa-solid ${arrow}"></i></th>`;
+        };
+
+        const canEditCase = globalRoleName === 'admin' || globalRoleName === 'lawyer';
+
+        const rows = cases.map(c => {
+            const isClosed = c.status === 'closed';
+            const clientName = escapeHtml(c.clients?.client_name || 'No Client');
+            const lawyers = (c.case_lawyers || []).slice().sort((a, b) => (rowIsLead(b) ? 1 : 0) - (rowIsLead(a) ? 1 : 0));
+            const lawyerCell = lawyers.length
+                ? lawyers.map(r => `<div class="ct-lawyer">${rowIsLead(r) ? '<i class="fa-solid fa-gavel"></i> ' : ''}Atty. ${escapeHtml(rowName(r) || 'Unknown')}</div>`).join('')
+                : '<span class="ct-muted">Not assigned</span>';
+
+            const iconBtn = (onclick, icon, label, tone = '') =>
+                `<button type="button" class="ct-icon-btn ${tone}" onclick="${onclick}" title="${label}" aria-label="${label}"><i class="fa-solid ${icon}"></i></button>`;
+            const textBtn = (onclick, icon, label, tone) =>
+                `<button type="button" class="ct-text-btn ${tone}" onclick="${onclick}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
+
+            const actions = [];
             if (canEditCase) {
-                buttons.push(`<button onclick="openCaseForm('${c.id}')" style="${outline}"><i class="fa-solid fa-pen"></i> Edit</button>`);
-                buttons.push(`<button onclick="toggleCaseStatus('${c.id}', '${c.status || 'active'}')" style="${outline}">${isClosed ? 'Reopen' : 'Mark Closed'}</button>`);
+                actions.push(isClosed
+                    ? textBtn(`toggleCaseStatus('${c.id}', 'closed')`, 'fa-rotate-left', 'Reopen', 'ct-blue')
+                    : textBtn(`toggleCaseStatus('${c.id}', '${c.status || 'active'}')`, 'fa-lock', 'Close case', 'ct-green'));
             }
-            buttons.push(`<button onclick="openCaseDetail('${c.id}')" style="padding:8px 14px; border:none; background:#0f172a; color:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600;"><i class="fa-solid fa-envelope"></i> Emails</button>`);
-            if (globalRoleName === 'admin') {
-                buttons.push(`<button onclick="deleteCase('${c.id}')" style="${outline} color:#dc2626;"><i class="fa-solid fa-trash"></i></button>`);
-            }
+            actions.push(iconBtn(`openCaseDetail('${c.id}')`, 'fa-envelope', 'Case emails'));
+            if (globalRoleName === 'admin') actions.push(iconBtn(`openCaseTeam('${c.id}')`, 'fa-gavel', 'Assign lawyers'));
+            if (canEditCase) actions.push(iconBtn(`openCaseForm('${c.id}')`, 'fa-pen', 'Edit case'));
+            if (globalRoleName === 'admin') actions.push(iconBtn(`deleteCase('${c.id}')`, 'fa-trash', 'Delete case', 'ct-red'));
 
             return `
-                <div class="content-card" style="padding: 18px 20px; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom: 0;">
-                    <div>
-                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-                            <h4 style="margin:0; font-size:15px; color:#0f172a;">${escapeHtml(c.title)}</h4>
-                            <span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; text-transform:capitalize; ${statusStyle}">${c.status || 'active'}</span>
-                            ${c.case_stage ? `<span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; background:#eff6ff; color:#2563eb;">${escapeHtml(c.case_stage)}</span>` : ''}
-                        </div>
-                        <p style="margin:0; font-size:12px; color:#64748b;">
-                            ${c.case_number ? `#${escapeHtml(c.case_number)} • ` : ''}${escapeHtml(c.case_type || 'General')}${c.party_type ? ' • ' + escapeHtml(c.party_type) : ''}
-                            • <i class="fa-solid fa-user" style="font-size:10px;"></i> ${clientName}
-                            • Filed ${formatDate(c.date_filed || c.created_at)}
-                        </p>
-                        ${(c.court_case_no || c.court_branch || c.jurisdiction) ? `<p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">
-                            ${[c.court_case_no ? 'Case No. ' + escapeHtml(c.court_case_no) : '', c.court_branch ? escapeHtml(c.court_branch) : '', c.jurisdiction ? 'Jurisdiction: ' + escapeHtml(c.jurisdiction) : ''].filter(Boolean).join(' • ')}
-                        </p>` : ''}
-                        <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${teamChipsHtml(c.case_lawyers)}</div>
-                        ${c.case_description ? `<p style="margin:8px 0 0 0; font-size:12px; color:#475569;">${escapeHtml(c.case_description)}</p>` : ''}
-                    </div>
-                    <div style="display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end;">${buttons.join('')}</div>
-                </div>
-            `;
+                <tr>
+                    <td class="ct-name">
+                        ${escapeHtml(c.title)}
+                        <div class="ct-sub">${c.case_number ? '#' + escapeHtml(c.case_number) : ''}${c.court_branch ? (c.case_number ? ' • ' : '') + escapeHtml(c.court_branch) : ''}</div>
+                    </td>
+                    <td>${clientName}</td>
+                    <td>${escapeHtml(c.case_type || 'General')}${c.party_type ? `<div class="ct-sub">${escapeHtml(c.party_type)}</div>` : ''}</td>
+                    <td>${c.case_stage ? `<span class="ct-badge ct-badge-stage">${escapeHtml(c.case_stage)}</span>` : '<span class="ct-muted">-</span>'}</td>
+                    <td>${formatDate(c.date_filed || c.created_at)}</td>
+                    <td>${lawyerCell}</td>
+                    <td><span class="ct-badge ${isClosed ? 'ct-badge-closed' : 'ct-badge-active'}">${isClosed ? 'Closed' : 'Active'}</span></td>
+                    <td class="ct-actions"><div>${actions.join('')}</div></td>
+                </tr>`;
         }).join('');
+
+        casesList.innerHTML = `
+            <div class="ct-wrap">
+                <table class="ct-table ct-table-wide">
+                    <thead>
+                        <tr>
+                            ${th('title', 'Case')}
+                            ${th('client', 'Client')}
+                            ${th('case_type', 'Type')}
+                            ${th('case_stage', 'Stage')}
+                            ${th('date_filed', 'Filed')}
+                            <th>Lawyer</th>
+                            ${th('status', 'Status')}
+                            <th class="ct-actions-head"></th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
     }
 
     function setupCasesTabControls() {
@@ -4548,6 +4897,25 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         fillFilter(partyEl, 'All party types', PARTY_TYPES);
         fillFilter(stageEl, 'All stages', CASE_STAGES);
 
+        const casesListEl = document.getElementById('cases-list-inject');
+        if (casesListEl) {
+            const applySort = (th) => {
+                const key = th.getAttribute('data-case-sort');
+                const cur = window.__casesSort || { key: 'date_filed', dir: 'desc' };
+                window.__casesSort = { key: key, dir: (cur.key === key && cur.dir === 'asc') ? 'desc' : 'asc' };
+                paintCasesList();
+            };
+            casesListEl.addEventListener('click', (e) => {
+                const th = e.target.closest('[data-case-sort]');
+                if (th) applySort(th);
+            });
+            casesListEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                const th = e.target.closest('[data-case-sort]');
+                if (th) { e.preventDefault(); applySort(th); }
+            });
+        }
+
         let searchTimer = null;
         if (searchEl) searchEl.addEventListener('input', () => {
             clearTimeout(searchTimer);
@@ -4576,9 +4944,45 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-        window.toggleCaseStatus = async function(caseId, currentStatus) {
+    // Returns the events linked to a case that have not finished yet.
+    // An event with no end time, or one saved as midnight (date only), counts as pending until the end of that day.
+    async function getPendingCaseEvents(caseId) {
+        const { data, error } = await supabaseClient
+            .from('calendar_events')
+            .select('id, title, start_date, end_date')
+            .eq('case_id', caseId)
+            .order('start_date', { ascending: true });
+        if (error) throw error;
+
+        const now = new Date();
+        return (data || []).filter(ev => {
+            const end = new Date(ev.end_date || ev.start_date);
+            if (isNaN(end.getTime())) return false;
+            if (end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0) {
+                end.setHours(23, 59, 59, 999);
+            }
+            return end > now;
+        });
+    }
+
+    function pendingEventsMessage(events) {
+        const shown = events.slice(0, 3).map(ev =>
+            `\u2022 ${ev.title} (${formatDate(ev.start_date)}${formatEventTime(ev.start_date) ? ', ' + formatEventTime(ev.start_date) : ''})`
+        ).join('\n');
+        const more = events.length > 3 ? `\n...and ${events.length - 3} more.` : '';
+        return `This case can't be closed yet. It still has ${events.length === 1 ? 'an event' : events.length + ' events'} that ${events.length === 1 ? "hasn't" : "haven't"} happened:\n\n${shown}${more}\n\nClose the case after ${events.length === 1 ? 'it is' : 'they are'} done, or remove the event from the calendar if it was cancelled.`;
+    }
+
+    window.toggleCaseStatus = async function(caseId, currentStatus) {
         const newStatus = currentStatus === 'closed' ? 'active' : 'closed';
         try {
+            if (newStatus === 'closed') {
+                const pending = await getPendingCaseEvents(caseId);
+                if (pending.length > 0) {
+                    showToast(pendingEventsMessage(pending), 'warning', { duration: 10000 });
+                    return;
+                }
+            }
             const { error } = await supabaseClient
                 .from('cases')
                 .update({ status: newStatus })
@@ -4615,7 +5019,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
    
     function formatClientFullName(fname, mi, lname) {
         const initial = (mi || '').replace(/\./g, '').trim();
-        return `${lname ? lname + ', ' : ''}${fname} ${initial ? initial + '.' : ''}`.trim();
+        return [fname, initial ? initial + '.' : '', lname].filter(Boolean).join(' ');
     }
 
     
@@ -4694,7 +5098,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-function paintClientsDirectory() {
+    function paintClientsDirectory() {
         const listEl = document.getElementById('clients-list-inject');
         const countEl = document.getElementById('clients-count');
         if (!listEl) return;
@@ -4721,90 +5125,154 @@ function paintClientsDirectory() {
         }
 
         if (all.length === 0) {
-            listEl.innerHTML = `<p class="mc-empty" style="color:#64748b; text-align:center; padding:30px;">${globalRoleName === 'lawyer' ? 'No clients have been assigned to you yet.' : 'No clients yet.'}</p>`;
+            listEl.innerHTML = `<p class="mc-empty">${globalRoleName === 'lawyer' ? 'No clients have been assigned to you yet.' : 'No clients yet.'}</p>`;
             return;
         }
         if (clients.length === 0) {
-            listEl.innerHTML = '<p class="mc-empty" style="color:#64748b; text-align:center; padding:30px;">No clients match your filters.</p>';
+            listEl.innerHTML = '<p class="mc-empty">No clients match your filters.</p>';
             return;
         }
 
-        const actionLink = (action, id, icon, label, color = '#3b82f6') =>
-            `<button type="button" data-client-action="${action}" data-client-id="${id}" style="background:none; border:none; color:${color}; font-size:13px; font-weight:500; cursor:pointer; padding:0; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid ${icon}"></i> ${label}</button>`;
+        const staff = isStaffUser();
+        const sort = window.__clientsSort || { key: 'created_at', dir: 'desc' };
+        const sortValue = {
+            client_name: c => (c.client_name || '').toLowerCase(),
+            client_email: c => (c.client_email || '').toLowerCase(),
+            client_phone: c => (c.client_phone || '').toLowerCase(),
+            cases: c => (c.cases || []).length,
+            created_at: c => new Date(c.created_at || 0).getTime()
+        }[sort.key] || (c => 0);
+        clients.sort((a, b) => {
+            const x = sortValue(a), y = sortValue(b);
+            const r = x < y ? -1 : (x > y ? 1 : 0);
+            return sort.dir === 'asc' ? r : -r;
+        });
+
+        const btn = (action, id, icon, label, style = '') =>
+            `<button type="button" class="mc-tag-btn" data-client-action="${action}" data-client-id="${id}" style="${style}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
+
+        const th = (key, label) => {
+            const active = sort.key === key;
+            const arrow = active ? (sort.dir === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down') : 'fa-sort';
+            return `<th class="ct-sortable${active ? ' ct-sorted' : ''}" data-client-sort="${key}" tabindex="0" role="button" aria-label="Sort by ${label}">${label} <i class="fa-solid ${arrow}"></i></th>`;
+        };
 
         const rows = clients.map(c => {
-            const cases = (c.cases || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            const caseLines = cases.map(cs => {
-                const closedTag = cs.status === 'closed' ? '<span style="background:#f1f5f9; color:#64748b; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:6px;">Closed</span>' : '';
-                const caseNo = cs.case_number ? `<span style="color:#94a3b8; margin-left:4px;">#${escapeHtml(cs.case_number)}</span>` : '';
-                return `<div style="font-size:12px; margin-top:4px; color:#475569;"><strong>${escapeHtml(cs.title)}</strong>${caseNo}${closedTag}</div>`;
-            }).join('');
+            const cases = c.cases || [];
+            const openCases = cases.filter(cs => cs.status !== 'closed').length;
+            const lawyers = (c.client_lawyers || []).slice().sort((a, b) => (rowIsLead(b) ? 1 : 0) - (rowIsLead(a) ? 1 : 0));
+            const lawyerCell = lawyers.length
+                ? lawyers.map(r => `<div class="ct-lawyer">${rowIsLead(r) ? '<i class="fa-solid fa-gavel"></i> ' : ''}Atty. ${escapeHtml(rowName(r) || 'Unknown')}</div>`).join('')
+                : '<span class="ct-muted">Not assigned</span>';
 
-            const rejectedNote = (c.approval_status === 'rejected' && c.rejection_reason)
-                ? `<div style="color:#dc2626; font-size:12px; margin-top:4px;">Reason: ${escapeHtml(c.rejection_reason)}</div>` : '';
+            const iconBtn = (action, icon, label, tone = '') =>
+                `<button type="button" class="ct-icon-btn ${tone}" data-client-action="${action}" data-client-id="${c.id}" title="${label}" aria-label="${label}"><i class="fa-solid ${icon}"></i></button>`;
+            const textBtn = (action, icon, label, tone) =>
+                `<button type="button" class="ct-text-btn ${tone}" data-client-action="${action}" data-client-id="${c.id}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
 
             const actions = [];
             if (isAdminUser()) {
-                if (c.approval_status !== 'approved') actions.push(actionLink('approve', c.id, 'fa-check', 'Approve', '#16a34a'));
-                if (c.approval_status === 'pending') actions.push(actionLink('reject', c.id, 'fa-xmark', 'Reject', '#dc2626'));
-                if (c.approval_status === 'approved') actions.push(actionLink('assign', c.id, 'fa-gavel', 'Assign'));
-                actions.push(actionLink('edit', c.id, 'fa-pen-to-square', 'Edit'));
-                actions.push(actionLink('delete', c.id, 'fa-trash', 'Delete', '#dc2626'));
+                if (c.approval_status === 'pending') {
+                    actions.push(textBtn('approve', 'fa-check', 'Approve', 'ct-green'));
+                    actions.push(iconBtn('reject', 'fa-xmark', 'Reject', 'ct-red'));
+                } else if (c.approval_status === 'rejected') {
+                    actions.push(textBtn('approve', 'fa-check', 'Approve', 'ct-green'));
+                } else {
+                    actions.push(textBtn('assign', 'fa-gavel', 'Assign lawyers', 'ct-blue'));
+                }
+            }
+            actions.push(iconBtn('view', 'fa-eye', 'View details'));
+            if (isAdminUser()) {
+                actions.push(iconBtn('edit', 'fa-pen', 'Edit client'));
+                actions.push(iconBtn('delete', 'fa-trash', 'Delete client', 'ct-red'));
             }
 
             return `
-                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                    <td style="padding: 16px; vertical-align: top;">
-                        <div style="font-weight: 500; color: #0f172a; font-size: 14px; display:flex; align-items:center; gap:8px;">
-                            ${escapeHtml(c.client_name || 'Unnamed client')}
-                            ${isStaffUser() ? approvalBadge(c.approval_status) : ''}
-                        </div>
-                        <div style="margin-top: 6px;">
-                            ${c.approval_status === 'approved' || globalRoleName === 'lawyer' ? teamChipsHtml(c.client_lawyers) : ''}
-                        </div>
-                        ${rejectedNote}
-                        ${caseLines}
-                    </td>
-                    <td style="padding: 16px; vertical-align: top; color: #475569; font-size: 13px;">
-                        ${escapeHtml(c.client_email || '—')}
-                    </td>
-                    <td style="padding: 16px; vertical-align: top; color: #475569; font-size: 13px;">
-                        ${escapeHtml(c.client_phone || '—')}
-                    </td>
-                    <td style="padding: 16px; vertical-align: top; text-align: right;">
-                        <div style="display:flex; gap:16px; justify-content:flex-end; align-items:center; flex-wrap:wrap;">
-                            ${actions.join('')}
-                        </div>
-                    </td>
-                </tr>
-            `;
+                <tr>
+                    <td class="ct-name"><a href="#" class="ct-name-link" data-client-action="view" data-client-id="${c.id}">${escapeHtml(c.client_name || 'Unnamed client')}</a></td>
+                    <td>${c.client_email ? escapeHtml(c.client_email) : '<span class="ct-muted">No email</span>'}</td>
+                    <td>${c.client_phone ? escapeHtml(c.client_phone) : '<span class="ct-muted">-</span>'}</td>
+                    <td>${lawyerCell}</td>
+                    <td>${cases.length}${openCases > 0 ? `<span class="ct-muted"> (${openCases} active)</span>` : ''}</td>
+                    ${staff ? `<td>${approvalBadge(c.approval_status).replace('margin-left:8px;', '')}</td>` : ''}
+                    <td class="ct-actions"><div>${actions.join('')}</div></td>
+                </tr>`;
         }).join('');
 
         listEl.innerHTML = `
-            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-top: 10px;">
-                <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                    <thead style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <div class="ct-wrap">
+                <table class="ct-table">
+                    <thead>
                         <tr>
-                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Name</th>
-                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Email address</th>
-                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Phone</th>
-                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; text-align: right;">Actions</th>
+                            ${th('client_name', 'Name')}
+                            ${th('client_email', 'Email address')}
+                            ${th('client_phone', 'Phone')}
+                            <th>Lawyer</th>
+                            ${th('cases', 'Cases')}
+                            ${staff ? '<th>Status</th>' : ''}
+                            <th class="ct-actions-head"></th>
                         </tr>
                     </thead>
-                    <tbody>
-                        ${rows}
-                    </tbody>
+                    <tbody>${rows}</tbody>
                 </table>
-            </div>
-        `;
+            </div>`;
     }
+
+    function openClientViewModal(client) {
+        const existing = document.getElementById('view-client-modal');
+        if (existing) existing.remove();
+
+        const cases = (client.cases || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const caseLines = cases.length
+            ? cases.map(cs => `<div class="mc-case-line"><strong>${escapeHtml(cs.title)}</strong>${cs.case_number ? `<span class="mc-case-no">#${escapeHtml(cs.case_number)}</span>` : ''}${cs.status === 'closed' ? '<span class="mc-tag mc-tag-closed">Closed</span>' : ''}</div>`).join('')
+            : '<span class="ct-muted">No cases yet.</span>';
+        const field = (label, html) => `<div class="cv-field"><span class="cv-label">${label}</span><div class="cv-value">${html}</div></div>`;
+        const rejected = (client.approval_status === 'rejected' && client.rejection_reason)
+            ? field('Rejection reason', `<span style="color:#dc2626;">${escapeHtml(client.rejection_reason)}</span>`) : '';
+
+        const overlay = document.createElement('div');
+        overlay.id = 'view-client-modal';
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-content mc-modal">
+                <div class="modal-header mc-modal-head">
+                    <div>
+                        <h2>${escapeHtml(client.client_name || 'Unnamed client')}${isStaffUser() ? approvalBadge(client.approval_status) : ''}</h2>
+                        <p>Client details${isAdminUser() ? '' : ' (read only)'}</p>
+                    </div>
+                    <button type="button" class="btn-close" data-cv-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="cv-grid">
+                    ${field('Email address', client.client_email ? escapeHtml(client.client_email) : '<span class="ct-muted">No email</span>')}
+                    ${field('Phone', client.client_phone ? escapeHtml(client.client_phone) : '<span class="ct-muted">-</span>')}
+                    ${field('Address', client.full_address ? escapeHtml(client.full_address) : '<span class="ct-muted">No address</span>')}
+                    ${field('Added on', formatDate(client.created_at))}
+                    ${rejected}
+                </div>
+                <div class="cv-section"><span class="cv-label">Lawyers</span><div style="margin-top:6px;">${teamChipsHtml(client.client_lawyers)}</div></div>
+                <div class="cv-section"><span class="cv-label">Cases (${cases.length})</span><div class="mc-case-list" style="margin-top:6px;">${caseLines}</div></div>
+                ${isAdminUser() ? '<div class="cv-footer"><button type="button" class="mc-submit" data-cv-edit style="width:auto; padding:10px 22px;"><i class="fa-solid fa-pen"></i> Edit client</button></div>' : ''}
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+        overlay.querySelector('[data-cv-close]').addEventListener('click', close);
+        const editBtn = overlay.querySelector('[data-cv-edit]');
+        if (editBtn) editBtn.addEventListener('click', () => { close(); openEditClientModal(client); });
+    }
+
     async function handleClientAction(action, clientId) {
-        if (!isAdminUser()) return;
+        if (action !== 'view' && !isAdminUser()) return;
         const client = (window.__clientsDirectory || []).find(c => String(c.id) === String(clientId));
         if (!client) return;
 
         try {
-            if (action === 'approve' || action === 'assign') {
+            if (action === 'view') {
+                openClientViewModal(client);
+            } else if (action === 'approve' || action === 'assign') {
                 await openTeamModal('client', client.id, { approve: action === 'approve' });
                 } else if (action === 'reject') {
                 const reason = (await promptDialog({ title: 'Reject client', message: `Reject ${client.client_name}?`, label: 'Reason (optional)', placeholder: 'e.g., Incomplete documents', confirmLabel: 'Reject', danger: true, multiline: true }));
@@ -4833,52 +5301,14 @@ function paintClientsDirectory() {
         }
     }
 
-function openEditClientModal(client) {
+    function openEditClientModal(client) {
         const modal = document.getElementById('edit-client-modal');
         if (!modal) return;
-        
-        const formContainer = modal.querySelector('form');
-        if (formContainer) {
-            const createdAt = client.created_at ? formatTimeAgo(client.created_at) : 'Unknown';
-            formContainer.innerHTML = `
-                <input type="hidden" id="ec-id" value="${client.id}">
-                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-                    <div style="flex: 2; min-width: 250px; display: flex; flex-direction: column; gap: 16px;">
-                        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-                            <div style="flex: 1; min-width: 120px;">
-                                <label for="ec-name" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Name*</label>
-                                <input type="text" id="ec-name" value="${escapeHtml(client.client_name || '')}" required style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
-                            </div>
-                            <div style="flex: 1; min-width: 120px;">
-                                <label for="ec-email" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Email address*</label>
-                                <input type="email" id="ec-email" value="${escapeHtml(client.client_email || '')}" required style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-                            <div style="flex: 1; min-width: 120px;">
-                                <label for="ec-phone" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Phone</label>
-                                <input type="tel" id="ec-phone" value="${escapeHtml(client.client_phone || '')}" required style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
-                            </div>
-                            <div style="flex: 1; min-width: 120px;">
-                                <label for="ec-address" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Address</label>
-                                <input type="text" id="ec-address" value="${escapeHtml(client.full_address || '')}" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
-                            </div>
-                        </div>
-                    </div>
-                    <div style="flex: 1; min-width: 150px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; align-self: flex-start;">
-                        <p style="font-size: 12px; color: #64748b; margin: 0 0 4px 0;">Created</p>
-                        <p style="font-size: 13px; color: #0f172a; margin: 0 0 16px 0; font-weight: 500;">${createdAt}</p>
-                        <p style="font-size: 12px; color: #64748b; margin: 0 0 4px 0;">Status</p>
-                        <p style="font-size: 13px; color: #0f172a; margin: 0; font-weight: 500; text-transform: capitalize;">${escapeHtml(client.approval_status || 'Unknown')}</p>
-                    </div>
-                </div>
-                <div style="margin-top: 24px; display: flex; gap: 12px;">
-                    <button type="submit" style="padding:10px 20px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px;">Save changes</button>
-                    <button type="button" onclick="document.getElementById('edit-client-modal').classList.add('hidden')" style="padding:10px 20px; background:white; color:#475569; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px;">Cancel</button>
-                </div>
-            `;
-        }
-
+        document.getElementById('ec-id').value = client.id;
+        document.getElementById('ec-name').value = client.client_name || '';
+        document.getElementById('ec-email').value = client.client_email || '';
+        document.getElementById('ec-phone').value = client.client_phone || '';
+        document.getElementById('ec-address').value = client.full_address || '';
         modal.classList.remove('hidden');
     }
 
@@ -4963,7 +5393,6 @@ function openEditClientModal(client) {
         leadSel.onchange = () => { hideTeamError(); teamModalState.syncCo(); };
         coList.onchange = hideTeamError;
 
-        // Existing assignments on a client are locked until the admin confirms their password.
         const isLocked = kind === 'client' && !approve && rows.length > 0;
         setTeamModalLocked(isLocked);
         const noticeEl = document.getElementById('team-lock-notice');
@@ -5128,8 +5557,6 @@ function openEditClientModal(client) {
         ['cf-type', 'Please select a case type.'],
         ['cf-party', 'Please select a party type.'],
         ['cf-court', 'Court and Branch No. / Agency is required.'],
-        ['cf-jurisdiction', 'Jurisdiction is required.'],
-        ['cf-court-no', 'Case No. is required.'],
         ['cf-date', 'Date filed is required.'],
         ['cf-stage', 'Please select a case stage.']
     ];
@@ -5145,7 +5572,6 @@ function openEditClientModal(client) {
         clearCaseFormErrors();
         let firstInvalid = null;
 
-        // A new case created by an administrator must have a lead lawyer.
         const leadWrap = document.getElementById('cf-lead-wrap');
         const leadRequired = !!leadWrap && leadWrap.style.display !== 'none';
         const requiredFields = CASE_REQUIRED_FIELDS.slice();
@@ -5238,23 +5664,29 @@ function openEditClientModal(client) {
 
         if (record) {
             clientSel.value = String(record.client_id || '');
-            clientSel.disabled = !isAdminUser();
+            clientSel.disabled = true;
             document.getElementById('cf-title').value = record.title || '';
             document.getElementById('cf-type').value = record.case_type || '';
             document.getElementById('cf-party').value = record.party_type || '';
             document.getElementById('cf-court').value = record.court_branch || '';
-            document.getElementById('cf-jurisdiction').value = record.jurisdiction || '';
-            document.getElementById('cf-court-no').value = record.court_case_no || '';
             document.getElementById('cf-stage').value = record.case_stage || 'For Filing';
-            document.getElementById('cf-status').value = record.status || 'active';
-            document.getElementById('cf-status').disabled = false;
             document.getElementById('cf-desc').value = record.case_description || '';
+            document.getElementById('cf-title').readOnly = true;
+            document.getElementById('cf-type').disabled = !!record.case_type;
+            document.getElementById('cf-party').disabled = !!record.party_type;
+            document.getElementById('cf-stage').disabled = true;
+            document.getElementById('cf-date').disabled = true;
+            document.getElementById('cf-court').readOnly = !!record.court_branch;
             document.getElementById('cf-date').value = toLocalDateKey(record.date_filed || record.created_at);
         } else {
             clientSel.disabled = false;
             document.getElementById('cf-stage').value = 'For Filing';
-            document.getElementById('cf-status').value = 'active';
-            document.getElementById('cf-status').disabled = true;
+            document.getElementById('cf-title').readOnly = false;
+            document.getElementById('cf-type').disabled = false;
+            document.getElementById('cf-party').disabled = false;
+            document.getElementById('cf-stage').disabled = false;
+            document.getElementById('cf-date').disabled = false;
+            document.getElementById('cf-court').readOnly = false;
             document.getElementById('cf-date').value = toLocalDateKey(new Date().toISOString());
         }
     }
@@ -5288,10 +5720,7 @@ function openEditClientModal(client) {
             const lead = val('cf-lead');
             const partyType = val('cf-party');
             const courtBranch = val('cf-court');
-            const jurisdiction = val('cf-jurisdiction');
-            const courtCaseNo = val('cf-court-no');
             const caseStage = val('cf-stage');
-            const caseStatus = val('cf-status');
             const dateIso = dateVal ? new Date(dateVal + 'T00:00:00').toISOString() : null;
 
             const submitBtn = document.getElementById('cf-submit-btn');
@@ -5305,10 +5734,7 @@ function openEditClientModal(client) {
                         case_type: type || null,
                         party_type: partyType || null,
                         court_branch: courtBranch || null,
-                        jurisdiction: jurisdiction || null,
-                        court_case_no: courtCaseNo || null,
                         case_stage: caseStage || null,
-                        status: caseStatus || 'active',
                         case_description: desc || null
                     };
                     if (dateIso) patch.date_filed = dateIso;
@@ -5326,7 +5752,7 @@ function openEditClientModal(client) {
                     const { data, error } = await createCase({
                         title: title, caseType: type, description: desc,
                         clientId: clientId, dateFiled: dateIso, leadLawyerId: lead || null,
-                        courtBranch: courtBranch, courtCaseNo: courtCaseNo, jurisdiction: jurisdiction,
+                        courtBranch: courtBranch,
                         caseStage: caseStage, partyType: partyType
                     });
                     if (error) throw error;
@@ -5382,8 +5808,24 @@ function openEditClientModal(client) {
 
         if (listEl) {
             listEl.addEventListener('click', (e) => {
+                const sortTh = e.target.closest('[data-client-sort]');
+                if (sortTh) {
+                    const key = sortTh.getAttribute('data-client-sort');
+                    const cur = window.__clientsSort || { key: 'created_at', dir: 'desc' };
+                    window.__clientsSort = { key: key, dir: (cur.key === key && cur.dir === 'asc') ? 'desc' : 'asc' };
+                    paintClientsDirectory();
+                    return;
+                }
                 const btn = e.target.closest('[data-client-action]');
-                if (btn) handleClientAction(btn.getAttribute('data-client-action'), btn.getAttribute('data-client-id'));
+                if (btn) {
+                    e.preventDefault();
+                    handleClientAction(btn.getAttribute('data-client-action'), btn.getAttribute('data-client-id'));
+                }
+            });
+            listEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                const sortTh = e.target.closest('[data-client-sort]');
+                if (sortTh) { e.preventDefault(); sortTh.click(); }
             });
         }
 
@@ -6918,7 +7360,7 @@ function getAuditFilters() {
                 }
                 if (f.to) {
                     const [y, mo, d] = f.to.split('-').map(Number);
-                    to = new Date(y, mo - 1, d + 1); // include the whole "to" day
+                    to = new Date(y, mo - 1, d + 1);
                 }
                 return { from, to };
             }
@@ -6994,7 +7436,6 @@ async function renderAuditsView() {
 
             const { data: logs, error: logsError } = await query;
 
-
             if (requestId !== auditRequestCounter) return;
             if (logsError) throw logsError;
 
@@ -7037,6 +7478,7 @@ async function renderAuditsView() {
                 if (log.action === 'INSERT') { actionColor = '#22c55e'; actionLabel = 'Added'; }
                 if (log.action === 'CLOSE') { actionColor = '#f59e0b'; actionLabel = 'Closed'; }
                 if (log.action === 'REOPEN') { actionColor = '#0ea5e9'; actionLabel = 'Reopened'; }
+                if (log.action === 'RESCHEDULE') { actionColor = '#8b5cf6'; actionLabel = 'Rescheduled'; }
 
                 const entityName = (log.table_name || 'record').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
                 
@@ -7071,8 +7513,7 @@ async function renderAuditsView() {
         }
     }
 
-
-    const APP_LOGGED_EVENTS = ['cases:CLOSE', 'cases:REOPEN', 'clients:DELETE'];
+    const APP_LOGGED_EVENTS = ['cases:CLOSE', 'cases:REOPEN', 'clients:DELETE', 'calendar_events:RESCHEDULE'];
 
     async function logAuditActivity(action, entity, summary, recordId, oldData, newData) {
         try {
