@@ -4694,7 +4694,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    function paintClientsDirectory() {
+function paintClientsDirectory() {
         const listEl = document.getElementById('clients-list-inject');
         const countEl = document.getElementById('clients-count');
         if (!listEl) return;
@@ -4721,54 +4721,83 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
 
         if (all.length === 0) {
-            listEl.innerHTML = `<p class="mc-empty">${globalRoleName === 'lawyer' ? 'No clients have been assigned to you yet.' : 'No clients yet.'}</p>`;
+            listEl.innerHTML = `<p class="mc-empty" style="color:#64748b; text-align:center; padding:30px;">${globalRoleName === 'lawyer' ? 'No clients have been assigned to you yet.' : 'No clients yet.'}</p>`;
             return;
         }
         if (clients.length === 0) {
-            listEl.innerHTML = '<p class="mc-empty">No clients match your filters.</p>';
+            listEl.innerHTML = '<p class="mc-empty" style="color:#64748b; text-align:center; padding:30px;">No clients match your filters.</p>';
             return;
         }
 
-        const btn = (action, id, icon, label, style = '') =>
-            `<button type="button" class="mc-tag-btn" data-client-action="${action}" data-client-id="${id}" style="${style}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
+        const actionLink = (action, id, icon, label, color = '#3b82f6') =>
+            `<button type="button" data-client-action="${action}" data-client-id="${id}" style="background:none; border:none; color:${color}; font-size:13px; font-weight:500; cursor:pointer; padding:0; display:inline-flex; align-items:center; gap:6px;"><i class="fa-solid ${icon}"></i> ${label}</button>`;
 
-        listEl.innerHTML = clients.map(c => {
+        const rows = clients.map(c => {
             const cases = (c.cases || []).slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
             const caseLines = cases.map(cs => {
-                const closedTag = cs.status === 'closed' ? '<span class="mc-tag mc-tag-closed">Closed</span>' : '';
-                const caseNo = cs.case_number ? `<span class="mc-case-no">#${escapeHtml(cs.case_number)}</span>` : '';
-                return `<div class="mc-case-line"><strong>${escapeHtml(cs.title)}</strong>${caseNo}${closedTag}</div>`;
+                const closedTag = cs.status === 'closed' ? '<span style="background:#f1f5f9; color:#64748b; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:6px;">Closed</span>' : '';
+                const caseNo = cs.case_number ? `<span style="color:#94a3b8; margin-left:4px;">#${escapeHtml(cs.case_number)}</span>` : '';
+                return `<div style="font-size:12px; margin-top:4px; color:#475569;"><strong>${escapeHtml(cs.title)}</strong>${caseNo}${closedTag}</div>`;
             }).join('');
 
             const rejectedNote = (c.approval_status === 'rejected' && c.rejection_reason)
-                ? `<div class="mc-case-line" style="color:#dc2626;">Reason: ${escapeHtml(c.rejection_reason)}</div>` : '';
+                ? `<div style="color:#dc2626; font-size:12px; margin-top:4px;">Reason: ${escapeHtml(c.rejection_reason)}</div>` : '';
 
             const actions = [];
             if (isAdminUser()) {
-                if (c.approval_status !== 'approved') actions.push(btn('approve', c.id, 'fa-check', 'Approve', 'color:#16a34a; border-color:#bbf7d0;'));
-                if (c.approval_status === 'pending') actions.push(btn('reject', c.id, 'fa-xmark', 'Reject', 'color:#dc2626; border-color:#fecaca;'));
-                if (c.approval_status === 'approved') actions.push(btn('assign', c.id, 'fa-gavel', 'Assign lawyers'));
-                actions.push(btn('edit', c.id, 'fa-pen', 'Edit'));
-                actions.push(btn('delete', c.id, 'fa-trash', 'Delete', 'color:#dc2626;'));
+                if (c.approval_status !== 'approved') actions.push(actionLink('approve', c.id, 'fa-check', 'Approve', '#16a34a'));
+                if (c.approval_status === 'pending') actions.push(actionLink('reject', c.id, 'fa-xmark', 'Reject', '#dc2626'));
+                if (c.approval_status === 'approved') actions.push(actionLink('assign', c.id, 'fa-gavel', 'Assign'));
+                actions.push(actionLink('edit', c.id, 'fa-pen-to-square', 'Edit'));
+                actions.push(actionLink('delete', c.id, 'fa-trash', 'Delete', '#dc2626'));
             }
 
             return `
-                <div class="mc-client-row">
-                    <div>
-                        <h4 class="mc-client-name">${escapeHtml(c.client_name || 'Unnamed client')}${isStaffUser() ? approvalBadge(c.approval_status) : ''}</h4>
-                        <p class="mc-client-meta">${escapeHtml(c.client_email || 'No email')}${c.client_phone ? ' • ' + escapeHtml(c.client_phone) : ''}${c.full_address ? ' • ' + escapeHtml(c.full_address) : ''}</p>
-                        <div class="mc-case-list">
-                            <div class="mc-case-line">${c.approval_status === 'approved' || globalRoleName === 'lawyer' ? teamChipsHtml(c.client_lawyers) : ''}</div>
-                            ${rejectedNote}
-                            ${caseLines}
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 16px; vertical-align: top;">
+                        <div style="font-weight: 500; color: #0f172a; font-size: 14px; display:flex; align-items:center; gap:8px;">
+                            ${escapeHtml(c.client_name || 'Unnamed client')}
+                            ${isStaffUser() ? approvalBadge(c.approval_status) : ''}
                         </div>
-                    </div>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; align-content:flex-start;">${actions.join('')}</div>
-                </div>
+                        <div style="margin-top: 6px;">
+                            ${c.approval_status === 'approved' || globalRoleName === 'lawyer' ? teamChipsHtml(c.client_lawyers) : ''}
+                        </div>
+                        ${rejectedNote}
+                        ${caseLines}
+                    </td>
+                    <td style="padding: 16px; vertical-align: top; color: #475569; font-size: 13px;">
+                        ${escapeHtml(c.client_email || '—')}
+                    </td>
+                    <td style="padding: 16px; vertical-align: top; color: #475569; font-size: 13px;">
+                        ${escapeHtml(c.client_phone || '—')}
+                    </td>
+                    <td style="padding: 16px; vertical-align: top; text-align: right;">
+                        <div style="display:flex; gap:16px; justify-content:flex-end; align-items:center; flex-wrap:wrap;">
+                            ${actions.join('')}
+                        </div>
+                    </td>
+                </tr>
             `;
         }).join('');
-    }
 
+        listEl.innerHTML = `
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-top: 10px;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                    <thead style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                        <tr>
+                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Name</th>
+                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Email address</th>
+                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Phone</th>
+                            <th style="padding: 12px 16px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
     async function handleClientAction(action, clientId) {
         if (!isAdminUser()) return;
         const client = (window.__clientsDirectory || []).find(c => String(c.id) === String(clientId));
@@ -4804,14 +4833,52 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    function openEditClientModal(client) {
+function openEditClientModal(client) {
         const modal = document.getElementById('edit-client-modal');
         if (!modal) return;
-        document.getElementById('ec-id').value = client.id;
-        document.getElementById('ec-name').value = client.client_name || '';
-        document.getElementById('ec-email').value = client.client_email || '';
-        document.getElementById('ec-phone').value = client.client_phone || '';
-        document.getElementById('ec-address').value = client.full_address || '';
+        
+        const formContainer = modal.querySelector('form');
+        if (formContainer) {
+            const createdAt = client.created_at ? formatTimeAgo(client.created_at) : 'Unknown';
+            formContainer.innerHTML = `
+                <input type="hidden" id="ec-id" value="${client.id}">
+                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                    <div style="flex: 2; min-width: 250px; display: flex; flex-direction: column; gap: 16px;">
+                        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 120px;">
+                                <label for="ec-name" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Name*</label>
+                                <input type="text" id="ec-name" value="${escapeHtml(client.client_name || '')}" required style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
+                            </div>
+                            <div style="flex: 1; min-width: 120px;">
+                                <label for="ec-email" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Email address*</label>
+                                <input type="email" id="ec-email" value="${escapeHtml(client.client_email || '')}" required style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 120px;">
+                                <label for="ec-phone" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Phone</label>
+                                <input type="tel" id="ec-phone" value="${escapeHtml(client.client_phone || '')}" required style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
+                            </div>
+                            <div style="flex: 1; min-width: 120px;">
+                                <label for="ec-address" style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:6px;">Address</label>
+                                <input type="text" id="ec-address" value="${escapeHtml(client.full_address || '')}" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:6px; outline:none; font-family:inherit; box-sizing:border-box;">
+                            </div>
+                        </div>
+                    </div>
+                    <div style="flex: 1; min-width: 150px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; align-self: flex-start;">
+                        <p style="font-size: 12px; color: #64748b; margin: 0 0 4px 0;">Created</p>
+                        <p style="font-size: 13px; color: #0f172a; margin: 0 0 16px 0; font-weight: 500;">${createdAt}</p>
+                        <p style="font-size: 12px; color: #64748b; margin: 0 0 4px 0;">Status</p>
+                        <p style="font-size: 13px; color: #0f172a; margin: 0; font-weight: 500; text-transform: capitalize;">${escapeHtml(client.approval_status || 'Unknown')}</p>
+                    </div>
+                </div>
+                <div style="margin-top: 24px; display: flex; gap: 12px;">
+                    <button type="submit" style="padding:10px 20px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px;">Save changes</button>
+                    <button type="button" onclick="document.getElementById('edit-client-modal').classList.add('hidden')" style="padding:10px 20px; background:white; color:#475569; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px;">Cancel</button>
+                </div>
+            `;
+        }
+
         modal.classList.remove('hidden');
     }
 
