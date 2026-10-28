@@ -1059,7 +1059,7 @@ const row = Array.isArray(data) ? data[0] : data;
                                 </h4>
                                 <p style="font-size:13px; color:#64748b; margin-top:4px;"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(d.location || 'No location')} • Client: ${escapeHtml(clientName)} • Atty. ${escapeHtml(assignedName)}</p>
                                 <div style="margin-top:10px; font-size:12px; color:#94a3b8;">
-                                    <i class="fa-regular fa-calendar"></i> ${formatDate(d.start_date)} at ${formatEventTime(d.start_date) || 'TBD'}${d.end_date ? ' - ' + formatEventTime(d.end_date) : ''}
+                                    <i class="fa-regular fa-calendar"></i> ${formatDate(d.start_date)} at ${formatEventRange(d.start_date, d.end_date)}
                                 </div>
                             </div>
                             <button style="padding:10px 18px; border:1px solid #e2e8f0; background:white; border-radius:10px; cursor:pointer; font-weight:600;" onclick="document.querySelector('.nav-links li[data-target=\\'calendar-view\\']').click()">
@@ -1119,6 +1119,17 @@ const row = Array.isArray(data) ? data[0] : data;
                 renderScheduleSummaryWidget();
             });
         }
+
+        const todayBtn = document.getElementById('todayBtn');
+        if (todayBtn) {
+            todayBtn.addEventListener('click', () => {
+                const now = new Date();
+                currentMonth = now.getMonth();
+                currentYear = now.getFullYear();
+                generateCalendarGrid();
+                renderScheduleSummaryWidget();
+            });
+        }
     }
 
     async function generateCalendarGrid() {
@@ -1164,7 +1175,7 @@ const row = Array.isArray(data) ? data[0] : data;
         }
 
         for (let i = 0; i < firstDay; i++) {
-            grid.innerHTML += `<div class="day-cell" style="background:transparent; border:none; box-shadow:none;"></div>`;
+            grid.innerHTML += '<div class="day-cell day-empty"></div>';
         }
 
         for (let i = 1; i <= daysInMonth; i++) {
@@ -1172,6 +1183,8 @@ const row = Array.isArray(data) ? data[0] : data;
                             currentMonth === today.getMonth() && 
                             currentYear === today.getFullYear());
             
+            const weekday = (firstDay + i - 1) % 7;
+            const isWeekend = weekday === 0 || weekday === 6;
             let eventsHtml = '<div class="day-events-container">';
             
             if (eventsByDay[i]) {
@@ -1210,8 +1223,11 @@ const row = Array.isArray(data) ? data[0] : data;
             const dateStrParam = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
             
             grid.innerHTML += `
-                <div class="day-cell ${isCurrent ? 'today' : ''}" onclick="openDayDetails('${dateStrParam}')" style="cursor: pointer; transition: 0.2s;" onmouseover="this.style.backgroundColor='#f8fafc'" onmouseout="this.style.backgroundColor='white'">
-                    <span class="day-number ${isCurrent ? 'highlight-blue' : ''}">${i}</span>
+                <div class="day-cell day-clickable${isCurrent ? ' today' : ''}${eventsByDay[i] ? ' has-events' : ''}${isWeekend ? ' weekend' : ''}" onclick="openDayDetails('${dateStrParam}')">
+                    <div class="day-top">
+                        <span class="day-number ${isCurrent ? 'highlight-blue' : ''}">${i}</span>
+                        ${eventsByDay[i] ? `<span class="day-count">${eventsByDay[i].length}</span>` : ''}
+                    </div>
                     ${eventsHtml}
                 </div>
             `;
@@ -1409,9 +1425,22 @@ const row = Array.isArray(data) ? data[0] : data;
         }
     }
 
+    function getEventEndTime(startDateISO, endDateISO) {
+        const start = new Date(startDateISO);
+        const end = endDateISO ? new Date(endDateISO) : null;
+        if (end && !isNaN(end.getTime()) && end > start) return end;
+        return new Date(start.getTime() + 60 * 60 * 1000);
+    }
+
+    function isEventOngoing(startDateISO, endDateISO, nowDate) {
+        const now = nowDate || new Date();
+        const start = new Date(startDateISO);
+        return now >= start && now < getEventEndTime(startDateISO, endDateISO);
+    }
+
     function getEventStatusInfo(startDateISO, endDateISO) {
         const start = new Date(startDateISO);
-        const end = endDateISO ? new Date(endDateISO) : new Date(start.getTime() + 60 * 60 * 1000);
+        const end = getEventEndTime(startDateISO, endDateISO);
         const now = new Date();
 
         if (now >= end) return { label: 'Completed', color: '#16a34a', bg: '#dcfce7', icon: 'fa-circle-check' };
@@ -1464,7 +1493,7 @@ const row = Array.isArray(data) ? data[0] : data;
             <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
                     <h4 style="margin:0; font-size:16px; color:#0f172a;">${escapeHtml(ev.title)} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
-                    <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventTime(ev.start_date) || 'TBD'}${ev.end_date ? ' - ' + formatEventTime(ev.end_date) : ''}</span>
+                    <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventRange(ev.start_date, ev.end_date)}</span>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
                     <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${escapeHtml(ev.location || 'Office')}</span>
@@ -1698,6 +1727,20 @@ const row = Array.isArray(data) ? data[0] : data;
         if (btn) openRescheduleModal(btn.getAttribute('data-reschedule-id'));
     });
 
+    setInterval(() => {
+        const modal = document.getElementById('day-details-modal');
+        const listEl = document.getElementById('day-details-list');
+        if (!modal || !listEl || modal.classList.contains('hidden')) return;
+        const evs = window.__openModalEvents;
+        if (!evs || evs.length === 0) return;
+        listEl.innerHTML = evs.map(buildEventDetailCard).join('');
+    }, 30000);
+
+    setInterval(() => {
+        if (typeof renderLawyerStatusWidget === 'function') renderLawyerStatusWidget();
+        if (typeof renderResourcesWidget === 'function') renderResourcesWidget();
+    }, 60000);
+
     window.openDayDetails = async function(dateString) {
         const modal = document.getElementById('day-details-modal');
         const titleEl = document.getElementById('day-details-title');
@@ -1727,6 +1770,8 @@ const row = Array.isArray(data) ? data[0] : data;
             const { data: events, error } = await eventsQuery;
 
             if (error) throw error;
+
+            window.__openModalEvents = events || [];
 
             if (events && events.length > 0) {
                 let html = '';
@@ -1771,6 +1816,7 @@ const row = Array.isArray(data) ? data[0] : data;
 
             if (error) throw error;
 
+            window.__openModalEvents = ev ? [ev] : [];
             titleEl.textContent = ev.title || 'Event Details';
             listEl.innerHTML = ev ? buildEventDetailCard(ev) : '<p style="color:#64748b; text-align:center; padding:30px;">Event not found.</p>';
         } catch (error) {
@@ -1893,13 +1939,13 @@ const row = Array.isArray(data) ? data[0] : data;
 
             const { data: todaysEvents } = await supabaseClient
                 .from('calendar_events')
-                .select('assigned_to, title, is_general')
+                .select('assigned_to, title, is_general, start_date, end_date')
                 .gte('start_date', todayStart)
                 .lte('start_date', todayEnd);
 
             const lawyerEventMap = {};
             if (todaysEvents) {
-                todaysEvents.forEach(ev => {
+                todaysEvents.filter(ev => isEventOngoing(ev.start_date, ev.end_date)).forEach(ev => {
                     if (ev.is_general) {
                         lawyers.forEach(l => {
                             if (!lawyerEventMap[l.id]) {
@@ -3752,6 +3798,16 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         });
     }
 
+    function formatEventRange(startISO, endISO) {
+        const startText = formatEventTime(startISO) || 'TBD';
+        if (!endISO) return startText;
+        const sameDay = toLocalDateKey(startISO) === toLocalDateKey(endISO);
+        const endTime = formatEventTime(endISO);
+        if (sameDay) return `${startText} - ${endTime}`;
+        const endDay = new Date(endISO).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return `${startText} - ${endDay}, ${endTime}`;
+    }
+
     function formatEventTime(dateString) {
         if (!dateString) return '';
         const d = new Date(dateString);
@@ -4541,9 +4597,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const roomEvents = (events || []).filter(e => (e.location || '').trim().toLowerCase() === room.toLowerCase());
 
                 const currentBooking = roomEvents.find(e => {
-                    const start = new Date(e.start_date);
-                    const end = new Date(start.getTime() + roomBufferMs);
-                    return now >= start && now < end;
+                    return isEventOngoing(e.start_date, e.end_date, now);
                 });
 
                 const isBusy = !!currentBooking;
@@ -4558,7 +4612,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 if (currentBooking) {
                     const bookedBy = currentBooking.is_general ? 'Firm-wide' : (currentBooking.profiles?.full_name ? `Atty. ${currentBooking.profiles.full_name}` : 'a lawyer');
-                    const untilTime = formatEventTime(new Date(new Date(currentBooking.start_date).getTime() + roomBufferMs).toISOString());
+                    const untilTime = formatEventTime(getEventEndTime(currentBooking.start_date, currentBooking.end_date).toISOString());
                     subText = `Until ${untilTime} • ${currentBooking.title || 'Booked'} (${bookedBy})`;
                     linkedEvent = currentBooking;
                 } else {
@@ -4943,9 +4997,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             });
         }
     }
-
-    // Returns the events linked to a case that have not finished yet.
-    // An event with no end time, or one saved as midnight (date only), counts as pending until the end of that day.
     async function getPendingCaseEvents(caseId) {
         const { data, error } = await supabaseClient
             .from('calendar_events')
@@ -7066,6 +7117,173 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         });
     };
 
+    window.__people = {};
+    window.__peopleSort = {};
+
+    const PEOPLE_UI = {
+        lawyers: { prefix: 'manage-lawyers', countLabel: n => `Total: ${n}` },
+        secretaries: { prefix: 'manage-secretaries', countLabel: n => `Total: ${n}` },
+        archived: { prefix: 'manage-archived', countLabel: n => `Total Archived: ${n}` }
+    };
+
+    function personIconBtn(onclick, icon, title, tone = '') {
+        return `<button type="button" class="ct-icon-btn ${tone}" onclick="${onclick}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><i class="fa-solid ${icon}"></i></button>`;
+    }
+
+    function personActionsHtml(p, kind) {
+        if (globalRoleName !== 'admin') return '';
+        const id = jsArg(p.id);
+        const name = jsArg(p.full_name || '');
+        const phone = jsArg(p.phone || '');
+        const spec = jsArg(p.specialization || '');
+
+        if (kind === 'archived') {
+            return personIconBtn(`restoreArchivedLawyer(${id}, ${name})`, 'fa-rotate-left', 'Restore lawyer', 'ct-green');
+        }
+        if (kind === 'secretaries' && p.status === 'inactive') {
+            return personIconBtn(`toggleSecretaryStatus(${id})`, 'fa-rotate-left', 'Restore secretary', 'ct-green');
+        }
+
+        const role = kind === 'secretaries' ? 'secretary' : 'lawyer';
+        const r = jsArg(role);
+        const archive = kind === 'secretaries'
+            ? personIconBtn(`toggleSecretaryStatus(${id})`, 'fa-box-archive', 'Archive secretary', 'ct-amber')
+            : personIconBtn(`openArchiveLawyerModal(${id}, ${name})`, 'fa-box-archive', 'Archive lawyer', 'ct-amber');
+
+        return personIconBtn(`openEditLawyerModal(${id}, ${name}, ${phone}, ${spec}, ${r})`, 'fa-pen', role === 'lawyer' ? 'Edit lawyer' : 'Edit secretary')
+            + personIconBtn(`openResetPasswordModal(${id}, ${name})`, 'fa-key', 'Reset password', 'ct-purple')
+            + personIconBtn(`openChangeRoleModal(${id}, ${name}, ${r}, ${spec})`, 'fa-user-gear', 'Change role', 'ct-sky')
+            + archive;
+    }
+
+    function workloadChipsHtml(w) {
+        const x = w || { active: 0, lead: 0, events: 0 };
+        const chip = (value, label, icon, tone) =>
+            `<span class="ml-chip ${tone}${value === 0 ? ' ml-chip-zero' : ''}"><i class="${icon}"></i> ${value} ${label}</span>`;
+        return `<div class="ml-chips">${chip(x.active, x.active === 1 ? 'case' : 'cases', 'fa-solid fa-briefcase', 'ml-chip-cases')}${chip(x.lead, 'lead', 'fa-solid fa-gavel', 'ml-chip-lead')}${chip(x.events, x.events === 1 ? 'event (7d)' : 'events (7d)', 'fa-regular fa-calendar', 'ml-chip-events')}</div>`;
+    }
+
+    function paintPeople(kind) {
+        const ui = PEOPLE_UI[kind];
+        const listEl = document.getElementById(ui.prefix + '-list-inject');
+        const countEl = document.getElementById(ui.prefix + '-count');
+        const store = window.__people[kind];
+        if (!listEl || !store) return;
+
+        const term = (document.getElementById(ui.prefix + '-search')?.value || '').trim().toLowerCase();
+        const sort = window.__peopleSort[kind] || { key: 'full_name', dir: 'asc' };
+        const workload = store.workload || {};
+
+        const rows = store.rows.filter(p => !term || [p.full_name, p.specialization, p.phone].filter(Boolean).join(' ').toLowerCase().includes(term));
+        const sortValue = {
+            full_name: p => (p.full_name || '').toLowerCase(),
+            specialization: p => (p.specialization || 'General Practice').toLowerCase(),
+            phone: p => (p.phone || '').toLowerCase(),
+            active: p => (workload[p.id] ? workload[p.id].active : 0),
+            status: p => (p.status === 'inactive' ? 1 : 0),
+            archived_at: p => new Date(p.archived_at || 0).getTime()
+        }[sort.key] || (() => 0);
+        rows.sort((a, b) => {
+            const x = sortValue(a), y = sortValue(b);
+            const r = x < y ? -1 : (x > y ? 1 : 0);
+            return sort.dir === 'asc' ? r : -r;
+        });
+
+        if (countEl) countEl.textContent = term ? `${rows.length} of ${store.rows.length}` : ui.countLabel(store.rows.length);
+
+        if (rows.length === 0) {
+            listEl.innerHTML = `<p class="mc-empty">${store.rows.length ? 'No matches for your search.' : store.empty}</p>`;
+            return;
+        }
+
+        const th = (key, label) => {
+            const active = sort.key === key;
+            const arrow = active ? (sort.dir === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down') : 'fa-sort';
+            return `<th class="ct-sortable${active ? ' ct-sorted' : ''}" data-people-sort="${key}" tabindex="0" role="button" aria-label="Sort by ${label}">${label} <i class="fa-solid ${arrow}"></i></th>`;
+        };
+
+        const avatarTone = kind === 'secretaries' ? 'ct-avatar-purple' : (kind === 'archived' ? 'ct-avatar-grey' : 'ct-avatar-blue');
+        const names = store.names || {};
+
+        const body = rows.map(p => {
+            const inactive = p.status === 'inactive';
+            const display = kind === 'secretaries' ? (p.full_name || 'Unknown') : `Atty. ${p.full_name || 'Unknown'}`;
+            const restored = (!inactive && p.restored_at)
+                ? `<div class="ct-sub"><i class="fa-solid fa-rotate-left"></i> Restored ${escapeHtml(formatDate(p.restored_at))}${p.restored_by ? ' by ' + escapeHtml(names[p.restored_by] || 'Unknown') : ''}</div>`
+                : '';
+            const nameCell = `
+                <td>
+                    <div class="ct-person">
+                        <span class="ct-avatar ${avatarTone}">${escapeHtml(getInitials(p.full_name))}</span>
+                        <div class="ct-person-text">
+                            <div class="ct-person-name">${escapeHtml(display)}</div>
+                            ${restored}
+                        </div>
+                    </div>
+                </td>`;
+            const specCell = `<td>${escapeHtml(p.specialization || 'General Practice')}</td>`;
+            const phoneCell = `<td>${p.phone ? escapeHtml(p.phone) : '<span class="ct-muted">N/A</span>'}</td>`;
+            const statusCell = `<td><span class="ct-badge ${inactive ? 'ct-badge-closed' : 'ct-badge-active'}">${inactive ? 'Archived' : 'Active'}</span></td>`;
+            const actionsCell = `<td class="ct-actions"><div>${personActionsHtml(p, kind)}</div></td>`;
+
+            if (kind === 'lawyers') {
+                return `<tr>${nameCell}${specCell}${phoneCell}<td>${workloadChipsHtml(workload[p.id])}</td>${statusCell}${actionsCell}</tr>`;
+            }
+            if (kind === 'secretaries') {
+                return `<tr${inactive ? ' class="ct-row-muted"' : ''}>${nameCell}${phoneCell}${statusCell}${actionsCell}</tr>`;
+            }
+            const archivedBy = p.archived_by ? `<div class="ct-sub">by ${escapeHtml(names[p.archived_by] || 'Unknown')}</div>` : '';
+            const archivedCell = `<td>${p.archived_at ? escapeHtml(formatDate(p.archived_at)) : '<span class="ct-muted">-</span>'}${archivedBy}</td>`;
+            return `<tr class="ct-row-muted">${nameCell}${specCell}${phoneCell}${archivedCell}${statusCell}${actionsCell}</tr>`;
+        }).join('');
+
+        let head;
+        if (kind === 'lawyers') {
+            head = `${th('full_name', 'Lawyer')}${th('specialization', 'Specialization')}${th('phone', 'Phone')}${th('active', 'Workload')}${th('status', 'Status')}<th class="ct-actions-head"></th>`;
+        } else if (kind === 'secretaries') {
+            head = `${th('full_name', 'Secretary')}${th('phone', 'Phone')}${th('status', 'Status')}<th class="ct-actions-head"></th>`;
+        } else {
+            head = `${th('full_name', 'Lawyer')}${th('specialization', 'Specialization')}${th('phone', 'Phone')}${th('archived_at', 'Archived')}${th('status', 'Status')}<th class="ct-actions-head"></th>`;
+        }
+
+        listEl.innerHTML = `
+            <div class="ct-wrap">
+                <table class="ct-table ct-table-people">
+                    <thead><tr>${head}</tr></thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>`;
+    }
+
+    function ensurePeopleControls(kind) {
+        const ui = PEOPLE_UI[kind];
+        const listEl = document.getElementById(ui.prefix + '-list-inject');
+        const searchEl = document.getElementById(ui.prefix + '-search');
+
+        if (listEl && !listEl.dataset.bound) {
+            listEl.dataset.bound = '1';
+            const applySort = (th) => {
+                const key = th.getAttribute('data-people-sort');
+                const cur = window.__peopleSort[kind] || { key: 'full_name', dir: 'asc' };
+                window.__peopleSort[kind] = { key: key, dir: (cur.key === key && cur.dir === 'asc') ? 'desc' : 'asc' };
+                paintPeople(kind);
+            };
+            listEl.addEventListener('click', (e) => {
+                const th = e.target.closest('[data-people-sort]');
+                if (th) applySort(th);
+            });
+            listEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                const th = e.target.closest('[data-people-sort]');
+                if (th) { e.preventDefault(); applySort(th); }
+            });
+        }
+        if (searchEl && !searchEl.dataset.bound) {
+            searchEl.dataset.bound = '1';
+            searchEl.addEventListener('input', () => paintPeople(kind));
+        }
+    }
+
     async function renderManageLawyersList() {
         const listContainer = document.getElementById('manage-lawyers-list-inject');
         const countEl = document.getElementById('manage-lawyers-count');
@@ -7083,38 +7301,21 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             if (error) throw error;
 
-            if (lawyers && lawyers.length > 0) {
-                if (countEl) countEl.textContent = `Total: ${lawyers.length}`;
-                const canManageLawyers = globalRoleName === 'admin';
+            const list = lawyers || [];
+            let workloadMap = {};
+            let names = {};
+            if (list.length > 0) {
                 const workloadData = await fetchWorkloadData();
-                const workloadMap = computeWorkload(workloadData.cases, workloadData.events);
-                const names = await fetchProfileNameMap(lawyers.map(l => l.restored_by));
-
-                listContainer.innerHTML = lawyers.map(l => `
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9;">
-                        <div style="display:flex; align-items:center; gap: 15px;">
-                            <div style="background:#eff6ff; color:#3b82f6; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                                ${escapeHtml(getInitials(l.full_name))}
-                            </div>
-                            <div>
-                                <h4 style="margin:0; font-size:14px; color:#0f172a;">Atty. ${escapeHtml(l.full_name || 'Unknown')}</h4>
-                                <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">${escapeHtml(l.specialization || 'General Practice')} • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${escapeHtml(l.phone || 'N/A')}</p>
-                                ${workloadLine(workloadMap[l.id])}
-                                ${statusTrailHtml(l, names)}
-                            </div>
-                        </div>
-                        <div style="display:flex; align-items:center; gap: 6px;">
-                            <span class="tag" style="background:#dcfce7; color:#22c55e; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600; margin-right:6px;">Active</span>
-                            ${canManageLawyers ? userManageButtons(l, 'lawyer') + userIconButton(`openArchiveLawyerModal(${jsArg(l.id)}, ${jsArg(l.full_name || '')})`, 'fa-box-archive', 'Archive lawyer', '#f59e0b') : ''}
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                if (countEl) countEl.textContent = `Total: 0`;
-                listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No active lawyers found in the directory.</p>';
+                workloadMap = computeWorkload(workloadData.cases, workloadData.events);
+                names = await fetchProfileNameMap(list.map(l => l.restored_by));
             }
+
+            window.__people.lawyers = { rows: list, workload: workloadMap, names: names, empty: 'No active lawyers found in the directory.' };
+            ensurePeopleControls('lawyers');
+            paintPeople('lawyers');
         } catch (err) {
             console.error('Error loading lawyer directory:', err);
+            if (countEl) countEl.textContent = '';
             listContainer.innerHTML = errorStateHtml("Could not load the lawyer directory.", "renderManageLawyersList");
         }
     }
@@ -7125,7 +7326,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (!listContainer) return;
 
         if (globalRoleName !== 'admin') {
-            listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">Only administrators can manage secretaries.</p>';
+            listContainer.innerHTML = '<p class="mc-empty">Only administrators can manage secretaries.</p>';
             if (countEl) countEl.textContent = '';
             return;
         }
@@ -7142,38 +7343,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             window.__secretaries = {};
             (people || []).forEach(p => { window.__secretaries[p.id] = p; });
 
-            if (countEl) countEl.textContent = `Total: ${(people || []).length}`;
-            if (!people || people.length === 0) {
-                listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No secretaries yet. Use Add New User to create one.</p>';
-                return;
-            }
+            const names = await fetchProfileNameMap((people || []).flatMap(p => [p.archived_by, p.restored_by]));
 
-            const names = await fetchProfileNameMap(people.flatMap(p => [p.archived_by, p.restored_by]));
-
-            listContainer.innerHTML = people.map(p => {
-                const active = p.status !== 'inactive';
-                return `
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9;${active ? '' : ' background:#fafafa;'}">
-                        <div style="display:flex; align-items:center; gap: 15px;">
-                            <div style="background:#f5f3ff; color:#8b5cf6; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                                ${escapeHtml(getInitials(p.full_name))}
-                            </div>
-                            <div>
-                                <h4 style="margin:0; font-size:14px; color:#0f172a;">${escapeHtml(p.full_name || 'Unknown')}</h4>
-                                <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;">Secretary • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${escapeHtml(p.phone || 'N/A')}</p>
-                                ${statusTrailHtml(p, names)}
-                            </div>
-                        </div>
-                        <div style="display:flex; align-items:center; gap: 6px;">
-                            <span style="background:${active ? '#dcfce7' : '#f1f5f9'}; color:${active ? '#22c55e' : '#94a3b8'}; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600; margin-right:6px;">${active ? 'Active' : 'Archived'}</span>
-                            ${active ? userManageButtons(p, 'secretary') : ''}
-                            ${userIconButton(`toggleSecretaryStatus(${jsArg(p.id)})`, active ? 'fa-box-archive' : 'fa-rotate-left', active ? 'Archive' : 'Restore', active ? '#f59e0b' : '#22c55e')}
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            window.__people.secretaries = { rows: people || [], workload: {}, names: names, empty: 'No secretaries yet. Use Add New User to create one.' };
+            ensurePeopleControls('secretaries');
+            paintPeople('secretaries');
         } catch (err) {
             console.error('Error loading secretaries:', err);
+            if (countEl) countEl.textContent = '';
             listContainer.innerHTML = errorStateHtml("Could not load secretaries.", "renderSecretariesList");
         }
     }
@@ -7209,36 +7386,15 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             if (error) throw error;
 
-            if (lawyers && lawyers.length > 0) {
-                if (countEl) countEl.textContent = `Total Archived: ${lawyers.length}`;
-                const names = await fetchProfileNameMap(lawyers.map(l => l.archived_by));
+            const list = lawyers || [];
+            const names = list.length > 0 ? await fetchProfileNameMap(list.map(l => l.archived_by)) : {};
 
-                listContainer.innerHTML = lawyers.map(l => `
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding: 15px; border-bottom: 1px solid #f1f5f9; background: #fafafa;">
-                        <div style="display:flex; align-items:center; gap: 15px;">
-                            <div style="background:#f1f5f9; color:#94a3b8; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-                                ${escapeHtml(getInitials(l.full_name))}
-                            </div>
-                            <div>
-                                <h4 style="margin:0; font-size:14px; color:#64748b;">Atty. ${escapeHtml(l.full_name || 'Unknown')}</h4>
-                                <p style="margin:4px 0 0 0; font-size:12px; color:#94a3b8;">${escapeHtml(l.specialization || 'General Practice')} • <i class="fa-solid fa-phone" style="font-size:10px;"></i> ${escapeHtml(l.phone || 'N/A')}</p>
-                                ${statusTrailHtml(l, names)}
-                            </div>
-                        </div>
-                        <div style="display:flex; align-items:center; gap: 12px;">
-                            <span class="tag" style="background:#f1f5f9; color:#94a3b8; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:600;">Archived</span>
-                            <button onclick="restoreArchivedLawyer(${jsArg(l.id)}, ${jsArg(l.full_name || '')})" style="background:none; border:none; cursor:pointer; color:#22c55e; padding: 5px;" title="Restore Lawyer">
-                                <i class="fa-solid fa-rotate-left"></i>
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                if (countEl) countEl.textContent = `Total Archived: 0`;
-                listContainer.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No archived lawyers found.</p>';
-            }
+            window.__people.archived = { rows: list, workload: {}, names: names, empty: 'No archived lawyers found.' };
+            ensurePeopleControls('archived');
+            paintPeople('archived');
         } catch (err) {
             console.error('Error loading archived lawyers:', err);
+            if (countEl) countEl.textContent = '';
             listContainer.innerHTML = errorStateHtml("Could not load archived lawyers.", "renderArchivedLawyersList");
         }
     }
@@ -7279,15 +7435,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 manageTabs.forEach(btn => {
                     btn.classList.remove('active');
-                    btn.style.borderBottom = '2px solid transparent';
-                    btn.style.color = '#64748b';
-                    btn.style.fontWeight = '500';
                 });
                 
                 this.classList.add('active');
-                this.style.borderBottom = '2px solid #0f172a';
-                this.style.color = '#0f172a';
-                this.style.fontWeight = '600';
 
                 document.querySelectorAll('.manage-tab-content').forEach(content => {
                     content.classList.add('hidden');
@@ -7379,6 +7529,8 @@ function getAuditFilters() {
         const clearBtn = document.getElementById('audit-filter-clear');
         if (!actionEl || !periodEl || !entityEl) return;
         auditFiltersReady = true;
+        const searchEl = document.getElementById('audit-search');
+        if (searchEl) searchEl.addEventListener('input', paintAudits);
 
         const sync = () => {
             const isCustom = periodEl.value === 'custom';
@@ -7402,6 +7554,96 @@ function getAuditFilters() {
             });
         }
     }
+
+const AUDIT_ACTIONS = {
+    INSERT: { label: 'Added', color: '#16a34a', icon: 'fa-plus' },
+    UPDATE: { label: 'Updated', color: '#2563eb', icon: 'fa-pen' },
+    DELETE: { label: 'Deleted', color: '#dc2626', icon: 'fa-trash' },
+    CLOSE: { label: 'Closed', color: '#d97706', icon: 'fa-lock' },
+    REOPEN: { label: 'Reopened', color: '#0284c7', icon: 'fa-rotate-left' },
+    RESCHEDULE: { label: 'Rescheduled', color: '#7c3aed', icon: 'fa-calendar-days' }
+};
+
+const AUDIT_ENTITIES = {
+    cases: 'Case',
+    clients: 'Client',
+    calendar_events: 'Calendar event',
+    profiles: 'User',
+    email_queue: 'Email',
+    case_lawyers: 'Case lawyer',
+    client_lawyers: 'Client lawyer',
+    notifications: 'Notification'
+};
+
+function auditEntityLabel(table) {
+    const key = String(table || '').toLowerCase();
+    if (AUDIT_ENTITIES[key]) return AUDIT_ENTITIES[key];
+    const text = (key || 'record').replace(/_/g, ' ');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function paintAudits() {
+    const listEl = document.getElementById('audits-list-inject');
+    const countEl = document.getElementById('audits-count');
+    const data = window.__auditData;
+    if (!listEl || !data) return;
+
+    const term = (document.getElementById('audit-search')?.value || '').trim().toLowerCase();
+
+    const rows = data.logs.map(log => {
+        const action = AUDIT_ACTIONS[log.action] || { label: log.action || 'Changed', color: '#2563eb', icon: 'fa-pen' };
+        const entity = auditEntityLabel(log.table_name);
+        const userName = data.profileMap[log.changed_by] || 'System';
+        const recordId = String(log.record_id || (log.new_data && log.new_data.original_int_id) || '');
+        const summary = log.new_data && log.new_data.summary ? String(log.new_data.summary) : '';
+        const details = summary || `${entity} ${action.label.toLowerCase()}`;
+        return { log, action, entity, userName, recordId, summary, details };
+    }).filter(r => !term || `${r.details} ${r.userName} ${r.entity} ${r.action.label}`.toLowerCase().includes(term));
+
+    if (countEl) {
+        countEl.textContent = term ? `${rows.length} of ${data.logs.length} shown` : data.countText;
+    }
+
+    if (rows.length === 0) {
+        listEl.innerHTML = '<p class="mc-empty">No activity matches your search.</p>';
+        return;
+    }
+
+    const body = rows.map(r => {
+        const idHint = !r.summary && r.recordId
+            ? `<div class="ct-sub" title="${escapeHtml(r.recordId)}">ID ${escapeHtml(r.recordId.slice(0, 8))}${r.recordId.length > 8 ? '...' : ''}</div>`
+            : '';
+        return `
+            <tr>
+                <td><span class="au-pill" style="background:${r.action.color}1a; color:${r.action.color};"><i class="fa-solid ${r.action.icon}"></i> ${escapeHtml(r.action.label)}</span></td>
+                <td>${escapeHtml(r.entity)}</td>
+                <td class="au-details">${escapeHtml(r.details)}${idHint}</td>
+                <td>
+                    <div class="ct-person">
+                        <span class="ct-avatar ct-avatar-sm ct-avatar-blue">${escapeHtml(getInitials(r.userName))}</span>
+                        <span class="ct-person-name">${escapeHtml(r.userName)}</span>
+                    </div>
+                </td>
+                <td class="au-when">${escapeHtml(formatDate(r.log.changed_at))}<div class="ct-sub">${escapeHtml(formatEventTime(r.log.changed_at))}</div></td>
+            </tr>`;
+    }).join('');
+
+    listEl.innerHTML = `
+        <div class="ct-wrap">
+            <table class="ct-table ct-table-audit">
+                <thead>
+                    <tr>
+                        <th>Action</th>
+                        <th>Record</th>
+                        <th>Details</th>
+                        <th>Done by</th>
+                        <th>When</th>
+                    </tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
+        </div>`;
+}
 
 async function renderAuditsView() {
         const listEl = document.getElementById('audits-list-inject');
@@ -7469,43 +7711,8 @@ async function renderAuditsView() {
                     });
                 }
             }
-            listEl.innerHTML = logs.map(log => {
-                const userName = profileMap[log.changed_by] || 'System';
-                
-                let actionColor = '#3b82f6'; 
-                let actionLabel = 'Updated';
-                if (log.action === 'DELETE') { actionColor = '#ef4444'; actionLabel = 'Deleted'; }
-                if (log.action === 'INSERT') { actionColor = '#22c55e'; actionLabel = 'Added'; }
-                if (log.action === 'CLOSE') { actionColor = '#f59e0b'; actionLabel = 'Closed'; }
-                if (log.action === 'REOPEN') { actionColor = '#0ea5e9'; actionLabel = 'Reopened'; }
-                if (log.action === 'RESCHEDULE') { actionColor = '#8b5cf6'; actionLabel = 'Rescheduled'; }
-
-                const entityName = (log.table_name || 'record').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-                
-                const displayRecordId = log.record_id || log.new_data?.original_int_id || 'Unknown';
-                const logDetails = log.new_data?.summary || `Record ID: ${displayRecordId}`;
-
-                return `
-                    <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fafbfc; display: flex; align-items: flex-start; gap: 12px;">
-                        <div style="background: ${actionColor}20; color: ${actionColor}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
-                            <i class="fa-solid fa-clock-rotate-left"></i>
-                        </div>
-                        <div>
-                            <h4 style="margin: 0 0 4px 0; font-size: 14px; color: #0f172a;">
-                                <strong style="color: ${actionColor};">[${actionLabel}]</strong> 
-                                ${entityName}
-                            </h4>
-                            <p style="margin: 0 0 6px 0; font-size: 13px; color: #334155;">
-                                ${escapeHtml(logDetails)}
-                            </p>
-                            <p style="margin: 0; font-size: 11px; color: #64748b;">
-                                By: <strong>${escapeHtml(userName)}</strong> 
-                                • ${formatDate(log.changed_at)} at ${formatEventTime(log.changed_at)}
-                            </p>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            window.__auditData = { logs: logs, profileMap: profileMap, countText: countEl ? countEl.textContent : '' };
+            paintAudits();
 
         } catch (err) {
             console.error('Error loading audit logs:', err);

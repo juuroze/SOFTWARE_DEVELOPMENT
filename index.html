@@ -244,6 +244,7 @@
                         <div class="calendar-header-nav">
                             <h3 id="currentMonthYear">April 2026</h3>
                             <div class="nav-btns">
+                                <button id="todayBtn" class="btn-today" type="button">Today</button>
                                 <button id="prevMonth" class="btn-nav">
                                     <i class="fa-solid fa-chevron-left"></i>
                                 </button>
@@ -253,6 +254,13 @@
                             </div>
                         </div>
                         
+                        <div class="calendar-legend">
+                            <span><i class="lg-dot lg-normal"></i> Event</span>
+                            <span><i class="fa-solid fa-star lg-star"></i> High priority</span>
+                            <span><i class="lg-dot lg-conflict"></i> Conflict</span>
+                            <span><i class="lg-dot lg-general"></i> Firm-wide</span>
+                        </div>
+
                         <div class="calendar-box">
                             <div class="calendar-weekdays">
                                 <div>Sun</div>
@@ -507,14 +515,14 @@
                     </button>
                 </header>
 
-                <div class="manage-lawyers-tabs" style="display: flex; gap: 0; margin-bottom: 25px; border-bottom: 2px solid #e2e8f0;">
-                    <button class="manage-tab-btn active" data-managetab="manage-active-lawyers" style="padding: 12px 24px; background: none; border: none; border-bottom: 2px solid #0f172a; margin-bottom: -2px; font-weight: 600; color: #0f172a; cursor: pointer; font-family: inherit; font-size: 14px;">
+                <div class="manage-lawyers-tabs">
+                    <button class="manage-tab-btn active" data-managetab="manage-active-lawyers">
                         <i class="fa-solid fa-user-check" style="margin-right: 8px;"></i> Active Lawyers
                     </button>
-                    <button class="manage-tab-btn" data-managetab="manage-secretaries" style="padding: 12px 24px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; color: #64748b; cursor: pointer; font-family: inherit; font-size: 14px;">
+                    <button class="manage-tab-btn" data-managetab="manage-secretaries">
                         <i class="fa-solid fa-user-tie" style="margin-right: 8px;"></i> Secretaries
                     </button>
-                    <button class="manage-tab-btn" data-managetab="manage-archived-lawyers" style="padding: 12px 24px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; color: #64748b; cursor: pointer; font-family: inherit; font-size: 14px;">
+                    <button class="manage-tab-btn" data-managetab="manage-archived-lawyers">
                         <i class="fa-solid fa-box-archive" style="margin-right: 8px;"></i> Archived Lawyers
                     </button>
                 </div>
@@ -525,6 +533,7 @@
                             <h3 style="font-size: 16px; color: #0f172a;">Firm Lawyers Directory</h3>
                             <span id="manage-lawyers-count" style="font-size: 12px; color: #64748b;">Loading...</span>
                         </div>
+                        <div class="ml-toolbar"><i class="fa-solid fa-magnifying-glass"></i><input type="search" id="manage-lawyers-search" placeholder="Search by name, phone or specialization" autocomplete="off"></div>
                         <div id="manage-lawyers-list-inject" style="display: flex; flex-direction: column; gap: 12px;">
                             <p style="color:#64748b; text-align:center; padding:30px;">Lawyer directory will be displayed here.</p>
                         </div>
@@ -537,6 +546,7 @@
                             <h3 style="font-size: 16px; color: #0f172a;">Secretaries</h3>
                             <span id="manage-secretaries-count" style="font-size: 12px; color: #64748b;">Loading...</span>
                         </div>
+                        <div class="ml-toolbar"><i class="fa-solid fa-magnifying-glass"></i><input type="search" id="manage-secretaries-search" placeholder="Search by name, phone or specialization" autocomplete="off"></div>
                         <div id="manage-secretaries-list-inject" style="display: flex; flex-direction: column; gap: 12px;">
                             <p style="color:#64748b; text-align:center; padding:30px;">Loading secretaries...</p>
                         </div>
@@ -549,6 +559,7 @@
                             <h3 style="font-size: 16px; color: #0f172a;">Archived Lawyers</h3>
                             <span id="manage-archived-count" style="font-size: 12px; color: #64748b;">Loading...</span>
                         </div>
+                        <div class="ml-toolbar"><i class="fa-solid fa-magnifying-glass"></i><input type="search" id="manage-archived-search" placeholder="Search by name, phone or specialization" autocomplete="off"></div>
                         <div id="manage-archived-list-inject" style="display: flex; flex-direction: column; gap: 12px;">
                             <p style="color:#64748b; text-align:center; padding:30px;">Loading archived lawyers...</p>
                         </div>
@@ -614,7 +625,8 @@
                         </div>
                         <button type="button" id="audit-filter-clear" class="cases-clear-btn hidden">Clear filters</button>
                     </div>
-                    <div id="audits-list-inject" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+                    <div class="ml-toolbar" style="margin-top: 16px;"><i class="fa-solid fa-magnifying-glass"></i><input type="search" id="audit-search" placeholder="Search activity or user" autocomplete="off"></div>
+                    <div id="audits-list-inject">
                         <p style="color:#64748b; text-align:center; padding:20px;">Loading audit logs...</p>
                     </div>
                 </div>
@@ -1243,7 +1255,7 @@
 
     </div>
     
-    <script src="main.js?v=ui1"></script>
+    <script src="main.js?v=ui2"></script>
     
 </body>
 </html>
