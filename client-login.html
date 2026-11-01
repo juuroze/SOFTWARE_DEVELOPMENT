@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JuriSync - Client Portal</title>
     <link rel="stylesheet" href="style.css">
-    <link 
-        rel="stylesheet" 
+    <link
+        rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     >
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -59,6 +59,29 @@
             user-select: all;
         }
         .cl-help { font-size: 13px; color: #475569; line-height: 1.6; margin: 0 0 12px 0; }
+        .cl-pw-wrap { position: relative; }
+        .cl-pw-wrap input { width: 100%; padding-right: 42px; box-sizing: border-box; }
+        .cl-eye {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #64748b;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+        }
+        .cl-meter { height: 6px; border-radius: 99px; background: #e2e8f0; overflow: hidden; margin: 4px 0 10px 0; }
+        .cl-meter-fill { height: 100%; width: 0; border-radius: 99px; background: #ef4444; transition: width 0.2s ease, background-color 0.2s ease; }
+        .cl-rules { list-style: none; margin: 0 0 14px 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+        .cl-rules li { font-size: 12px; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
+        .cl-rules li i { font-size: 11px; }
+        .cl-rules li.ok { color: #16a34a; }
+        .btn-login:disabled { opacity: 0.55; cursor: not-allowed; }
+        @media (max-width: 420px) { .cl-rules { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body class="login-body">
@@ -69,39 +92,83 @@
         <h2>JuriSync Client Portal</h2>
         <p id="client-login-subtitle">Sign in to view your case and message your lawyer</p>
 
-      
-        <form id="step-email" autocomplete="off">
+        <form id="step-signin" autocomplete="on">
             <div class="form-group">
-                <label for="client-email">Email</label>
-                <input type="email" id="client-email" placeholder="you@example.com" required autocomplete="off">
+                <label for="signin-email">Email</label>
+                <input type="email" id="signin-email" placeholder="you@example.com" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="signin-password">Password</label>
+                <div class="cl-pw-wrap">
+                    <input type="password" id="signin-password" placeholder="Enter your password" required autocomplete="current-password">
+                    <button type="button" class="cl-eye" id="signin-eye" aria-label="Show password"><i class="fa-solid fa-eye-slash"></i></button>
+                </div>
             </div>
 
-            <button type="submit" class="btn-login" id="send-code-btn">Send Me a Code</button>
+            <button type="submit" class="btn-login" id="signin-btn">Sign In</button>
 
-            <p class="cl-msg info" id="email-msg">We'll email you a verification code. Use the email your lawyer has on file for you.</p>
-        </form>
-
-      
-        <form id="step-code" class="cl-hidden" autocomplete="off">
-            <p class="cl-steps">Step 1 of 2: email verification</p>
-            <p class="cl-help">We sent a code to <strong id="code-email-label"></strong>. Enter it below.</p>
-            <div class="form-group">
-                <input type="text" id="email-code" class="cl-code-input" inputmode="numeric" maxlength="10" autocomplete="one-time-code" placeholder="000000">
-            </div>
-
-            <button type="submit" class="btn-login" id="verify-code-btn">Verify Code</button>
-
-            <p class="cl-msg" id="code-msg"></p>
+            <p class="cl-msg info" id="signin-msg"></p>
 
             <div class="cl-link-row">
-                <button type="button" class="cl-link-btn" id="resend-code-btn">Resend code</button>
-                <button type="button" class="cl-link-btn" id="change-email-btn">Use a different email</button>
+                <button type="button" class="cl-link-btn" id="forgot-btn">Forgot password?</button>
             </div>
         </form>
 
-        <!-- Step 3: authenticator app -->
+        <form id="step-forgot" class="cl-hidden" autocomplete="off">
+            <p class="cl-help">Enter your email and we will send you a link to reset your password. You will still need your authenticator app.</p>
+            <div class="form-group">
+                <label for="forgot-email">Email</label>
+                <input type="email" id="forgot-email" placeholder="you@example.com" required autocomplete="username">
+            </div>
+
+            <button type="submit" class="btn-login" id="forgot-send-btn">Send Reset Link</button>
+
+            <p class="cl-msg" id="forgot-msg"></p>
+
+            <div class="cl-link-row">
+                <button type="button" class="cl-link-btn" id="forgot-back-btn">Back to sign in</button>
+            </div>
+        </form>
+
+        <form id="step-setpw" class="cl-hidden" autocomplete="off">
+            <p class="cl-steps" id="setpw-steps"></p>
+            <p class="cl-help" id="setpw-help"></p>
+
+            <div class="form-group">
+                <label for="new-password">New password</label>
+                <div class="cl-pw-wrap">
+                    <input type="password" id="new-password" placeholder="Create a strong password" autocomplete="new-password">
+                    <button type="button" class="cl-eye" id="newpw-eye" aria-label="Show password"><i class="fa-solid fa-eye-slash"></i></button>
+                </div>
+            </div>
+
+            <div class="cl-meter"><div class="cl-meter-fill" id="pw-meter-fill"></div></div>
+
+            <ul class="cl-rules" id="pw-rules">
+                <li data-rule="length"><i class="fa-regular fa-circle"></i> At least 10 characters</li>
+                <li data-rule="lower"><i class="fa-regular fa-circle"></i> A lowercase letter</li>
+                <li data-rule="upper"><i class="fa-regular fa-circle"></i> An uppercase letter</li>
+                <li data-rule="number"><i class="fa-regular fa-circle"></i> A number</li>
+                <li data-rule="symbol"><i class="fa-regular fa-circle"></i> A symbol, like ! or #</li>
+                <li data-rule="safe"><i class="fa-regular fa-circle"></i> Not common or your email</li>
+            </ul>
+
+            <div class="form-group">
+                <label for="confirm-password">Confirm password</label>
+                <input type="password" id="confirm-password" placeholder="Re-enter your password" autocomplete="new-password">
+            </div>
+
+            <button type="submit" class="btn-login" id="setpw-btn" disabled>Save Password</button>
+
+            <p class="cl-msg" id="setpw-msg"></p>
+
+            <div class="cl-link-row">
+                <button type="button" class="cl-link-btn" id="setpw-cancel-btn">Cancel and sign out</button>
+            </div>
+        </form>
+
         <form id="step-mfa" class="cl-hidden" autocomplete="off">
-            <p class="cl-steps">Step 2 of 2: authenticator app</p>
+            <p class="cl-steps" id="mfa-steps"></p>
 
             <div id="mfa-enroll-block" class="cl-hidden">
                 <p class="cl-help">For your security, set up an authenticator app (Google Authenticator, Microsoft Authenticator, Authy or 1Password). You only do this once.</p>
@@ -131,22 +198,82 @@
     </div>
 
     <script>
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const linkType = hashParams.get('type');
+        const linkError = hashParams.get('error_description');
+
         const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const PORTAL_URL = 'client-portal.html';
-        const RESEND_SECONDS = 60;
+        const RESET_COOLDOWN_SECONDS = 60;
+        const FLOW_KEY = 'jurisync-client-flow';
+        const GUARD_KEY = 'jurisync-client-login-guard';
+        const MAX_FREE_ATTEMPTS = 5;
+        const COMMON_WORDS = ['password', 'qwerty', '123456', '12345678', 'letmein', 'welcome', 'iloveyou', 'admin', 'jurisync', 'abc123'];
 
         const $ = (id) => document.getElementById(id);
-        const steps = { email: $('step-email'), code: $('step-code'), mfa: $('step-mfa') };
+        const steps = {
+            signin: $('step-signin'),
+            forgot: $('step-forgot'),
+            setpw: $('step-setpw'),
+            mfa: $('step-mfa')
+        };
+        const subtitles = {
+            signin: 'Sign in to view your case and message your lawyer',
+            forgot: 'Reset your password',
+            setpw: 'Protect your account',
+            mfa: 'Verify it is you'
+        };
 
-        let pendingEmail = '';
+        let flow = 'signin';
+        let passwordChanged = false;
         let mfaFactorId = null;
-        let resendTimer = null;
+        let currentEmail = '';
+        let resetTimer = null;
+
+        function readStoredFlow() {
+            try { return sessionStorage.getItem(FLOW_KEY); } catch (e) { return null; }
+        }
+
+        function writeStoredFlow(value) {
+            try {
+                if (value) sessionStorage.setItem(FLOW_KEY, value);
+                else sessionStorage.removeItem(FLOW_KEY);
+            } catch (e) {}
+        }
+
+        function readGuard() {
+            try { return JSON.parse(localStorage.getItem(GUARD_KEY)) || { count: 0, until: 0 }; }
+            catch (e) { return { count: 0, until: 0 }; }
+        }
+
+        function writeGuard(guard) {
+            try { localStorage.setItem(GUARD_KEY, JSON.stringify(guard)); } catch (e) {}
+        }
+
+        function lockSecondsLeft() {
+            return Math.max(0, Math.ceil((readGuard().until - Date.now()) / 1000));
+        }
+
+        function registerFailure() {
+            const guard = readGuard();
+            guard.count += 1;
+            if (guard.count >= MAX_FREE_ATTEMPTS) {
+                const level = Math.min(guard.count - MAX_FREE_ATTEMPTS, 5);
+                guard.until = Date.now() + Math.min(30 * Math.pow(2, level), 900) * 1000;
+            }
+            writeGuard(guard);
+        }
+
+        function clearGuard() {
+            writeGuard({ count: 0, until: 0 });
+        }
 
         function showStep(name) {
             Object.keys(steps).forEach((key) => steps[key].classList.toggle('cl-hidden', key !== name));
+            $('client-login-subtitle').textContent = subtitles[name];
         }
 
         function setMsg(id, text, kind) {
@@ -155,126 +282,100 @@
             el.className = 'cl-msg ' + (kind || 'info');
         }
 
-        function portalRedirectUrl() {
-            return window.location.origin + window.location.pathname.replace('client-login.html', '') + PORTAL_URL;
+        function loginUrl() {
+            return window.location.origin + window.location.pathname;
         }
 
-        function startResendCooldown() {
-            const btn = $('resend-code-btn');
-            clearInterval(resendTimer);
-            let left = RESEND_SECONDS;
-            btn.disabled = true;
-            btn.textContent = 'Resend code (' + left + 's)';
-            resendTimer = setInterval(() => {
-                left -= 1;
-                if (left <= 0) {
-                    clearInterval(resendTimer);
-                    btn.disabled = false;
-                    btn.textContent = 'Resend code';
-                } else {
-                    btn.textContent = 'Resend code (' + left + 's)';
-                }
-            }, 1000);
+        function goPortal() {
+            window.location.href = PORTAL_URL;
         }
 
-        async function sendCode(email) {
-            return supabaseClient.auth.signInWithOtp({
-                email: email,
-                options: {
-                    emailRedirectTo: portalRedirectUrl(),
-                    shouldCreateUser: false
-                }
+        function bindEye(buttonId, inputIds) {
+            const btn = $(buttonId);
+            btn.addEventListener('click', () => {
+                const first = $(inputIds[0]);
+                const show = first.type === 'password';
+                inputIds.forEach((id) => { $(id).type = show ? 'text' : 'password'; });
+                const icon = btn.querySelector('i');
+                icon.classList.toggle('fa-eye', show);
+                icon.classList.toggle('fa-eye-slash', !show);
+                btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
             });
         }
 
-        steps.email.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = $('client-email').value.trim();
-            const btn = $('send-code-btn');
-            btn.disabled = true;
-            btn.innerText = 'Sending...';
-            setMsg('email-msg', '', 'info');
+        bindEye('signin-eye', ['signin-password']);
+        bindEye('newpw-eye', ['new-password', 'confirm-password']);
 
-            const { error } = await sendCode(email);
+        function evaluatePassword(pw, email) {
+            const lower = pw.toLowerCase();
+            const local = (email || '').split('@')[0].toLowerCase();
+            return {
+                length: pw.length >= 10,
+                lower: /[a-z]/.test(pw),
+                upper: /[A-Z]/.test(pw),
+                number: /\d/.test(pw),
+                symbol: /[^A-Za-z0-9]/.test(pw),
+                safe: pw.length > 0 && !COMMON_WORDS.some((w) => lower.includes(w)) && !(local.length >= 4 && lower.includes(local))
+            };
+        }
 
-            if (error) {
-                setMsg('email-msg', "Couldn't send the code: " + error.message + ". If you're a new client, ask your lawyer to add you first.", 'error');
-                btn.disabled = false;
-                btn.innerText = 'Send Me a Code';
-                return;
-            }
-
-            pendingEmail = email;
-            $('code-email-label').textContent = email;
-            $('email-code').value = '';
-            setMsg('code-msg', '', 'info');
-            btn.disabled = false;
-            btn.innerText = 'Send Me a Code';
-            showStep('code');
-            startResendCooldown();
-            $('email-code').focus();
-        });
-
-    
-        steps.code.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const token = $('email-code').value.replace(/\s+/g, '');
-            if (!/^\d{6,10}$/.test(token)) {
-                setMsg('code-msg', 'Enter the code from your email.', 'error');
-                return;
-            }
-            const btn = $('verify-code-btn');
-            btn.disabled = true;
-            btn.innerText = 'Verifying...';
-
-            const { error } = await supabaseClient.auth.verifyOtp({
-                email: pendingEmail,
-                token: token,
-                type: 'email'
+        function refreshPasswordUi() {
+            const pw = $('new-password').value;
+            const result = evaluatePassword(pw, currentEmail);
+            const keys = Object.keys(result);
+            let passed = 0;
+            keys.forEach((key) => {
+                const li = document.querySelector('#pw-rules li[data-rule="' + key + '"]');
+                const ok = result[key];
+                if (ok) passed += 1;
+                li.classList.toggle('ok', ok);
+                const icon = li.querySelector('i');
+                icon.className = ok ? 'fa-solid fa-circle-check' : 'fa-regular fa-circle';
             });
+            const fill = $('pw-meter-fill');
+            const ratio = passed / keys.length;
+            fill.style.width = Math.round(ratio * 100) + '%';
+            fill.style.background = ratio < 0.5 ? '#ef4444' : (ratio < 1 ? '#f59e0b' : '#16a34a');
+            const matches = pw.length > 0 && pw === $('confirm-password').value;
+            $('setpw-btn').disabled = !(passed === keys.length && matches);
+            return passed === keys.length && matches;
+        }
 
-            btn.disabled = false;
-            btn.innerText = 'Verify Code';
+        $('new-password').addEventListener('input', refreshPasswordUi);
+        $('confirm-password').addEventListener('input', refreshPasswordUi);
 
-            if (error) {
-                setMsg('code-msg', 'That code is not valid or has expired. Please try again or request a new one.', 'error');
-                $('email-code').value = '';
+        function showSetPassword() {
+            $('new-password').value = '';
+            $('confirm-password').value = '';
+            setMsg('setpw-msg', '', 'info');
+            if (flow === 'reset') {
+                $('setpw-steps').textContent = 'Choose a new password';
+                $('setpw-help').textContent = 'Your identity is confirmed. Pick a new password you have not used before.';
+            } else {
+                $('setpw-steps').textContent = 'Step 1 of 2: create your password';
+                $('setpw-help').textContent = 'Welcome. Create a password for your client account. You will use it together with your authenticator app each time you sign in.';
+            }
+            refreshPasswordUi();
+            showStep('setpw');
+            $('new-password').focus();
+        }
+
+        function afterMfaSuccess() {
+            if (flow === 'reset' && !passwordChanged) {
+                showSetPassword();
                 return;
             }
+            writeStoredFlow(null);
+            goPortal();
+        }
 
-            await startMfa();
-        });
-
-        $('resend-code-btn').addEventListener('click', async () => {
-            if (!pendingEmail) return;
-            setMsg('code-msg', '', 'info');
-            $('resend-code-btn').disabled = true;
-            const { error } = await sendCode(pendingEmail);
-            if (error) {
-                setMsg('code-msg', "Couldn't resend the code: " + error.message, 'error');
-                $('resend-code-btn').disabled = false;
-                return;
-            }
-            setMsg('code-msg', 'A new code was sent.', 'success');
-            startResendCooldown();
-        });
-
-        $('change-email-btn').addEventListener('click', () => {
-            clearInterval(resendTimer);
-            pendingEmail = '';
-            setMsg('email-msg', '', 'info');
-            showStep('email');
-            $('client-email').focus();
-        });
-
-    
         async function startMfa() {
             setMsg('mfa-msg', '', 'info');
             $('mfa-code').value = '';
 
             const { data: aal } = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
             if (aal && aal.currentLevel === 'aal2') {
-                window.location.href = PORTAL_URL;
+                afterMfaSuccess();
                 return;
             }
 
@@ -288,10 +389,16 @@
             const factor = ((factors && factors.totp) || [])[0];
             if (factor) {
                 mfaFactorId = factor.id;
+                $('mfa-steps').textContent = flow === 'activate' ? 'Step 2 of 2: authenticator app' : 'Authenticator verification';
                 $('mfa-enroll-block').classList.add('cl-hidden');
                 $('mfa-verify-help').classList.remove('cl-hidden');
                 showStep('mfa');
                 $('mfa-code').focus();
+                return;
+            }
+
+            if (flow === 'reset' && !passwordChanged) {
+                showSetPassword();
                 return;
             }
 
@@ -311,6 +418,7 @@
                 friendlyName: 'JuriSync-Client-' + Date.now()
             });
 
+            $('mfa-steps').textContent = flow === 'activate' ? 'Step 2 of 2: authenticator app' : 'Set up your authenticator app';
             showStep('mfa');
             if (error) {
                 setMsg('mfa-msg', 'Could not start authenticator setup: ' + error.message, 'error');
@@ -324,6 +432,149 @@
             $('mfa-verify-help').classList.add('cl-hidden');
             $('mfa-code').focus();
         }
+
+        async function resetToSignIn(message) {
+            await supabaseClient.auth.signOut();
+            writeStoredFlow(null);
+            flow = 'signin';
+            passwordChanged = false;
+            mfaFactorId = null;
+            currentEmail = '';
+            $('signin-password').value = '';
+            setMsg('signin-msg', message || '', 'info');
+            showStep('signin');
+        }
+
+        steps.signin.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const wait = lockSecondsLeft();
+            if (wait > 0) {
+                setMsg('signin-msg', 'Too many attempts. Try again in ' + wait + ' seconds.', 'error');
+                return;
+            }
+
+            const email = $('signin-email').value.trim();
+            const password = $('signin-password').value;
+            const btn = $('signin-btn');
+            btn.disabled = true;
+            btn.innerText = 'Signing in...';
+            setMsg('signin-msg', '', 'info');
+
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+
+            btn.disabled = false;
+            btn.innerText = 'Sign In';
+
+            if (error) {
+                if (/not confirmed/i.test(error.message)) {
+                    setMsg('signin-msg', 'Open the invite link we emailed you first to activate your account.', 'error');
+                    return;
+                }
+                registerFailure();
+                setMsg('signin-msg', 'Incorrect email or password.', 'error');
+                $('signin-password').value = '';
+                return;
+            }
+
+            const meta = (data.user && data.user.user_metadata) || {};
+            if (!meta.portal_client) {
+                await supabaseClient.auth.signOut();
+                registerFailure();
+                setMsg('signin-msg', 'Incorrect email or password.', 'error');
+                $('signin-password').value = '';
+                return;
+            }
+
+            clearGuard();
+            flow = 'signin';
+            writeStoredFlow(null);
+            currentEmail = email;
+            $('signin-password').value = '';
+            await startMfa();
+        });
+
+        $('forgot-btn').addEventListener('click', () => {
+            $('forgot-email').value = $('signin-email').value.trim();
+            setMsg('forgot-msg', '', 'info');
+            showStep('forgot');
+            $('forgot-email').focus();
+        });
+
+        $('forgot-back-btn').addEventListener('click', () => showStep('signin'));
+
+        function startResetCooldown() {
+            const btn = $('forgot-send-btn');
+            clearInterval(resetTimer);
+            let left = RESET_COOLDOWN_SECONDS;
+            btn.disabled = true;
+            btn.innerText = 'Send again in ' + left + 's';
+            resetTimer = setInterval(() => {
+                left -= 1;
+                if (left <= 0) {
+                    clearInterval(resetTimer);
+                    btn.disabled = false;
+                    btn.innerText = 'Send Reset Link';
+                } else {
+                    btn.innerText = 'Send again in ' + left + 's';
+                }
+            }, 1000);
+        }
+
+        steps.forgot.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = $('forgot-email').value.trim();
+            const btn = $('forgot-send-btn');
+            btn.disabled = true;
+            btn.innerText = 'Sending...';
+
+            const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: loginUrl() });
+
+            if (error && /rate|seconds|too many/i.test(error.message)) {
+                setMsg('forgot-msg', 'Please wait a moment before requesting another link.', 'error');
+                btn.disabled = false;
+                btn.innerText = 'Send Reset Link';
+                return;
+            }
+
+            setMsg('forgot-msg', 'If that email belongs to a client account, a reset link is on its way.', 'success');
+            startResetCooldown();
+        });
+
+        steps.setpw.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!refreshPasswordUi()) {
+                setMsg('setpw-msg', 'Please meet every password requirement and make sure both entries match.', 'error');
+                return;
+            }
+
+            const btn = $('setpw-btn');
+            btn.disabled = true;
+            btn.innerText = 'Saving...';
+
+            const { error } = await supabaseClient.auth.updateUser({
+                password: $('new-password').value,
+                data: { password_set: true }
+            });
+
+            btn.innerText = 'Save Password';
+
+            if (error) {
+                let text = error.message;
+                if (/different from the old/i.test(text)) text = 'Your new password must be different from the old one.';
+                else if (/weak|pwned|compromised/i.test(text)) text = 'That password is too easy to guess. Please choose a stronger one.';
+                else if (/aal2/i.test(text)) text = 'Please verify with your authenticator app first.';
+                setMsg('setpw-msg', text, 'error');
+                refreshPasswordUi();
+                return;
+            }
+
+            passwordChanged = true;
+            $('new-password').value = '';
+            $('confirm-password').value = '';
+            await startMfa();
+        });
+
+        $('setpw-cancel-btn').addEventListener('click', () => resetToSignIn('You have been signed out.'));
 
         steps.mfa.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -343,33 +594,53 @@
 
             const { error } = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: mfaFactorId, code: code });
 
+            btn.disabled = false;
+            btn.innerText = 'Verify';
+
             if (error) {
-                setMsg('mfa-msg', error.message, 'error');
+                setMsg('mfa-msg', 'That code is not correct or has expired. Check your app and try again.', 'error');
                 $('mfa-code').value = '';
-                btn.disabled = false;
-                btn.innerText = 'Verify';
                 return;
             }
 
-            window.location.href = PORTAL_URL;
+            afterMfaSuccess();
         });
 
-        $('mfa-cancel-btn').addEventListener('click', async () => {
-            await supabaseClient.auth.signOut();
-            pendingEmail = '';
-            mfaFactorId = null;
-            setMsg('email-msg', 'You have been signed out.', 'info');
-            showStep('email');
-        });
+        $('mfa-cancel-btn').addEventListener('click', () => resetToSignIn('You have been signed out.'));
 
-     
         (async () => {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session) {
-                await startMfa();
-            } else {
-                showStep('email');
+            if (linkType === 'recovery') {
+                flow = 'reset';
+                writeStoredFlow('reset');
+            } else if (readStoredFlow() === 'reset') {
+                flow = 'reset';
             }
+
+            const { data: { session } } = await supabaseClient.auth.getSession();
+
+            if (!session) {
+                showStep('signin');
+                if (linkError) {
+                    setMsg('signin-msg', 'That link is invalid or has expired. Ask your lawyer to resend the invite, or use Forgot password.', 'error');
+                }
+                return;
+            }
+
+            const meta = session.user.user_metadata || {};
+            if (!meta.portal_client) {
+                showStep('signin');
+                return;
+            }
+
+            currentEmail = session.user.email || '';
+
+            if (flow !== 'reset' && !meta.password_set) {
+                flow = 'activate';
+                showSetPassword();
+                return;
+            }
+
+            await startMfa();
         })();
     </script>
 </body>

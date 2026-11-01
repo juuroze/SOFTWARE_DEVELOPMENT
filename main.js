@@ -818,6 +818,11 @@ const row = Array.isArray(data) ? data[0] : data;
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'email_queue' }, () => {
                 renderEmailQueueList();
+                const caseModal = document.getElementById('case-detail-modal');
+                if (caseModal && !caseModal.classList.contains('hidden')) {
+                    const openCaseId = caseModal.getAttribute('data-active-case-id');
+                    if (openCaseId) loadCaseEmails(openCaseId);
+                }
             })
             .subscribe();
     }
@@ -3645,11 +3650,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 supabaseClient
                     .from('email_queue')
                     .select('id, subject, recipient_email, status, attempts, category, sent_at, created_at')
+                    .neq('kind', 'client_message')
                     .order('created_at', { ascending: false })
                     .limit(100),
                 supabaseClient
                     .from('email_queue')
                     .select('id', { count: 'exact', head: true })
+                    .neq('kind', 'client_message')
                     .eq('status', 'sent')
             ]);
             if (listRes.error) throw listRes.error;
@@ -5093,6 +5100,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
     function isAdminUser() { return globalRoleName === 'admin'; }
     function isStaffUser() { return globalRoleName === 'admin' || globalRoleName === 'secretary'; }
+    function canInviteClients() { return globalRoleName === 'admin' || globalRoleName === 'lawyer'; }
+    function clientNeedsPortalInvite(c) {
+        return c.approval_status === 'approved' && !!c.client_email && !c.auth_user_id;
+    }
 
     function rowIsLead(r) { return r.lawyer_role ? r.lawyer_role === 'lead' : !!r.is_lead; }
     function rowName(r) { const p = r.lawyer || r.profiles; return (p && p.full_name) || ''; }
@@ -5222,6 +5233,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 `<button type="button" class="ct-text-btn ${tone}" data-client-action="${action}" data-client-id="${c.id}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
 
             const actions = [];
+            if (canInviteClients() && clientNeedsPortalInvite(c)) {
+                actions.push(textBtn('invite', 'fa-paper-plane', 'Send invite', 'ct-amber'));
+            }
             if (isAdminUser()) {
                 if (c.approval_status === 'pending') {
                     actions.push(textBtn('approve', 'fa-check', 'Approve', 'ct-green'));
@@ -5316,13 +5330,19 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     }
 
     async function handleClientAction(action, clientId) {
-        if (action !== 'view' && !isAdminUser()) return;
+        if (action === 'invite') {
+            if (!canInviteClients()) return;
+        } else if (action !== 'view' && !isAdminUser()) {
+            return;
+        }
         const client = (window.__clientsDirectory || []).find(c => String(c.id) === String(clientId));
         if (!client) return;
 
         try {
             if (action === 'view') {
                 openClientViewModal(client);
+            } else if (action === 'invite') {
+                await sendPortalInviteToClient(client);
             } else if (action === 'approve' || action === 'assign') {
                 await openTeamModal('client', client.id, { approve: action === 'approve' });
                 } else if (action === 'reject') {
@@ -5349,6 +5369,50 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         } catch (err) {
             console.error('Client action failed:', err);
             showToast('Action failed: ' + err.message, 'error');
+        }
+    }
+
+    async function sendPortalInviteToClient(client) {
+        if (window.__portalInviteBusy) return;
+        if (!client.client_email) {
+            showToast('This client has no email address. Add one first, then send the invite.', 'warning');
+            return;
+        }
+        if (client.approval_status !== 'approved') {
+            showToast('Only approved clients can be invited to the portal.', 'warning');
+            return;
+        }
+        const ok = await confirmDialog({
+            title: 'Send portal invite',
+            confirmLabel: 'Send invite',
+            message: `Email a client portal invite to ${client.client_email}?`
+        });
+        if (!ok) return;
+
+        window.__portalInviteBusy = true;
+        showToast(`Sending invite to ${client.client_email}...`, 'info');
+        try {
+            const { error: inviteError } = await supabaseClient.functions.invoke('invite-client', {
+                body: {
+                    client_id: client.id,
+                    redirect_to: window.location.origin + window.location.pathname.replace('index.html', '') + 'client-login.html'
+                }
+            });
+            if (inviteError) {
+                let detail = inviteError.message;
+                try {
+                    const errBody = await inviteError.context.json();
+                    if (errBody && errBody.error) detail = errBody.error;
+                } catch (e) {}
+                console.error('Portal invite error:', inviteError);
+                showToast(`The portal invite could not be sent: ${detail}`, 'error');
+                return;
+            }
+            await logAuditActivity('UPDATE', 'Clients', `Sent portal invite to client: ${client.client_name}`, client.id);
+            showToast(`A portal invite was emailed to ${client.client_email}.`, 'success');
+            await renderClientsView();
+        } finally {
+            window.__portalInviteBusy = false;
         }
     }
 
@@ -5947,7 +6011,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         const { error: inviteError } = await supabaseClient.functions.invoke('invite-client', {
                             body: {
                                 client_id: newClient.id,
-                                redirect_to: window.location.origin + window.location.pathname.replace('index.html', '') + 'client-portal.html'
+                                redirect_to: window.location.origin + window.location.pathname.replace('index.html', '') + 'client-login.html'
                             }
                         });
                         if (inviteError) {
@@ -6038,11 +6102,37 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         modal.setAttribute('data-active-client-email', caseInfo?.clients?.client_email || '');
         const caseEmailForm = document.getElementById('case-email-form');
         if (caseEmailForm) caseEmailForm.reset();
+        syncCaseAttachment();
+        const noteEl = document.getElementById('case-email-note');
+        if (noteEl) {
+            const clientEmail = caseInfo?.clients?.client_email;
+            noteEl.textContent = clientEmail
+                ? `Sent to ${clientEmail} by email and shown in the client's portal.`
+                : 'This client has no email on file, so updates cannot be sent.';
+        }
+        delete listEl.dataset.loadedFor;
         modal.classList.remove('hidden');
         listEl.innerHTML = skeletonRows(3);
 
         await loadCaseEmails(caseId);
     };
+
+    function caseThreadInitials(name) {
+        const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return '?';
+        if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
+    function syncCaseAttachment() {
+        const input = document.getElementById('case-email-attachment');
+        const nameEl = document.getElementById('case-attach-name');
+        const clearBtn = document.getElementById('case-attach-clear');
+        if (!input || !nameEl || !clearBtn) return;
+        const file = input.files && input.files.length > 0 ? input.files[0] : null;
+        nameEl.textContent = file ? file.name : '';
+        clearBtn.classList.toggle('cm-hidden', !file);
+    }
 
     async function loadCaseEmails(caseId) {
         const listEl = document.getElementById('case-emails-list');
@@ -6053,35 +6143,82 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 .from('email_queue')
                 .select('*, documents(title, file_path)')
                 .eq('case_id', caseId)
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: true });
 
             if (error) throw error;
 
+            const firstLoad = listEl.dataset.loadedFor !== String(caseId);
+            const nearBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 80;
+            const caseInfo = (window.__casesRegistry || {})[caseId];
+            const clientName = caseInfo?.clients?.client_name || 'Client';
+
             if (!emails || emails.length === 0) {
-                listEl.innerHTML = '<p style="color:#94a3b8; text-align:center; padding:20px;">No emails sent for this case yet. Send an update below.</p>';
+                listEl.innerHTML = `
+                    <div class="cm-empty">
+                        <i class="fa-regular fa-comments"></i>
+                        <strong>No conversation yet</strong>
+                        <span>Send the first update below. Your client's replies will show up here.</span>
+                    </div>`;
             } else {
+                let lastDay = '';
                 listEl.innerHTML = emails.map(m => {
-                    const statusBadge = emailStatusBadge(m.status || (m.is_sent ? 'sent' : 'pending'));
-                    const attachmentLink = m.documents
-                        ? `<a href="#" data-doc-path="${escapeHtml(m.documents.file_path || '')}" data-doc-title="${escapeHtml(m.documents.title || '')}" style="display:inline-block; margin-top:6px; font-size:11px; color:#3b82f6; text-decoration:none;"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(m.documents.title)}</a>`
+                    const when = new Date(m.created_at);
+                    const dayKeyText = when.toDateString();
+                    let separator = '';
+                    if (dayKeyText !== lastDay) {
+                        lastDay = dayKeyText;
+                        const today = new Date();
+                        const yesterday = new Date();
+                        yesterday.setDate(today.getDate() - 1);
+                        const label = dayKeyText === today.toDateString() ? 'Today'
+                            : (dayKeyText === yesterday.toDateString() ? 'Yesterday'
+                                : when.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }));
+                        separator = `<div class="cm-day">${escapeHtml(label)}</div>`;
+                    }
+                    const timeText = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+                    if (m.kind === 'client_message') {
+                        return `${separator}
+                            <div class="cm-row theirs">
+                                <span class="cm-avatar" aria-hidden="true">${escapeHtml(caseThreadInitials(clientName))}</span>
+                                <div class="cm-wrap">
+                                    <span class="cm-who">${escapeHtml(clientName)}</span>
+                                    <div class="cm-bubble"><div class="cm-text">${escapeHtml(m.body || '')}</div></div>
+                                    <div class="cm-meta">${escapeHtml(timeText)}</div>
+                                </div>
+                            </div>`;
+                    }
+
+                    const status = m.status || (m.is_sent ? 'sent' : 'pending');
+                    const attachment = m.documents
+                        ? `<a href="#" class="cm-attach-chip" data-doc-path="${escapeHtml(m.documents.file_path || '')}" data-doc-title="${escapeHtml(m.documents.title || '')}"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(m.documents.title)}</a>`
                         : '';
-                    return `
-                        <div style="border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
-                                <p style="margin:0; font-size:13px; font-weight:700; color:#0f172a;">${escapeHtml(m.subject)}</p>
-                                ${statusBadge}
+                    const metaStatus = status === 'sent'
+                        ? '<span class="cm-sent"><i class="fa-solid fa-check"></i> Emailed</span>'
+                        : `${emailStatusBadge(status)} <span>${escapeHtml(emailTimeText(m))}</span>`;
+                    const failed = status === 'failed'
+                        ? `<p class="cm-failed">${escapeHtml(m.last_error || 'Sending failed.')} <a href="#" onclick="event.preventDefault(); retryEmail(${jsArg(m.id)}).then(() => loadCaseEmails(${jsArg(caseId)}));">Retry</a></p>`
+                        : '';
+                    return `${separator}
+                        <div class="cm-row mine">
+                            <div class="cm-wrap">
+                                <div class="cm-bubble">
+                                    ${m.subject ? `<span class="cm-subject">${escapeHtml(m.subject)}</span>` : ''}
+                                    <div class="cm-text">${escapeHtml(m.body || '')}</div>
+                                    ${attachment}
+                                </div>
+                                <div class="cm-meta" title="To: ${escapeHtml(m.recipient_email || '')}">${escapeHtml(timeText)} ${metaStatus}</div>
+                                ${failed}
                             </div>
-                            <p style="margin:6px 0 0 0; font-size:12px; color:#475569; white-space:pre-wrap;">${escapeHtml(m.body || '')}</p>
-                            ${attachmentLink}
-                            <p style="margin:6px 0 0 0; font-size:10px; color:#94a3b8;">To: ${escapeHtml(m.recipient_email)} • ${escapeHtml(emailTimeText(m))}</p>
-                            ${m.status === 'failed' ? `<p style="margin:6px 0 0 0; font-size:11px; color:#dc2626;">${escapeHtml(m.last_error || 'Sending failed.')} <a href="#" onclick="event.preventDefault(); retryEmail(${jsArg(m.id)}).then(() => loadCaseEmails(${jsArg(caseId)}));" style="color:#3b82f6; font-weight:600;">Retry</a></p>` : ''}
-                        </div>
-                    `;
+                        </div>`;
                 }).join('');
             }
+
+            listEl.dataset.loadedFor = String(caseId);
+            if (firstLoad || nearBottom) listEl.scrollTop = listEl.scrollHeight;
         } catch (error) {
             console.error('Error loading case emails:', error);
-            listEl.innerHTML = errorStateHtml("Could not load the emails for this case.", null);
+            listEl.innerHTML = errorStateHtml("Could not load the conversation for this case.", null);
         }
     }
 
@@ -6095,6 +6232,20 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
                 modal.classList.add('hidden');
+            });
+        }
+
+        modal.addEventListener('mousedown', (e) => {
+            if (e.target === modal) modal.classList.add('hidden');
+        });
+
+        const attachInput = document.getElementById('case-email-attachment');
+        const attachClear = document.getElementById('case-attach-clear');
+        if (attachInput) attachInput.addEventListener('change', syncCaseAttachment);
+        if (attachClear) {
+            attachClear.addEventListener('click', () => {
+                if (attachInput) attachInput.value = '';
+                syncCaseAttachment();
             });
         }
 
@@ -6152,6 +6303,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     subjectInput.value = '';
                     bodyInput.value = '';
                     if (attachmentInput) attachmentInput.value = '';
+                    syncCaseAttachment();
+                    const threadEl = document.getElementById('case-emails-list');
+                    if (threadEl) delete threadEl.dataset.loadedFor;
                     await loadCaseEmails(caseId);
                 } catch (error) {
                     showToast('Email could not be queued: ' + error.message, 'error');
