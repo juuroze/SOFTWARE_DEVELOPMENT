@@ -678,165 +678,189 @@
         </div>
 
         <div id="add-event-modal" class="modal-overlay hidden">
-            <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
-                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
-                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Schedule New Event</h2>
-                    <button id="close-modal-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+            <div class="modal-content ev-modal">
+                <div class="ev-head">
+                    <div class="ev-head-icon"><i class="fa-solid fa-calendar-plus"></i></div>
+                    <div class="ev-head-text">
+                        <h2>Schedule New Event</h2>
+                        <p>Fill out the one-stop form below to auto-sync Client and Case data.</p>
+                    </div>
+                    <button type="button" id="close-modal-btn" class="btn-close ev-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Fill out the one-stop form below to auto-sync Client and Case data.</p>
-                
-                <form id="add-event-form">
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Event Title</label>
-                        <input type="text" id="event-title" required placeholder="e.g., Initial Hearing" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
-                    </div>
-                    
-                    <div class="form-row" style="display: flex; gap: 16px; margin-bottom: 16px;">
-                        <div class="form-group" style="flex: 1;">
-                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Date</label>
-                            <input type="date" id="event-date" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
-                        </div>
-                        <div class="form-group" style="flex: 1;">
-                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Time</label>
-                            <input type="time" id="event-time" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
-                        </div>
-                    </div>
 
-                    <div class="form-row" style="display: flex; gap: 16px; margin-bottom: 16px;">
-                        <div class="form-group" style="flex: 1;">
-                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">End Date <span style="font-weight: 400; color: #94a3b8;">(optional)</span></label>
-                            <input type="date" id="event-end-date" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
-                        </div>
-                        <div class="form-group" style="flex: 1;">
-                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">End Time <span style="font-weight: 400; color: #94a3b8;">(optional)</span></label>
-                            <input type="time" id="event-end-time" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
-                        </div>
-                    </div>
-                    <p id="event-end-hint" style="font-size: 11px; color: #94a3b8; margin: -10px 0 16px 0;">Leave blank to default to 1 hour after the start time.</p>
+                <form id="add-event-form" class="ev-form">
+                    <div class="ev-body">
 
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Priority</label>
-                        <div style="position: relative;">
-                            <select id="event-priority" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
-                                <option value="normal">Normal</option>
-                                <option value="high">High Priority</option>
-                            </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        <div class="ev-field">
+                            <label for="event-title">Event Title</label>
+                            <input type="text" id="event-title" class="ev-input ev-input-lg" required placeholder="e.g., Initial Hearing">
                         </div>
-                    </div>
 
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Assigned Lawyer</label>
-                        <div style="position: relative;">
-                            <select id="event-lawyer" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
-                            </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
-                        </div>
-                    </div>
-
-                    <div class="form-group" style="margin-bottom: 24px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Location</label>
-                        <div style="position: relative;">
-                            <select id="event-location" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
-                                <option value="">Select location</option>
-                                <option value="Conference Room A">Conference Room A</option>
-                                <option value="Conference Room B">Conference Room B</option>
-                            </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
-                        </div>
-                    </div>
-
-                    <div id="event-lawyer-only" style="display: none;">
-                        <div style="margin-bottom: 16px;">
-                            <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;"><i class="fa-solid fa-scale-balanced" style="margin-right: 6px; color: #8b5cf6;"></i> Linked Case</label>
-                            <div style="position: relative;">
-                                <select id="event-existing-case" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
-                                    <option value="">Loading your cases...</option>
-                                </select>
-                                <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        <div class="ev-section">
+                            <div class="ev-section-title"><i class="fa-regular fa-clock"></i> When</div>
+                            <div class="ev-row">
+                                <div class="ev-field">
+                                    <label for="event-date">Date</label>
+                                    <input type="date" id="event-date" class="ev-input" required>
+                                </div>
+                                <div class="ev-field">
+                                    <label for="event-time">Time</label>
+                                    <input type="time" id="event-time" class="ev-input" required>
+                                </div>
                             </div>
-                            <p id="event-case-hint" style="font-size: 11px; color: #94a3b8; margin: 6px 0 0 0;">Choose one of the cases you entered. New cases are added on the Cases page.</p>
-                            <div id="event-case-info" class="hidden" style="margin-top: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; font-size: 12px; color: #475569; line-height: 1.7;"></div>
+                            <div class="ev-row">
+                                <div class="ev-field">
+                                    <label for="event-end-date">End Date <span class="ev-opt">(optional)</span></label>
+                                    <input type="date" id="event-end-date" class="ev-input">
+                                </div>
+                                <div class="ev-field">
+                                    <label for="event-end-time">End Time <span class="ev-opt">(optional)</span></label>
+                                    <input type="time" id="event-end-time" class="ev-input">
+                                </div>
+                            </div>
+                            <p id="event-end-hint" class="ev-hint"><i class="fa-solid fa-circle-info"></i> Leave blank to default to 1 hour after the start time.</p>
                         </div>
 
-                        <div style="margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
-                            <div class="form-group" style="margin-bottom: 12px;">
-                                <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">Attach File <span style="color: #94a3b8;">(optional)</span></label>
-                                <input type="file" id="event-attachment" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; background: #ffffff; box-sizing: border-box;">
+                        <div class="ev-row">
+                            <div class="ev-field">
+                                <label for="event-priority">Priority</label>
+                                <div class="ev-select">
+                                    <select id="event-priority">
+                                        <option value="normal">Normal</option>
+                                        <option value="high">High Priority</option>
+                                    </select>
+                                    <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                </div>
                             </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px;">File Name</label>
-                                <input type="text" id="event-attachment-name" maxlength="200" placeholder="Auto-fills when you choose a file (you can edit it)" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; outline: none; font-family: inherit; background: #ffffff; box-sizing: border-box;">
-                                <p style="font-size: 11px; color: #94a3b8; margin: 4px 0 0 0;">Saved to Documents and linked to this event/case.</p>
+                            <div class="ev-field">
+                                <label for="event-location">Location</label>
+                                <div class="ev-select">
+                                    <select id="event-location" required>
+                                        <option value="">Select location</option>
+                                        <option value="Conference Room A">Conference Room A</option>
+                                        <option value="Conference Room B">Conference Room B</option>
+                                    </select>
+                                    <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                </div>
                             </div>
                         </div>
+
+                        <div class="ev-field">
+                            <label for="event-lawyer">Assigned Lawyer</label>
+                            <div class="ev-select">
+                                <select id="event-lawyer"></select>
+                                <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                            </div>
+                        </div>
+
+                        <div id="event-lawyer-only" class="ev-lawyer-only" style="display: none;">
+                            <div class="ev-section ev-section-case">
+                                <div class="ev-section-title"><i class="fa-solid fa-scale-balanced"></i> Linked Case</div>
+                                <div class="ev-field">
+                                    <div class="ev-select">
+                                        <select id="event-existing-case" aria-label="Linked Case">
+                                            <option value="">Loading your cases...</option>
+                                        </select>
+                                        <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                    </div>
+                                    <p id="event-case-hint" class="ev-hint ev-hint-tight">Choose one of the cases you entered. New cases are added on the Cases page.</p>
+                                </div>
+                                <div id="event-case-info" class="ev-case-info hidden"></div>
+                            </div>
+
+                            <div class="ev-attach">
+                                <div class="ev-section-title"><i class="fa-solid fa-paperclip"></i> Attachment <span class="ev-opt">(optional)</span></div>
+                                <div class="ev-field">
+                                    <label for="event-attachment">Attach File</label>
+                                    <input type="file" id="event-attachment" class="ev-input ev-file">
+                                </div>
+                                <div class="ev-field">
+                                    <label for="event-attachment-name">File Name</label>
+                                    <input type="text" id="event-attachment-name" class="ev-input" maxlength="200" placeholder="Auto-fills when you choose a file (you can edit it)">
+                                    <p class="ev-hint ev-hint-tight">Saved to Documents and linked to this event/case.</p>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
 
-                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Create Event</button>
+                    <div class="ev-footer">
+                        <button type="button" class="ev-btn ev-btn-ghost" onclick="document.getElementById('close-modal-btn').click()">Cancel</button>
+                        <button type="submit" class="ev-btn ev-btn-primary">Create Event</button>
+                    </div>
                 </form>
             </div>
         </div>
 
         <div id="upload-doc-modal" class="modal-overlay hidden">
-            <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
-                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
-                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Upload New Document</h2>
-                    <button id="close-upload-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+            <div class="modal-content ev-modal ev-modal-sm">
+                <div class="ev-head">
+                    <div class="ev-head-icon"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+                    <div class="ev-head-text">
+                        <h2>Upload New Document</h2>
+                        <p>OCR processing will be performed automatically</p>
+                    </div>
+                    <button type="button" id="close-upload-btn" class="btn-close ev-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">OCR processing will be performed automatically</p>
-                
-                <form id="upload-doc-form">
-                    <div id="drag-drop-area" style="border: 2px dashed #cbd5e1; border-radius: 8px; padding: 30px; text-align: center; margin-bottom: 20px; background: #ffffff; cursor: pointer; transition: all 0.3s ease;">
-                        <i class="fa-solid fa-arrow-up-from-bracket" style="font-size: 24px; color: #64748b; margin-bottom: 10px;"></i>
-                        <p id="drag-drop-text" style="font-size: 13px; color: #0f172a; font-weight: 500; margin-bottom: 4px;">Drag and drop files here, or click to browse</p>
-                        <p style="font-size: 11px; color: #94a3b8;">PDF, DOCX, JPG, PNG supported</p>
-                        <input type="file" id="doc-file-input" style="display:none;" accept=".pdf,.docx,.jpg,.jpeg,.png">
-                    </div>
 
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">File Name</label>
-                        <input type="text" id="doc-file-name" maxlength="200" placeholder="Auto-fills when you choose a file (you can edit it)" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff; box-sizing: border-box;">
-                    </div>
+                <form id="upload-doc-form" class="ev-form">
+                    <div class="ev-body">
+                        <div id="drag-drop-area" class="ev-dropzone">
+                            <div class="ev-dropzone-icon"><i class="fa-solid fa-arrow-up-from-bracket"></i></div>
+                            <p id="drag-drop-text" class="ev-dropzone-title">Drag and drop files here, or click to browse</p>
+                            <p class="ev-dropzone-sub">PDF, DOCX, JPG, PNG supported</p>
+                            <input type="file" id="doc-file-input" style="display:none;" accept=".pdf,.docx,.jpg,.jpeg,.png">
+                        </div>
 
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Case <span style="font-weight: 400; color: #94a3b8;">(optional)</span></label>
-                        <div style="position: relative;">
-                            <select id="doc-case-select" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff; appearance: none;">
-                                <option value="">No case (general document)</option>
-                            </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                        <div class="ev-field">
+                            <label for="doc-file-name">File Name</label>
+                            <input type="text" id="doc-file-name" class="ev-input" maxlength="200" placeholder="Auto-fills when you choose a file (you can edit it)">
+                        </div>
+
+                        <div class="ev-section">
+                            <div class="ev-section-title"><i class="fa-solid fa-folder-open"></i> Document details</div>
+                            <div class="ev-field">
+                                <label for="doc-case-select">Case <span class="ev-opt">(optional)</span></label>
+                                <div class="ev-select">
+                                    <select id="doc-case-select">
+                                        <option value="">No case (general document)</option>
+                                    </select>
+                                    <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                </div>
+                            </div>
+                            <div class="ev-field">
+                                <label for="doc-category">Category</label>
+                                <div class="ev-select">
+                                    <select id="doc-category" required>
+                                        <option value="">Select category</option>
+                                        <optgroup label="For Court">
+                                            <option value="pleadings">Pleadings</option>
+                                            <option value="motions">Motions</option>
+                                            <option value="memoranda">Memoranda</option>
+                                            <option value="affidavits">Affidavits</option>
+                                            <option value="documentary evidence">Documentary Evidence</option>
+                                            <option value="agreements">Agreements</option>
+                                        </optgroup>
+                                        <optgroup label="For Retained Clients">
+                                            <option value="contracts">Contracts / Drafts of Contracts</option>
+                                            <option value="legal opinions">Legal Opinions / Advice</option>
+                                            <option value="invoices">Invoice / Billables</option>
+                                        </optgroup>
+                                    </select>
+                                    <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                </div>
+                            </div>
+                            <div class="ev-field">
+                                <label for="doc-tags">Tags <span class="ev-opt">(comma-separated)</span></label>
+                                <input type="text" id="doc-tags" class="ev-input" placeholder="e.g., motion, criminal, dismissal">
+                            </div>
                         </div>
                     </div>
 
-                    <div class="form-group" style="margin-bottom: 16px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Category</label>
-                        <div style="position: relative;">
-                            <select id="doc-category" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff; appearance: none;">
-                                <option value="">Select category</option>
-                                <optgroup label="For Court">
-                                    <option value="pleadings">Pleadings</option>
-                                    <option value="motions">Motions</option>
-                                    <option value="memoranda">Memoranda</option>
-                                    <option value="affidavits">Affidavits</option>
-                                    <option value="documentary evidence">Documentary Evidence</option>
-                                    <option value="agreements">Agreements</option>
-                                </optgroup>
-                                <optgroup label="For Retained Clients">
-                                    <option value="contracts">Contracts / Drafts of Contracts</option>
-                                    <option value="legal opinions">Legal Opinions / Advice</option>
-                                    <option value="invoices">Invoice / Billables</option>
-                                </optgroup>
-                            </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
-                        </div>
+                    <div class="ev-footer">
+                        <button type="button" class="ev-btn ev-btn-ghost" onclick="document.getElementById('close-upload-btn').click()">Cancel</button>
+                        <button type="submit" class="ev-btn ev-btn-primary">Upload &amp; Process</button>
                     </div>
-
-                    <div class="form-group" style="margin-bottom: 24px;">
-                        <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Tags (comma-separated)</label>
-                        <input type="text" id="doc-tags" placeholder="e.g., motion, criminal, dismissal" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #ffffff;">
-                    </div>
-
-                    <button type="submit" class="btn-submit-full" style="width: 100%; padding: 12px; background: #0f172a; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px;">Upload & Process</button>
                 </form>
             </div>
         </div>
@@ -1140,81 +1164,92 @@
         </div>
 
         <div id="case-form-modal" class="modal-overlay hidden">
-            <div class="modal-content mc-modal" style="max-height: 92vh; overflow-y: auto;">
-                <div class="modal-header mc-modal-head">
-                    <div>
+            <div class="modal-content ev-modal">
+                <div class="ev-head">
+                    <div class="ev-head-icon"><i class="fa-solid fa-briefcase"></i></div>
+                    <div class="ev-head-text">
                         <h2 id="cf-heading">New Case</h2>
                         <p>The case number is generated automatically when you save.</p>
                     </div>
-                    <button id="close-case-form-btn" type="button" class="btn-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                    <button id="close-case-form-btn" type="button" class="btn-close ev-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
 
-                <form id="case-form" class="mc-form" autocomplete="off">
+                <form id="case-form" class="ev-form" autocomplete="off">
                     <input type="hidden" id="cf-id">
 
-                    <div class="mc-field">
-                        <label for="cf-client">Client</label>
-                        <div class="mc-select-wrap">
-                            <select id="cf-client" required></select>
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </div>
-                    </div>
-
-                    <div class="mc-field" id="cf-lead-wrap" style="display: none;">
-                        <label for="cf-lead">Lead lawyer <span class="mc-optional">(required)</span></label>
-                        <div class="mc-select-wrap">
-                            <select id="cf-lead"></select>
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </div>
-                    </div>
-
-                    <div class="mc-field">
-                        <label for="cf-title">Case title</label>
-                        <input type="text" id="cf-title" required maxlength="150" placeholder="e.g., Dela Cruz vs. Santos">
-                    </div>
-
-                    <div class="mc-row">
-                        <div class="mc-field">
-                            <label for="cf-type">Case type</label>
-                            <div class="mc-select-wrap">
-                                <select id="cf-type" required></select>
-                                <i class="fa-solid fa-chevron-down"></i>
+                    <div class="ev-body">
+                        <div class="ev-field mc-field">
+                            <label for="cf-client">Client</label>
+                            <div class="ev-select">
+                                <select id="cf-client" required></select>
+                                <i class="fa-solid fa-chevron-down ev-select-icon"></i>
                             </div>
                         </div>
-                        <div class="mc-field">
-                            <label for="cf-party">Party type</label>
-                            <div class="mc-select-wrap">
-                                <select id="cf-party"></select>
-                                <i class="fa-solid fa-chevron-down"></i>
+
+                        <div class="ev-field mc-field" id="cf-lead-wrap" style="display: none;">
+                            <label for="cf-lead">Lead lawyer <span class="ev-opt">(required)</span></label>
+                            <div class="ev-select">
+                                <select id="cf-lead"></select>
+                                <i class="fa-solid fa-chevron-down ev-select-icon"></i>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="mc-field">
-                        <label for="cf-court">Court and Branch No. / Agency</label>
-                        <input type="text" id="cf-court" maxlength="200" placeholder="e.g., RTC Branch 12, Quezon City">
-                    </div>
-
-                    <div class="mc-row">
-                        <div class="mc-field">
-                            <label for="cf-date">Date filed</label>
-                            <input type="date" id="cf-date">
+                        <div class="ev-field mc-field">
+                            <label for="cf-title">Case title</label>
+                            <input type="text" id="cf-title" class="ev-input ev-input-lg" required maxlength="150" placeholder="e.g., Dela Cruz vs. Santos">
                         </div>
-                        <div class="mc-field">
-                            <label for="cf-stage">Case stage</label>
-                            <div class="mc-select-wrap">
-                                <select id="cf-stage"></select>
-                                <i class="fa-solid fa-chevron-down"></i>
+
+                        <div class="ev-section">
+                            <div class="ev-section-title"><i class="fa-solid fa-scale-balanced"></i> Case details</div>
+                            <div class="ev-row">
+                                <div class="ev-field mc-field">
+                                    <label for="cf-type">Case type</label>
+                                    <div class="ev-select">
+                                        <select id="cf-type" required></select>
+                                        <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                    </div>
+                                </div>
+                                <div class="ev-field mc-field">
+                                    <label for="cf-party">Party type</label>
+                                    <div class="ev-select">
+                                        <select id="cf-party"></select>
+                                        <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="ev-field mc-field">
+                                <label for="cf-court">Court and Branch No. / Agency</label>
+                                <input type="text" id="cf-court" class="ev-input" maxlength="200" placeholder="e.g., RTC Branch 12, Quezon City">
                             </div>
                         </div>
+
+                        <div class="ev-section">
+                            <div class="ev-section-title"><i class="fa-regular fa-calendar"></i> Filing</div>
+                            <div class="ev-row">
+                                <div class="ev-field mc-field">
+                                    <label for="cf-date">Date filed</label>
+                                    <input type="date" id="cf-date" class="ev-input">
+                                </div>
+                                <div class="ev-field mc-field">
+                                    <label for="cf-stage">Case stage</label>
+                                    <div class="ev-select">
+                                        <select id="cf-stage"></select>
+                                        <i class="fa-solid fa-chevron-down ev-select-icon"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ev-field mc-field">
+                            <label for="cf-desc">Case description <span class="ev-opt">(optional)</span></label>
+                            <textarea id="cf-desc" class="ev-input ev-textarea" rows="4"></textarea>
+                        </div>
                     </div>
 
-                    <div class="mc-field">
-                        <label for="cf-desc">Case description <span class="mc-optional">(optional)</span></label>
-                        <textarea id="cf-desc" rows="4"></textarea>
+                    <div class="ev-footer">
+                        <button type="button" class="ev-btn ev-btn-ghost" onclick="document.getElementById('close-case-form-btn').click()">Cancel</button>
+                        <button type="submit" class="ev-btn ev-btn-primary" id="cf-submit-btn">Save case</button>
                     </div>
-
-                    <button type="submit" class="mc-submit" id="cf-submit-btn">Save case</button>
                 </form>
             </div>
         </div>
