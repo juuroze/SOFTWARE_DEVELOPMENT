@@ -245,9 +245,6 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
         fn();
     };
 
-    // ---- Theme (light/dark) + collapsible sidebar -------------------------
-    // State lives on <html data-theme / data-sidebar>; <head> applies the saved
-    // values before first paint, this wires up the controls.
     function setupSidebarAndTheme() {
         const root = document.documentElement;
         const store = {
@@ -255,7 +252,6 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
             set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
         };
 
-        // --- theme ---
         const themeBtn = document.getElementById('theme-toggle-btn');
         const applyTheme = (theme) => {
             root.setAttribute('data-theme', theme);
@@ -270,17 +266,15 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
             refreshNavTitles();
         };
         const toggleTheme = (e) => {
-            if (e && e.stopImmediatePropagation) e.stopImmediatePropagation(); // keep mobile drawer open
+            if (e && e.stopImmediatePropagation) e.stopImmediatePropagation(); 
             const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
             store.set('jurisync-theme', next);
             applyTheme(next);
         };
 
-        // --- sidebar collapse (desktop only; on mobile the sidebar is a drawer) ---
         const collapseBtn = document.getElementById('sidebar-collapse-btn');
         const isCollapsed = () => root.getAttribute('data-sidebar') === 'collapsed';
 
-        // When minimized, the labels are hidden, so show them as native tooltips instead
         function refreshNavTitles() {
             const collapsed = isCollapsed();
             document.querySelectorAll('.sidebar .nav-links li').forEach(li => {
@@ -316,7 +310,6 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
             });
         }
 
-        // Keep the toggle in sync if the theme is changed in another tab
         window.addEventListener('storage', (e) => {
             if (e.key === 'jurisync-theme' && (e.newValue === 'dark' || e.newValue === 'light')) applyTheme(e.newValue);
             if (e.key === 'jurisync-sidebar') applyCollapsed(e.newValue === 'collapsed');
@@ -1603,12 +1596,12 @@ const row = Array.isArray(data) ? data[0] : data;
         return null;
     }
 
-    async function openRescheduleModal(eventId) {
+async function openRescheduleModal(eventId) {
         let ev;
         try {
             const { data, error } = await supabaseClient
                 .from('calendar_events')
-                .select('id, title, start_date, end_date, location, assigned_to, is_general, client_id')
+                .select('id, title, start_date, end_date, location, assigned_to, is_general, client_id, priority, case_id')
                 .eq('id', eventId)
                 .single();
             if (error) throw error;
@@ -1627,19 +1620,56 @@ const row = Array.isArray(data) ? data[0] : data;
             return;
         }
 
+        let cases = [];
+        try {
+            cases = await loadCaseOptions();
+        } catch (e) {
+            console.error('Failed to load cases', e);
+        }
+
         const existing = document.getElementById('reschedule-modal');
         if (existing) existing.remove();
 
         const oldStart = new Date(ev.start_date);
         const todayKey = toLocalDateKey(new Date());
+        
+        let oldEndHtml = '';
+        let oldEndTimeHtml = '';
+        if (ev.end_date) {
+            const oldEnd = new Date(ev.end_date);
+            oldEndHtml = `value="${toLocalDateKey(oldEnd)}"`;
+            oldEndTimeHtml = `value="${pad2(oldEnd.getHours())}:${pad2(oldEnd.getMinutes())}"`;
+        }
+
         const overlay = document.createElement('div');
         overlay.id = 'reschedule-modal';
         overlay.className = 'modal-overlay';
+        
+        const isHighPriority = ev.priority === 'high';
+        const priorityOptions = `
+            <option value="normal" ${!isHighPriority ? 'selected' : ''}>Normal</option>
+            <option value="high" ${isHighPriority ? 'selected' : ''}>High Priority</option>
+        `;
+
+        const standardLocations = ['Conference Room A', 'Conference Room B'];
+        let locOptions = '<option value="">Select location</option>';
+        let locFound = false;
+        standardLocations.forEach(loc => {
+            const isSelected = (ev.location || '') === loc;
+            if (isSelected) locFound = true;
+            locOptions += `<option value="${loc}" ${isSelected ? 'selected' : ''}>${loc}</option>`;
+        });
+        if (ev.location && !locFound) {
+            locOptions += `<option value="${escapeHtml(ev.location)}" selected>${escapeHtml(ev.location)}</option>`;
+        }
+
+        const caseOpts = caseOptionsHtml(cases, ev.case_id);
+
         overlay.innerHTML = `
             <div class="modal-content mc-modal">
                 <div class="modal-header mc-modal-head">
                     <div>
-                        <h2>Reschedule event</h2>
+                        <h2>Reschedule & Edit event</h2>
                         <p>${escapeHtml(ev.title)} • currently ${formatDate(ev.start_date)}, ${formatEventTime(ev.start_date)}</p>
                     </div>
                     <button type="button" class="btn-close" data-rs-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
@@ -1658,15 +1688,37 @@ const row = Array.isArray(data) ? data[0] : data;
                     <div class="mc-row">
                         <div class="mc-field">
                             <label for="rs-end-date">End date <span class="mc-optional">(optional)</span></label>
-                            <input type="date" id="rs-end-date" min="${todayKey}">
+                            <input type="date" id="rs-end-date" min="${todayKey}" ${oldEndHtml}>
                         </div>
                         <div class="mc-field">
                             <label for="rs-end-time">End time <span class="mc-optional">(optional)</span></label>
-                            <input type="time" id="rs-end-time">
+                            <input type="time" id="rs-end-time" ${oldEndTimeHtml}>
                         </div>
                     </div>
-                    <p class="cv-hint">Leave the end blank to keep the same duration.</p>
-                    <button type="submit" class="mc-submit">Save new schedule</button>
+                    <div class="mc-row">
+                        <div class="mc-field">
+                            <label for="rs-priority">Priority</label>
+                            <select id="rs-priority" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit;">
+                                ${priorityOptions}
+                            </select>
+                        </div>
+                        <div class="mc-field">
+                            <label for="rs-location">Location</label>
+                            <select id="rs-location" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit;">
+                                ${locOptions}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mc-row">
+                        <div class="mc-field" style="width:100%;">
+                            <label for="rs-case">Linked Case <span class="mc-optional">(optional)</span></label>
+                            <select id="rs-case" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit;">
+                                ${caseOpts}
+                            </select>
+                        </div>
+                    </div>
+                    <p class="cv-hint">Clear the end date/time to keep the default 1-hour duration.</p>
+                    <button type="submit" class="mc-submit">Save changes</button>
                 </form>
             </div>`;
         document.body.appendChild(overlay);
@@ -1685,6 +1737,15 @@ const row = Array.isArray(data) ? data[0] : data;
             const timeVal = val('rs-time');
             const endDateVal = val('rs-end-date');
             const endTimeVal = val('rs-end-time');
+            
+            const locationVal = val('rs-location');
+            const priorityVal = val('rs-priority');
+            const caseSel = overlay.querySelector('#rs-case');
+            const caseIdVal = caseSel.value || null;
+            
+            const opt = caseSel.selectedOptions[0];
+            const clientIdVal = (caseIdVal && opt && opt.dataset.clientId) ? Number(opt.dataset.clientId) : null;
+
             const submitBtn = form.querySelector('button[type="submit"]');
             const idle = submitBtn.textContent;
 
@@ -1695,7 +1756,7 @@ const row = Array.isArray(data) ? data[0] : data;
 
             const startISO = combineDateAndTime(dateVal, timeVal);
             if (dateVal < todayKey) {
-                showToast("You can't reschedule an event to a past date.", 'warning');
+                showToast("You can't schedule an event to a past date.", 'warning');
                 return;
             }
 
@@ -1714,34 +1775,42 @@ const row = Array.isArray(data) ? data[0] : data;
                 endISO = new Date(new Date(startISO).getTime() + duration).toISOString();
             }
 
-            if (new Date(startISO).getTime() === oldStart.getTime() && oldEnd && new Date(endISO).getTime() === oldEnd.getTime()) {
-                showToast('That is the same schedule as before. Choose a different date or time.', 'info');
-                return;
-            }
+            const testConflictEv = { ...ev, location: locationVal, client_id: clientIdVal };
 
             submitBtn.disabled = true;
             submitBtn.textContent = 'Checking...';
             try {
-                const conflict = await findRescheduleConflict(ev, startISO, endISO, dateVal);
+                const conflict = await findRescheduleConflict(testConflictEv, startISO, endISO, dateVal);
                 if (conflict) {
                     showToast('Cannot reschedule: ' + conflict, 'warning', { duration: 10000 });
                     return;
                 }
 
                 submitBtn.textContent = 'Saving...';
+                
+                const patch = { 
+                    start_date: startISO, 
+                    end_date: endISO,
+                    location: locationVal,
+                    priority: priorityVal,
+                    case_id: caseIdVal,
+                    client_id: clientIdVal
+                };
+                
                 const { data: updated, error } = await supabaseClient
                     .from('calendar_events')
-                    .update({ start_date: startISO, end_date: endISO })
+                    .update(patch)
                     .eq('id', ev.id)
                     .select('id');
+                    
                 if (error) throw error;
                 if (!updated || updated.length === 0) {
                     throw new Error('The event was not updated. You may not have permission to change it.');
                 }
 
-                await logAuditActivity('RESCHEDULE', 'calendar_events', `Rescheduled event: ${ev.title} to ${formatDate(startISO)}, ${formatEventTime(startISO)}`, ev.id, { start_date: ev.start_date, end_date: ev.end_date }, { start_date: startISO, end_date: endISO });
+                await logAuditActivity('RESCHEDULE', 'calendar_events', `Rescheduled & updated event: ${ev.title} to ${formatDate(startISO)}, ${formatEventTime(startISO)}`, ev.id, { start_date: ev.start_date, end_date: ev.end_date, location: ev.location, priority: ev.priority, case_id: ev.case_id }, patch);
 
-                showToast(`"${ev.title}" was rescheduled to ${formatDate(startISO)}, ${formatEventTime(startISO)}.`, 'success');
+                showToast(`"${ev.title}" was updated successfully.`, 'success');
                 close();
                 const dayModal = document.getElementById('day-details-modal');
                 if (dayModal) dayModal.classList.add('hidden');
@@ -1759,7 +1828,7 @@ const row = Array.isArray(data) ? data[0] : data;
                 }
             } catch (err) {
                 console.error('Reschedule failed:', err);
-                showToast('Could not reschedule: ' + err.message, 'error');
+                showToast('Could not save changes: ' + err.message, 'error');
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = idle;
