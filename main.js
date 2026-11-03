@@ -446,41 +446,6 @@ const row = Array.isArray(data) ? data[0] : data;
         "July", "August", "September", "October", "November", "December"
     ];
 
-    const IDLE_LIMIT_MS = 30 * 60 * 1000;
-
-    const IDLE_KEY = 'jurisync-last-activity';
-
-    function readLastActivity() {
-        try { return Number(localStorage.getItem(IDLE_KEY)) || 0; } catch (e) { return 0; }
-    }
-
-    function idleExpired() {
-        const last = readLastActivity();
-        return last > 0 && Date.now() - last > IDLE_LIMIT_MS;
-    }
-
-    async function signOutForInactivity() {
-        await supabaseClient.auth.signOut();
-        try { localStorage.setItem('jurisync-login-notice', 'You were signed out after 30 minutes of inactivity.'); } catch (e) {}
-        window.location.href = 'login.html';
-    }
-
-    function setupIdleTimeout() {
-        let lastWrite = 0;
-        const touch = () => {
-            const now = Date.now();
-            if (now - lastWrite < 15000) return;
-            lastWrite = now;
-            try { localStorage.setItem(IDLE_KEY, String(now)); } catch (e) {}
-        };
-        ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => window.addEventListener(evt, touch, { passive: true }));
-        touch();
-
-        const check = () => { if (idleExpired()) signOutForInactivity(); };
-        setInterval(check, 30000);
-        document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
-    }
-
     const MFA_REQUIRED_ROLES = ['admin'];
 
     function showMfaOverlay(innerHtml) {
@@ -697,11 +662,6 @@ const row = Array.isArray(data) ? data[0] : data;
                 return;
             }
 
-            if (idleExpired()) {
-                await signOutForInactivity();
-                return;
-            }
-
             currentUser = session.user;
 
             await enforceMfaIfRequired();
@@ -711,8 +671,6 @@ const row = Array.isArray(data) ? data[0] : data;
                 const { data: refreshed } = await supabaseClient.auth.getUser();
                 if (refreshed && refreshed.user) currentUser = refreshed.user;
             }
-
-            setupIdleTimeout();
 
             await updateSidebarUserInfo();
             await initializeApp();

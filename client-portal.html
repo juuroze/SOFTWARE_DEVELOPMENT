@@ -9,6 +9,13 @@
         rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     >
+    <script>
+        (function () {
+            if (/(^|[#&])(access_token|refresh_token|error|error_code|type)=/.test(window.location.hash)) {
+                window.location.replace('client-login.html' + window.location.hash);
+            }
+        })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
@@ -284,6 +291,44 @@
             }
         });
 
+        const IDLE_LIMIT_MS = 30 * 60 * 1000;
+        const IDLE_KEY = 'jurisync-client-last-activity';
+
+        function readLastActivity() {
+            try { return Number(localStorage.getItem(IDLE_KEY)) || 0; } catch (e) { return 0; }
+        }
+
+        function idleExpired() {
+            const last = readLastActivity();
+            return last > 0 && Date.now() - last > IDLE_LIMIT_MS;
+        }
+
+        async function signOutForInactivity() {
+            clearInterval(state.pollTimer);
+            await supabaseClient.auth.signOut();
+            try {
+                localStorage.removeItem(IDLE_KEY);
+                localStorage.setItem('jurisync-client-login-notice', 'You were signed out after 30 minutes of inactivity.');
+            } catch (e) {}
+            window.location.href = 'client-login.html';
+        }
+
+        function setupIdleTimeout() {
+            let lastWrite = 0;
+            const touch = () => {
+                const now = Date.now();
+                if (now - lastWrite < 15000) return;
+                lastWrite = now;
+                try { localStorage.setItem(IDLE_KEY, String(now)); } catch (e) {}
+            };
+            ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => window.addEventListener(evt, touch, { passive: true }));
+            touch();
+
+            const check = () => { if (idleExpired()) signOutForInactivity(); };
+            setInterval(check, 30000);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+        }
+
         async function init() {
             const { data: { session } } = await supabaseClient.auth.getSession();
 
@@ -298,7 +343,14 @@
                 return;
             }
 
+            if (idleExpired()) {
+                await signOutForInactivity();
+                return;
+            }
+
             state.userId = session.user.id;
+
+            setupIdleTimeout();
 
             await supabaseClient.rpc('link_my_client_account');
 
@@ -355,7 +407,7 @@
             container.innerHTML = `
                 <div class="p-greet">
                     <h1>Welcome back, ${escapeHtml(firstName)}</h1>
-                    <p>Follow your case and message your lawyer in one place.</p>
+
                 </div>
                 <div class="p-shell">
                     <aside class="p-cases" aria-label="Your cases">
@@ -633,6 +685,7 @@
 
         document.getElementById('portal-logout-btn').addEventListener('click', async () => {
             clearInterval(state.pollTimer);
+            try { localStorage.removeItem(IDLE_KEY); } catch (e) {}
             await supabaseClient.auth.signOut();
             window.location.href = 'client-login.html';
         });

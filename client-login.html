@@ -89,8 +89,8 @@
         <div class="brand-wrapper">
             <img src="logo11.png" alt="JuriSync Logo" class="brand-logo-login">
         </div>
-        <h2>JuriSync Client Portal</h2>
-        <p id="client-login-subtitle">Sign in to view your case and message your lawyer</p>
+        <span class="login-eyebrow">Client access</span>
+        <h2>JuriSync Client Portal</h2> 
 
         <form id="step-signin" autocomplete="on">
             <div class="form-group">
@@ -195,6 +195,7 @@
                 <button type="button" class="cl-link-btn" id="mfa-cancel-btn">Cancel and sign out</button>
             </div>
         </form>
+        <div class="login-secure"><i class="fa-solid fa-lock"></i> Secure sign-in</div>
     </div>
 
     <script>
@@ -287,6 +288,7 @@
         }
 
         function goPortal() {
+            try { localStorage.setItem('jurisync-client-last-activity', String(Date.now())); } catch (e) {}
             window.location.href = PORTAL_URL;
         }
 
@@ -620,6 +622,13 @@
 
             if (!session) {
                 showStep('signin');
+                try {
+                    const notice = localStorage.getItem('jurisync-client-login-notice');
+                    if (notice) {
+                        setMsg('signin-msg', notice, 'info');
+                        localStorage.removeItem('jurisync-client-login-notice');
+                    }
+                } catch (e) {}
                 if (linkError) {
                     setMsg('signin-msg', 'That link is invalid or has expired. Ask your lawyer to resend the invite, or use Forgot password.', 'error');
                 }
