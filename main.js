@@ -1601,7 +1601,7 @@ async function openRescheduleModal(eventId) {
         try {
             const { data, error } = await supabaseClient
                 .from('calendar_events')
-                .select('id, title, start_date, end_date, location, assigned_to, is_general, client_id, priority, case_id')
+                .select('id, title, start_date, end_date, location, assigned_to, is_general, client_id, priority, case_id, document_id, documents(title)')
                 .eq('id', eventId)
                 .single();
             if (error) throw error;
@@ -1659,11 +1659,10 @@ async function openRescheduleModal(eventId) {
             if (isSelected) locFound = true;
             locOptions += `<option value="${loc}" ${isSelected ? 'selected' : ''}>${loc}</option>`;
         });
-        if (ev.location && !locFound) {
-            locOptions += `<option value="${escapeHtml(ev.location)}" selected>${escapeHtml(ev.location)}</option>`;
-        }
+        locOptions += `<option value="other" ${!locFound && ev.location ? 'selected' : ''}>Others (type below)</option>`;
 
         const caseOpts = caseOptionsHtml(cases, ev.case_id);
+        const existingDocTitle = ev.documents ? escapeHtml(ev.documents.title) : '';
 
         overlay.innerHTML = `
             <div class="modal-content mc-modal">
@@ -1707,6 +1706,7 @@ async function openRescheduleModal(eventId) {
                             <select id="rs-location" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit;">
                                 ${locOptions}
                             </select>
+                            <input type="text" id="rs-location-custom" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; margin-top:8px; display:${!locFound && ev.location ? 'block' : 'none'}; box-sizing:border-box;" placeholder="Type custom location..." value="${!locFound && ev.location ? escapeHtml(ev.location) : ''}">
                         </div>
                     </div>
                     <div class="mc-row">
@@ -1717,8 +1717,43 @@ async function openRescheduleModal(eventId) {
                             </select>
                         </div>
                     </div>
-                    <p class="cv-hint">Clear the end date/time to keep the default 1-hour duration.</p>
-                    <button type="submit" class="mc-submit">Save changes</button>
+                    
+                    <div class="mc-row" style="margin-top: 15px; margin-bottom: 20px;">
+                        <div class="mc-field" style="width:100%; border:1px dashed #cbd5e1; padding:15px; border-radius:8px; background:#f8fafc; box-sizing:border-box;">
+                            <label style="display:flex; align-items:center; gap:6px; font-weight:600; margin-bottom:12px; font-size:12px;"><i class="fa-solid fa-paperclip" style="color:#3b82f6;"></i> ATTACHMENT <span style="font-weight:normal; color:#94a3b8; font-size:11px;">(optional)</span></label>
+                            
+                            <!-- Existing attachment container -->
+                            <div id="rs-existing-attachment" style="display:${ev.document_id ? 'flex' : 'none'}; align-items:center; justify-content:space-between; background:#eff6ff; border:1px solid #bfdbfe; padding:8px 12px; border-radius:6px; margin-bottom:12px;">
+                                <span style="font-size:12px; font-weight:600; color:#1e3a8a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><i class="fa-solid fa-file-lines" style="margin-right:6px;"></i><span id="rs-existing-name">${existingDocTitle}</span></span>
+                                <button type="button" id="rs-remove-existing-doc" style="background:#fee2e2; border:none; color:#dc2626; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600;" title="Remove attachment"><i class="fa-solid fa-xmark"></i> Remove</button>
+                            </div>
+                            <input type="hidden" id="rs-remove-doc-flag" value="false">
+
+                            <!-- New attachment container -->
+                            <div id="rs-new-attachment-wrap" style="display:${ev.document_id ? 'none' : 'block'};">
+                                <div style="margin-bottom:12px;">
+                                    <label style="font-size:12px; color:#475569; margin-bottom:6px; display:block;">Attach File</label>
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <input type="file" id="rs-attachment" accept=".pdf,.docx,.jpg,.jpeg,.png,.txt" style="flex:1; font-size:13px;">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="rs-attachment-name" style="font-size:12px; color:#475569; margin-bottom:6px; display:block;">File Name</label>
+                                    <div style="position:relative;">
+                                        <input type="text" id="rs-attachment-name" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#ffffff; font-family:inherit; font-size:13px; box-sizing:border-box;" placeholder="Auto-fills when you choose a file (you can edit it)">
+                                        <button type="button" id="rs-attach-clear" style="display:none; position:absolute; right:6px; top:50%; transform:translateY(-50%); background:#fee2e2; color:#dc2626; border:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-xmark"></i> Remove</button>
+                                    </div>
+                                </div>
+                                <p style="font-size:11px; color:#94a3b8; margin:8px 0 0 0;">Saved to Documents and linked to this event/case. ${ev.document_id ? 'Uploading a new file overrides the current attachment.' : ''}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p class="cv-hint" style="margin-bottom:15px;">Clear the end date/time to keep the default 1-hour duration.</p>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <button type="button" id="rs-remove-btn" style="padding:10px 16px; border:none; background:#fee2e2; color:#dc2626; border-radius:6px; cursor:pointer; font-weight:600;"><i class="fa-solid fa-trash"></i> Remove schedule</button>
+                        <button type="submit" class="mc-submit" style="margin:0; width:auto;">Save changes</button>
+                    </div>
                 </form>
             </div>`;
         document.body.appendChild(overlay);
@@ -1729,6 +1764,81 @@ async function openRescheduleModal(eventId) {
         overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
         overlay.querySelector('[data-rs-close]').addEventListener('click', close);
 
+        const removeExistingBtn = overlay.querySelector('#rs-remove-existing-doc');
+        const existingWrap = overlay.querySelector('#rs-existing-attachment');
+        const newWrap = overlay.querySelector('#rs-new-attachment-wrap');
+        const removeFlag = overlay.querySelector('#rs-remove-doc-flag');
+        
+        if (removeExistingBtn) {
+            removeExistingBtn.addEventListener('click', () => {
+                removeFlag.value = 'true';
+                existingWrap.style.display = 'none';
+                newWrap.style.display = 'block';
+            });
+        }
+
+        const attachInput = overlay.querySelector('#rs-attachment');
+        const attachNameInput = overlay.querySelector('#rs-attachment-name');
+        const attachClearBtn = overlay.querySelector('#rs-attach-clear');
+
+        if (attachInput && attachNameInput && attachClearBtn) {
+            attachInput.addEventListener('change', () => {
+                const hasFile = attachInput.files.length > 0;
+                attachNameInput.value = hasFile ? attachInput.files[0].name : '';
+                attachClearBtn.style.display = hasFile ? 'block' : 'none';
+            });
+
+            attachClearBtn.addEventListener('click', () => {
+                attachInput.value = '';
+                attachNameInput.value = '';
+                attachClearBtn.style.display = 'none';
+            });
+        }
+
+        overlay.querySelector('#rs-remove-btn').addEventListener('click', async () => {
+            if (!(await confirmDialog({ title: 'Remove Schedule', confirmLabel: 'Remove', danger: true, message: 'Are you sure you want to completely remove this event from the schedule?' }))) return;
+            
+            try {
+                const { error } = await supabaseClient.from('calendar_events').delete().eq('id', ev.id);
+                if (error) throw error;
+                
+                await logAuditActivity('DELETE', 'calendar_events', `Deleted event: ${ev.title}`, ev.id, ev, null);
+                
+                showToast('Schedule removed successfully.', 'success');
+                close();
+                
+                const dayModal = document.getElementById('day-details-modal');
+                if (dayModal) dayModal.classList.add('hidden');
+
+                generateCalendarGrid();
+                renderResourcesWidget();
+                renderScheduleSummaryWidget();
+                renderLawyerStatusWidget();
+                updateDashboardStats();
+                renderDashboardContent();
+                updateScheduleStats();
+                const timeline = document.getElementById('timeline-inject');
+                if (timeline && !timeline.parentElement.classList.contains('hidden')) {
+                    if (typeof renderTimelineInSchedule === 'function') renderTimelineInSchedule();
+                }
+            } catch (err) {
+                console.error('Failed to remove schedule:', err);
+                showToast('Could not remove schedule: ' + err.message, 'error');
+            }
+        });
+
+        const rsLoc = overlay.querySelector('#rs-location');
+        const rsLocCustom = overlay.querySelector('#rs-location-custom');
+        rsLoc.addEventListener('change', () => {
+            if (rsLoc.value === 'other') {
+                rsLocCustom.style.display = 'block';
+                rsLocCustom.required = true;
+            } else {
+                rsLocCustom.style.display = 'none';
+                rsLocCustom.required = false;
+            }
+        });
+
         const form = overlay.querySelector('#reschedule-form');
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1738,7 +1848,16 @@ async function openRescheduleModal(eventId) {
             const endDateVal = val('rs-end-date');
             const endTimeVal = val('rs-end-time');
             
-            const locationVal = val('rs-location');
+            const locationSelectVal = val('rs-location');
+            let locationVal = locationSelectVal;
+            if (locationSelectVal === 'other') {
+                locationVal = val('rs-location-custom');
+                if (!locationVal) {
+                    showToast('Please type the custom location.', 'warning');
+                    return;
+                }
+            }
+            
             const priorityVal = val('rs-priority');
             const caseSel = overlay.querySelector('#rs-case');
             const caseIdVal = caseSel.value || null;
@@ -1796,6 +1915,22 @@ async function openRescheduleModal(eventId) {
                     case_id: caseIdVal,
                     client_id: clientIdVal
                 };
+
+                const isDocRemoved = removeFlag && removeFlag.value === 'true';
+                const attachmentFile = attachInput && attachInput.files.length > 0 ? attachInput.files[0] : null;
+                
+                if (attachmentFile) {
+                    submitBtn.textContent = 'Uploading attachment...';
+                    const attachedDoc = await uploadCaseDocument(attachmentFile, {
+                        caseId: caseIdVal,
+                        clientId: clientIdVal,
+                        category: 'Event Attachment',
+                        title: resolveDocumentTitle(attachNameInput?.value, attachmentFile)
+                    });
+                    if (attachedDoc) patch.document_id = attachedDoc.id;
+                } else if (isDocRemoved) {
+                    patch.document_id = null;
+                }
                 
                 const { data: updated, error } = await supabaseClient
                     .from('calendar_events')
@@ -4157,6 +4292,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const court = c && c.court_branch ? String(c.court_branch).trim() : '';
         if (!court) {
             if (wasAuto) loc.value = '';
+            loc.dispatchEvent(new Event('change')); 
             return;
         }
         const opt = document.createElement('option');
@@ -4166,6 +4302,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         loc.insertBefore(opt, loc.options[1] || null);
         loc.dataset.autoCourt = court;
         if (loc.value === '' || wasAuto) loc.value = court;
+        loc.dispatchEvent(new Event('change')); 
     }
 
     function handleEventCaseSelectChange() {
@@ -4200,6 +4337,37 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             eventDateInput.min = todayStr;
             if (eventEndDateInput) eventEndDateInput.min = todayStr;
+        }
+
+        const locSelect = document.getElementById('event-location');
+        if (locSelect) {
+            if (!Array.from(locSelect.options).some(o => o.value === 'other')) {
+                const opt = document.createElement('option');
+                opt.value = 'other';
+                opt.textContent = 'Others (type below)';
+                locSelect.appendChild(opt);
+            }
+            
+            let customInput = document.getElementById('event-location-custom');
+            if (!customInput) {
+                customInput = document.createElement('input');
+                customInput.type = 'text';
+                customInput.id = 'event-location-custom';
+                customInput.placeholder = 'Type custom location...';
+                customInput.style.cssText = 'width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; margin-top:8px; display:none; box-sizing:border-box;';
+                locSelect.parentNode.appendChild(customInput);
+            }
+            
+            locSelect.removeEventListener('change', window.__locSelectHandler);
+            window.__locSelectHandler = () => {
+                if (locSelect.value === 'other') {
+                    customInput.style.display = 'block';
+                } else {
+                    customInput.style.display = 'none';
+                    customInput.value = '';
+                }
+            };
+            locSelect.addEventListener('change', window.__locSelectHandler);
         }
 
         try {
@@ -4280,20 +4448,43 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         const caseIcon = document.getElementById('case-toggle-icon');
 
         if (!modal) return;
-
         
         const attachInput = document.getElementById('event-attachment');
         const attachNameInput = document.getElementById('event-attachment-name');
-        if (attachInput && attachNameInput) {
+        
+        let clearBtn = document.getElementById('add-event-attach-clear');
+        if (attachInput && attachNameInput && !clearBtn) {
+            clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.id = 'add-event-attach-clear';
+            clearBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Remove attachment';
+            clearBtn.style.cssText = 'display:none; margin-top:8px; font-size:11px; padding:6px 10px; background:#fee2e2; color:#dc2626; border:none; border-radius:4px; cursor:pointer; font-weight:600;';
+            attachNameInput.parentElement.appendChild(clearBtn);
+
             attachInput.addEventListener('change', () => {
-                attachNameInput.value = attachInput.files.length > 0 ? attachInput.files[0].name : '';
+                const hasFile = attachInput.files.length > 0;
+                attachNameInput.value = hasFile ? attachInput.files[0].name : '';
+                clearBtn.style.display = hasFile ? 'inline-block' : 'none';
+            });
+
+            clearBtn.addEventListener('click', () => {
+                attachInput.value = '';
+                attachNameInput.value = '';
+                clearBtn.style.display = 'none';
             });
         }
 
-       
         function resetEventForm() {
             if (form) form.reset();
             clearEventFieldErrors();
+            
+            const customInput = document.getElementById('event-location-custom');
+            if (customInput) {
+                customInput.style.display = 'none';
+                customInput.value = '';
+            }
+
+            if (clearBtn) clearBtn.style.display = 'none';
 
             const existingCaseSelectReset = document.getElementById('event-existing-case');
             if (existingCaseSelectReset) existingCaseSelectReset.value = '';
@@ -4310,7 +4501,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             });
         }
 
-  
         if (form) form.setAttribute('novalidate', '');
 
         function clearEventFieldErrors() {
@@ -4332,7 +4522,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             note.textContent = message;
             note.style.cssText = 'color:#ef4444; font-size:11px; margin-top:4px;';
 
-    
             const wrapper = el.parentElement;
             const anchor = (el.tagName === 'SELECT' && wrapper && !wrapper.classList.contains('form-group')) ? wrapper : el;
             anchor.insertAdjacentElement('afterend', note);
@@ -4348,7 +4537,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             el.addEventListener('change', clear);
         }
 
-      
         function validateEventForm() {
             clearEventFieldErrors();
             const problems = [];
@@ -4361,9 +4549,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             need('event-date', 'Please pick a date.');
             need('event-time', 'Please pick a start time.');
             need('event-priority', 'Please choose a priority.');
-            need('event-location', 'Please select a location.');
+            
+            let locVal = val('event-location');
+            if (locVal === 'other') locVal = val('event-location-custom');
+            if (!locVal) {
+                problems.push({ el: document.getElementById('event-location'), message: 'Please select or type a location.' });
+            }
 
-         
             const isAdmin = (typeof globalUserRole !== 'undefined' && globalUserRole === 'administrator');
             if (!isAdmin) {
                 const pickedCase = document.getElementById('event-existing-case')?.value;
@@ -4379,7 +4571,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
             problems.forEach(p => { if (p.el) markEventFieldInvalid(p.el, p.message); });
 
-            
             const first = problems.find(p => p.el)?.el;
             if (clientSection && clientSection.classList.contains('hidden') &&
                 problems.some(p => p.el && clientSection.contains(p.el))) {
@@ -4441,7 +4632,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         if (form) {
             form.addEventListener('submit', async (e) => {
                 e.preventDefault(); 
-
                 
                 if (!validateEventForm()) return;
                 
@@ -4457,7 +4647,12 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const endDateInput = document.getElementById('event-end-date').value;
                 const endTimeInput = document.getElementById('event-end-time').value;
                 const priority = document.getElementById('event-priority').value;
-                const location = document.getElementById('event-location').value;
+                
+                const locationSelectVal = document.getElementById('event-location').value;
+                let location = locationSelectVal;
+                if (locationSelectVal === 'other') {
+                    location = document.getElementById('event-location-custom')?.value.trim() || '';
+                }
                 
                 let isGeneral = (globalUserRole === 'administrator');
                 let assignedLawyerId = isGeneral ? null : currentUser.id;
@@ -4477,7 +4672,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 const eventDateTimeISO = combineDateAndTime(date, timeInput);
 
-                
                 let eventEndDateTimeISO = null;
                 if (eventDateTimeISO) {
                     if (endDateInput || endTimeInput) {
@@ -4498,7 +4692,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-           
                 if (eventDateTimeISO) {
                     const now = new Date();
                     const todayAtMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -4515,7 +4708,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-               
                 if (date) {
                     try {
                         const existingClientId = linkedCase ? linkedCase.client_id : null;
@@ -4536,7 +4728,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-              
                 if (!isGeneral && assignedLawyerId && eventDateTimeISO) {
                     const bufferMs = eventEndDateTimeISO ? (new Date(eventEndDateTimeISO) - new Date(eventDateTimeISO)) : (60 * 60 * 1000);
                     const newStart = new Date(eventDateTimeISO);
@@ -4563,7 +4754,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     }
                 }
 
-                
                 if (CONFERENCE_ROOMS.includes(location) && eventDateTimeISO) {
                     const bufferMs = eventEndDateTimeISO ? (new Date(eventEndDateTimeISO) - new Date(eventDateTimeISO)) : (60 * 60 * 1000);
                     const newStart = new Date(eventDateTimeISO);
