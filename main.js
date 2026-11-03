@@ -1665,94 +1665,96 @@ async function openRescheduleModal(eventId) {
         const existingDocTitle = ev.documents ? escapeHtml(ev.documents.title) : '';
 
         overlay.innerHTML = `
-            <div class="modal-content mc-modal">
-                <div class="modal-header mc-modal-head">
-                    <div>
+            <div class="modal-content mc-modal rs-modal">
+                <div class="modal-header mc-modal-head rs-head">
+                    <span class="rs-head-icon"><i class="fa-solid fa-calendar-check"></i></span>
+                    <div class="rs-head-text">
                         <h2>Reschedule & Edit event</h2>
-                        <p>${escapeHtml(ev.title)} • currently ${formatDate(ev.start_date)}, ${formatEventTime(ev.start_date)}</p>
+                        <p class="rs-event-title">${escapeHtml(ev.title)}</p>
+                        <p class="rs-current"><i class="fa-regular fa-clock"></i> Currently ${formatDate(ev.start_date)}, ${formatEventTime(ev.start_date)}</p>
                     </div>
                     <button type="button" class="btn-close" data-rs-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <form class="mc-form" id="reschedule-form" autocomplete="off">
-                    <div class="mc-row">
-                        <div class="mc-field">
-                            <label for="rs-date">New date</label>
-                            <input type="date" id="rs-date" required min="${todayKey}" value="${toLocalDateKey(oldStart)}">
-                        </div>
-                        <div class="mc-field">
-                            <label for="rs-time">Start time</label>
-                            <input type="time" id="rs-time" required value="${pad2(oldStart.getHours())}:${pad2(oldStart.getMinutes())}">
-                        </div>
-                    </div>
-                    <div class="mc-row">
-                        <div class="mc-field">
-                            <label for="rs-end-date">End date <span class="mc-optional">(optional)</span></label>
-                            <input type="date" id="rs-end-date" min="${todayKey}" ${oldEndHtml}>
-                        </div>
-                        <div class="mc-field">
-                            <label for="rs-end-time">End time <span class="mc-optional">(optional)</span></label>
-                            <input type="time" id="rs-end-time" ${oldEndTimeHtml}>
-                        </div>
-                    </div>
-                    <div class="mc-row">
-                        <div class="mc-field">
-                            <label for="rs-priority">Priority</label>
-                            <select id="rs-priority" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit;">
-                                ${priorityOptions}
-                            </select>
-                        </div>
-                        <div class="mc-field">
-                            <label for="rs-location">Location</label>
-                            <select id="rs-location" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit;">
-                                ${locOptions}
-                            </select>
-                            <input type="text" id="rs-location-custom" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; margin-top:8px; display:${!locFound && ev.location ? 'block' : 'none'}; box-sizing:border-box;" placeholder="Type custom location..." value="${!locFound && ev.location ? escapeHtml(ev.location) : ''}">
-                        </div>
-                    </div>
-                    <div class="mc-row">
-                        <div class="mc-field" style="width:100%;">
-                            <label for="rs-case">Linked Case <span class="mc-optional">(optional)</span></label>
-                            <select id="rs-case" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit;">
-                                ${caseOpts}
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="mc-row" style="margin-top: 15px; margin-bottom: 20px;">
-                        <div class="mc-field" style="width:100%; border:1px dashed #cbd5e1; padding:15px; border-radius:8px; background:#f8fafc; box-sizing:border-box;">
-                            <label style="display:flex; align-items:center; gap:6px; font-weight:600; margin-bottom:12px; font-size:12px;"><i class="fa-solid fa-paperclip" style="color:#3b82f6;"></i> ATTACHMENT <span style="font-weight:normal; color:#94a3b8; font-size:11px;">(optional)</span></label>
-                            
-                            <!-- Existing attachment container -->
-                            <div id="rs-existing-attachment" style="display:${ev.document_id ? 'flex' : 'none'}; align-items:center; justify-content:space-between; background:#eff6ff; border:1px solid #bfdbfe; padding:8px 12px; border-radius:6px; margin-bottom:12px;">
-                                <span style="font-size:12px; font-weight:600; color:#1e3a8a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><i class="fa-solid fa-file-lines" style="margin-right:6px;"></i><span id="rs-existing-name">${existingDocTitle}</span></span>
-                                <button type="button" id="rs-remove-existing-doc" style="background:#fee2e2; border:none; color:#dc2626; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600;" title="Remove attachment"><i class="fa-solid fa-xmark"></i> Remove</button>
+                <form class="mc-form rs-form" id="reschedule-form" autocomplete="off">
+                    <div class="rs-body">
+                        <section class="rs-section">
+                            <div class="rs-section-title"><i class="fa-regular fa-calendar"></i> Schedule</div>
+                            <div class="mc-row">
+                                <div class="mc-field">
+                                    <label for="rs-date">New date</label>
+                                    <input type="date" id="rs-date" required min="${todayKey}" value="${toLocalDateKey(oldStart)}">
+                                </div>
+                                <div class="mc-field">
+                                    <label for="rs-time">Start time</label>
+                                    <input type="time" id="rs-time" required value="${pad2(oldStart.getHours())}:${pad2(oldStart.getMinutes())}">
+                                </div>
+                            </div>
+                            <div class="mc-row">
+                                <div class="mc-field">
+                                    <label for="rs-end-date">End date <span class="mc-optional">(optional)</span></label>
+                                    <input type="date" id="rs-end-date" min="${todayKey}" ${oldEndHtml}>
+                                </div>
+                                <div class="mc-field">
+                                    <label for="rs-end-time">End time <span class="mc-optional">(optional)</span></label>
+                                    <input type="time" id="rs-end-time" ${oldEndTimeHtml}>
+                                </div>
+                            </div>
+                            <p class="rs-note"><i class="fa-solid fa-circle-info"></i> Clear the end date/time to keep the default 1-hour duration.</p>
+                        </section>
+
+                        <section class="rs-section">
+                            <div class="rs-section-title"><i class="fa-solid fa-sliders"></i> Details</div>
+                            <div class="mc-row">
+                                <div class="mc-field">
+                                    <label for="rs-priority">Priority</label>
+                                    <select id="rs-priority">
+                                        ${priorityOptions}
+                                    </select>
+                                </div>
+                                <div class="mc-field">
+                                    <label for="rs-location">Location</label>
+                                    <select id="rs-location">
+                                        ${locOptions}
+                                    </select>
+                                    <input type="text" id="rs-location-custom" class="rs-custom-location" style="display:${!locFound && ev.location ? 'block' : 'none'};" placeholder="Type custom location..." value="${!locFound && ev.location ? escapeHtml(ev.location) : ''}">
+                                </div>
+                            </div>
+                            <div class="mc-row">
+                                <div class="mc-field">
+                                    <label for="rs-case">Linked Case <span class="mc-optional">(optional)</span></label>
+                                    <select id="rs-case">
+                                        ${caseOpts}
+                                    </select>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="rs-section">
+                            <div class="rs-section-title"><i class="fa-solid fa-paperclip"></i> Attachment <span class="mc-optional">(optional)</span></div>
+                            <div id="rs-existing-attachment" class="rs-existing" style="display:${ev.document_id ? 'flex' : 'none'};">
+                                <span class="rs-existing-label"><i class="fa-solid fa-file-lines"></i><span id="rs-existing-name">${existingDocTitle}</span></span>
+                                <button type="button" id="rs-remove-existing-doc" class="rs-chip-btn" title="Remove attachment"><i class="fa-solid fa-xmark"></i> Remove</button>
                             </div>
                             <input type="hidden" id="rs-remove-doc-flag" value="false">
-
-                            <!-- New attachment container -->
                             <div id="rs-new-attachment-wrap" style="display:${ev.document_id ? 'none' : 'block'};">
-                                <div style="margin-bottom:12px;">
-                                    <label style="font-size:12px; color:#475569; margin-bottom:6px; display:block;">Attach File</label>
-                                    <div style="display:flex; align-items:center; gap:10px;">
-                                        <input type="file" id="rs-attachment" accept=".pdf,.docx,.jpg,.jpeg,.png,.txt" style="flex:1; font-size:13px;">
+                                <div class="mc-field">
+                                    <label for="rs-attachment">Attach file</label>
+                                    <input type="file" id="rs-attachment" accept=".pdf,.docx,.jpg,.jpeg,.png,.txt">
+                                </div>
+                                <div class="mc-field rs-name-field">
+                                    <label for="rs-attachment-name">File name</label>
+                                    <div class="rs-name-wrap">
+                                        <input type="text" id="rs-attachment-name" placeholder="Auto-fills when you choose a file (you can edit it)">
+                                        <button type="button" id="rs-attach-clear" class="rs-chip-btn rs-clear" style="display:none;"><i class="fa-solid fa-xmark"></i> Remove</button>
                                     </div>
                                 </div>
-                                <div>
-                                    <label for="rs-attachment-name" style="font-size:12px; color:#475569; margin-bottom:6px; display:block;">File Name</label>
-                                    <div style="position:relative;">
-                                        <input type="text" id="rs-attachment-name" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#ffffff; font-family:inherit; font-size:13px; box-sizing:border-box;" placeholder="Auto-fills when you choose a file (you can edit it)">
-                                        <button type="button" id="rs-attach-clear" style="display:none; position:absolute; right:6px; top:50%; transform:translateY(-50%); background:#fee2e2; color:#dc2626; border:none; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-xmark"></i> Remove</button>
-                                    </div>
-                                </div>
-                                <p style="font-size:11px; color:#94a3b8; margin:8px 0 0 0;">Saved to Documents and linked to this event/case. ${ev.document_id ? 'Uploading a new file overrides the current attachment.' : ''}</p>
+                                <p class="rs-note"><i class="fa-solid fa-circle-info"></i> Saved to Documents and linked to this event/case. ${ev.document_id ? 'Uploading a new file overrides the current attachment.' : ''}</p>
                             </div>
-                        </div>
+                        </section>
                     </div>
-
-                    <p class="cv-hint" style="margin-bottom:15px;">Clear the end date/time to keep the default 1-hour duration.</p>
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <button type="button" id="rs-remove-btn" style="padding:10px 16px; border:none; background:#fee2e2; color:#dc2626; border-radius:6px; cursor:pointer; font-weight:600;"><i class="fa-solid fa-trash"></i> Remove schedule</button>
-                        <button type="submit" class="mc-submit" style="margin:0; width:auto;">Save changes</button>
+                    <div class="rs-footer">
+                        <button type="button" id="rs-remove-btn" class="rs-danger"><i class="fa-solid fa-trash"></i> Remove schedule</button>
+                        <button type="submit" class="mc-submit rs-save"><i class="fa-solid fa-check"></i> Save changes</button>
                     </div>
                 </form>
             </div>`;
@@ -2685,9 +2687,9 @@ async function openRescheduleModal(eventId) {
                     ${v.note ? `<p style="font-size:12px; color:#334155; margin:6px 0 0 0;">${escapeHtml(v.note)}</p>` : ''}
                     <div style="display:flex; gap:8px; margin-top:10px;">
                         ${v.file_path ? `
-                            <button type="button" data-vh-action="view" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" style="${btnStyle}"><i class="fa-regular fa-eye"></i> View</button>
-                            <button type="button" data-vh-action="download" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" style="${btnStyle}"><i class="fa-solid fa-download"></i> Download</button>` : ''}
-                        ${!v.current && canVersion ? `<button type="button" data-vh-action="restore" data-id="${escapeHtml(v.id)}" data-no="${v.version_no}" style="${btnStyle} color:#0ea5e9;"><i class="fa-solid fa-rotate-left"></i> Restore</button>` : ''}
+                            <button type="button" data-vh-action="view" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" class="doc-small-btn"><i class="fa-regular fa-eye"></i> View</button>
+                            <button type="button" data-vh-action="download" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" class="doc-small-btn"><i class="fa-solid fa-download"></i> Download</button>` : ''}
+                        ${!v.current && canVersion ? `<button type="button" data-vh-action="restore" data-id="${escapeHtml(v.id)}" data-no="${v.version_no}" class="doc-small-btn" style="color:#0ea5e9;"><i class="fa-solid fa-rotate-left"></i> Restore</button>` : ''}
                     </div>
                 </div>
             `).join('') + ((versions || []).length === 0 ? '<p style="font-size:12px; color:#94a3b8; text-align:center; margin:8px 0 0 0;">No earlier versions yet.</p>' : '');
@@ -2942,10 +2944,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 : '';
 
             const extraButtons = [
-                (doc.version_no || 1) > 1 ? `<button type="button" onclick="openDocumentHistory(${idArg})" style="${smallBtn}"><i class="fa-solid fa-clock-rotate-left"></i> History</button>` : '',
-                canVersion && hasFile ? `<button type="button" onclick="openNewVersionModal(${idArg})" style="${smallBtn}"><i class="fa-solid fa-file-circle-plus"></i> New version</button>` : '',
-                canEdit ? `<button type="button" onclick="openEditDocumentModal(${idArg})" style="${smallBtn}"><i class="fa-solid fa-pen"></i> Edit</button>` : '',
-                needsIndex ? `<button type="button" onclick="indexExistingDocument(${idArg})" style="${smallBtn}"><i class="fa-solid fa-wand-magic-sparkles"></i> Index</button>` : ''
+                (doc.version_no || 1) > 1 ? `<button type="button" onclick="openDocumentHistory(${idArg})" class="doc-small-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</button>` : '',
+                canVersion && hasFile ? `<button type="button" onclick="openNewVersionModal(${idArg})" class="doc-small-btn"><i class="fa-solid fa-file-circle-plus"></i> New version</button>` : '',
+                canEdit ? `<button type="button" onclick="openEditDocumentModal(${idArg})" class="doc-small-btn"><i class="fa-solid fa-pen"></i> Edit</button>` : '',
+                needsIndex ? `<button type="button" onclick="indexExistingDocument(${idArg})" class="doc-small-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> Index</button>` : ''
             ].filter(Boolean).join('');
 
             const typeColor = getCategoryColor(doc.type);
@@ -2989,10 +2991,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-                    <button onclick="${onBtnClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: var(--surface); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--surface)'">
+                    <button type="button" class="doc-action-btn" onclick="${onBtnClick}">
                         <i class="fa-regular fa-eye"></i> View
                     </button>
-                    <button onclick="${onDownloadClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: var(--surface); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--surface)'">
+                    <button type="button" class="doc-action-btn" onclick="${onDownloadClick}">
                         <i class="fa-solid fa-download"></i> Download
                     </button>
                 </div>
@@ -4281,18 +4283,34 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
     const CONFERENCE_ROOMS = ['Conference Room A', 'Conference Room B'];
 
+    function setEventLocationHint(loc, message) {
+        let hint = document.getElementById('event-location-hint');
+        if (!message) {
+            if (hint) hint.remove();
+            return;
+        }
+        if (!hint) {
+            hint = document.createElement('p');
+            hint.id = 'event-location-hint';
+            hint.className = 'ev-hint ev-hint-tight';
+            loc.parentNode.insertAdjacentElement('afterend', hint);
+        }
+        hint.innerHTML = '<i class="fa-solid fa-lock"></i> ' + escapeHtml(message);
+    }
+
     function syncEventLocationWithCase(c) {
         const loc = document.getElementById('event-location');
         if (!loc) return;
-        const previousCourt = loc.dataset.autoCourt || '';
-        const wasAuto = previousCourt !== '' && loc.value === previousCourt;
+        const wasLocked = loc.dataset.locked === '1';
         Array.from(loc.options).forEach(o => { if (o.dataset.court === '1') o.remove(); });
-        loc.dataset.autoCourt = '';
 
         const court = c && c.court_branch ? String(c.court_branch).trim() : '';
         if (!court) {
-            if (wasAuto) loc.value = '';
-            loc.dispatchEvent(new Event('change')); 
+            loc.disabled = false;
+            loc.dataset.locked = '';
+            if (wasLocked) loc.value = '';
+            setEventLocationHint(loc, '');
+            loc.dispatchEvent(new Event('change'));
             return;
         }
         const opt = document.createElement('option');
@@ -4300,9 +4318,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         opt.textContent = court + ' (Court)';
         opt.dataset.court = '1';
         loc.insertBefore(opt, loc.options[1] || null);
-        loc.dataset.autoCourt = court;
-        if (loc.value === '' || wasAuto) loc.value = court;
-        loc.dispatchEvent(new Event('change')); 
+        loc.value = court;
+        loc.disabled = true;
+        loc.dataset.locked = '1';
+        setEventLocationHint(loc, "Location is set from this case's court and can't be changed.");
+        loc.dispatchEvent(new Event('change'));
     }
 
     function handleEventCaseSelectChange() {
