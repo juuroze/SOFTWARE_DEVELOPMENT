@@ -245,6 +245,87 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
         fn();
     };
 
+    // ---- Theme (light/dark) + collapsible sidebar -------------------------
+    // State lives on <html data-theme / data-sidebar>; <head> applies the saved
+    // values before first paint, this wires up the controls.
+    function setupSidebarAndTheme() {
+        const root = document.documentElement;
+        const store = {
+            get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+            set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+        };
+
+        // --- theme ---
+        const themeBtn = document.getElementById('theme-toggle-btn');
+        const applyTheme = (theme) => {
+            root.setAttribute('data-theme', theme);
+            if (!themeBtn) return;
+            const dark = theme === 'dark';
+            const icon = themeBtn.querySelector('i');
+            const label = themeBtn.querySelector('span');
+            if (icon) icon.className = dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+            if (label) label.textContent = dark ? 'Light mode' : 'Dark mode';
+            themeBtn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+            themeBtn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+            refreshNavTitles();
+        };
+        const toggleTheme = (e) => {
+            if (e && e.stopImmediatePropagation) e.stopImmediatePropagation(); // keep mobile drawer open
+            const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            store.set('jurisync-theme', next);
+            applyTheme(next);
+        };
+
+        // --- sidebar collapse (desktop only; on mobile the sidebar is a drawer) ---
+        const collapseBtn = document.getElementById('sidebar-collapse-btn');
+        const isCollapsed = () => root.getAttribute('data-sidebar') === 'collapsed';
+
+        // When minimized, the labels are hidden, so show them as native tooltips instead
+        function refreshNavTitles() {
+            const collapsed = isCollapsed();
+            document.querySelectorAll('.sidebar .nav-links li').forEach(li => {
+                const label = li.querySelector('span:not(.nav-badge)');
+                if (collapsed && label) li.setAttribute('title', label.textContent.trim());
+                else li.removeAttribute('title');
+            });
+        }
+
+        const applyCollapsed = (collapsed) => {
+            if (collapsed) root.setAttribute('data-sidebar', 'collapsed');
+            else root.removeAttribute('data-sidebar');
+            if (collapseBtn) {
+                const text = collapsed ? 'Expand sidebar' : 'Minimize sidebar';
+                collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                collapseBtn.setAttribute('aria-label', text);
+                collapseBtn.setAttribute('title', text);
+            }
+            refreshNavTitles();
+        };
+
+        if (themeBtn) {
+            themeBtn.addEventListener('click', toggleTheme);
+            themeBtn.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTheme(e); }
+            });
+        }
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', () => {
+                const next = !isCollapsed();
+                store.set('jurisync-sidebar', next ? 'collapsed' : 'expanded');
+                applyCollapsed(next);
+            });
+        }
+
+        // Keep the toggle in sync if the theme is changed in another tab
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'jurisync-theme' && (e.newValue === 'dark' || e.newValue === 'light')) applyTheme(e.newValue);
+            if (e.key === 'jurisync-sidebar') applyCollapsed(e.newValue === 'collapsed');
+        });
+
+        applyTheme(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+        applyCollapsed(store.get('jurisync-sidebar') === 'collapsed');
+    }
+
     function setupResponsiveShell() {
         const menuBtn = document.getElementById('mobile-menu-btn');
         const backdrop = document.getElementById('sidebar-backdrop');
@@ -287,6 +368,7 @@ const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
         window.addEventListener('online', () => showToast('You are back online.', 'success'));
     }
 
+    setupSidebarAndTheme();
     setupResponsiveShell();
     setupGlobalErrorHandling();
 
@@ -1041,7 +1123,7 @@ const row = Array.isArray(data) ? data[0] : data;
                         timeframeLabel.style.color = "#f97316"; 
                     } else {
                         timeframeLabel.innerText = `In ${diffDays} days`;
-                        timeframeLabel.style.color = "#64748b"; 
+                        timeframeLabel.style.color = "var(--text-muted)"; 
                     }
                 }
 
@@ -1076,7 +1158,7 @@ const row = Array.isArray(data) ? data[0] : data;
             } else {
                 if (timeframeLabel) {
                     timeframeLabel.innerText = "No events";
-                    timeframeLabel.style.color = "#64748b";
+                    timeframeLabel.style.color = "var(--text-muted)";
                 }
                 deadlineList.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No upcoming deadlines</p>';
             }
@@ -2509,7 +2591,7 @@ const row = Array.isArray(data) ? data[0] : data;
             btn.id = 'btn-index-all';
             btn.type = 'button';
             btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Make older documents searchable';
-            btn.style.cssText = 'padding:8px 14px; border:1px solid #e2e8f0; background:white; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;';
+            btn.style.cssText = 'padding:8px 14px; border:1px solid var(--border-soft); background:var(--surface); border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:var(--text-main);';
             btn.addEventListener('click', () => window.indexAllPendingDocuments());
             meta.appendChild(btn);
         }
@@ -2745,10 +2827,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-                    <button onclick="${onBtnClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <button onclick="${onBtnClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: var(--surface); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--surface)'">
                         <i class="fa-regular fa-eye"></i> View
                     </button>
-                    <button onclick="${onDownloadClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <button onclick="${onDownloadClick}" style="padding: 10px; border: 1px solid #e2e8f0; background: var(--surface); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 12px; color: #0f172a; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 6px;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--surface)'">
                         <i class="fa-solid fa-download"></i> Download
                     </button>
                 </div>
@@ -6364,8 +6446,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             if (form) form.reset();
             if (fileInput) fileInput.value = '';
             if (dropArea && dropText) {
-                dropArea.style.borderColor = '#cbd5e1';
-                dropArea.style.backgroundColor = '#ffffff';
+                dropArea.style.borderColor = 'var(--border-strong)';
+                dropArea.style.backgroundColor = 'var(--surface)';
                 dropText.innerText = "Drag and drop files here, or click to browse";
             }
             selectedFile = null;
@@ -6398,20 +6480,20 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     dropText.innerText = selectedFile.name; 
                     if (fileNameInput) fileNameInput.value = selectedFile.name;
                     dropArea.style.borderColor = '#3b82f6'; 
-                    dropArea.style.backgroundColor = '#eff6ff'; 
+                    dropArea.style.backgroundColor = 'var(--accent-soft)'; 
                 }
             });
 
             dropArea.addEventListener('dragover', (e) => {
                 e.preventDefault(); 
                 dropArea.style.borderColor = '#3b82f6';
-                dropArea.style.backgroundColor = '#eff6ff';
+                dropArea.style.backgroundColor = 'var(--accent-soft)';
             });
 
             dropArea.addEventListener('dragleave', () => {
                 if (!selectedFile) { 
-                    dropArea.style.borderColor = '#cbd5e1';
-                    dropArea.style.backgroundColor = '#ffffff';
+                    dropArea.style.borderColor = 'var(--border-strong)';
+                    dropArea.style.backgroundColor = 'var(--surface)';
                 }
             });
 
@@ -6424,7 +6506,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     dropText.innerText = selectedFile.name; 
                     if (fileNameInput) fileNameInput.value = selectedFile.name;
                     dropArea.style.borderColor = '#3b82f6';
-                    dropArea.style.backgroundColor = '#eff6ff';
+                    dropArea.style.backgroundColor = 'var(--accent-soft)';
                 }
             });
         }

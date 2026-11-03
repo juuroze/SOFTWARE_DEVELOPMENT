@@ -5,11 +5,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JuriSync - Law Firm Management</title>
+    <script>
+        /* Apply saved theme + sidebar state before first paint (prevents a light flash) */
+        (function () {
+            var de = document.documentElement, theme = 'light';
+            try {
+                if (localStorage.getItem('jurisync-theme') === 'dark') theme = 'dark';
+                if (localStorage.getItem('jurisync-sidebar') === 'collapsed') de.setAttribute('data-sidebar', 'collapsed');
+            } catch (e) {}
+            de.setAttribute('data-theme', theme);
+        })();
+    </script>
     
     <style>
         .mobile-topbar, .sidebar-backdrop, .app-loader { display: none; }
     </style>
-    <link rel="stylesheet" href="style.css?v=ui4">
+    <link rel="stylesheet" href="style.css?v=ui5">
     <link 
         rel="stylesheet" 
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
@@ -49,6 +60,10 @@
                     <h2>JuriSync</h2>
                 </div>
                 <p>Law Firm Management</p>
+                <button type="button" class="sidebar-collapse-btn" id="sidebar-collapse-btn"
+                        aria-label="Minimize sidebar" aria-controls="app-sidebar" aria-expanded="true" title="Minimize sidebar">
+                    <i class="fa-solid fa-angles-left"></i>
+                </button>
             </div>
 
             <ul class="nav-links">
@@ -95,6 +110,11 @@
             </ul>
 
             <ul class="nav-links" style="margin-top: auto; margin-bottom: 0;">
+                <li id="theme-toggle-btn" class="theme-toggle-item" role="button" tabindex="0" aria-label="Switch to dark mode">
+                    <i class="fa-solid fa-moon"></i>
+                    <span>Dark mode</span>
+                </li>
+
                 <li id="logout-sidebar-btn" class="logout-item">
                     <i class="fa-solid fa-right-from-bracket"></i>
                     <span>Logout</span>
@@ -1296,7 +1316,7 @@
 
     </div>
     
-    <script src="main.js?v=ui6"></script>
+    <script src="main.js?v=ui7"></script>
     
 </body>
 </html>
