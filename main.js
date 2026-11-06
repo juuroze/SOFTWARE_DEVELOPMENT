@@ -5186,7 +5186,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
         const rows = cases.map(c => {
             const isClosed = c.status === 'closed';
-            const clientName = escapeHtml(c.clients?.client_name || 'No Client');
+            const clientName = escapeHtml(c.clients?.client_name || (c.client_id ? 'Linked client' : 'No Client'));
+            const linkClientBtn = (!c.client_id && canEditCase)
+                ? `<button type="button" class="cr-plus-btn" onclick="openLinkClient('${c.id}')" title="Link a client" aria-label="Link a client"><i class="fa-solid fa-plus"></i></button>`
+                : '';
             const lawyers = (c.case_lawyers || []).slice().sort((a, b) => (rowIsLead(b) ? 1 : 0) - (rowIsLead(a) ? 1 : 0));
             const lawyerCell = lawyers.length
                 ? lawyers.map(r => `<div class="ct-lawyer">${rowIsLead(r) ? '<i class="fa-solid fa-gavel"></i> ' : ''}Atty. ${escapeHtml(rowName(r) || 'Unknown')}</div>`).join('')
@@ -5203,6 +5206,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     ? textBtn(`toggleCaseStatus('${c.id}', 'closed')`, 'fa-rotate-left', 'Reopen', 'ct-blue')
                     : textBtn(`toggleCaseStatus('${c.id}', '${c.status || 'active'}')`, 'fa-lock', 'Close case', 'ct-green'));
             }
+            actions.push(iconBtn(`openCaseReports('${c.id}')`, 'fa-file-lines', 'Reports and history'));
             actions.push(iconBtn(`openCaseDetail('${c.id}')`, 'fa-envelope', 'Case emails'));
             if (globalRoleName === 'admin') actions.push(iconBtn(`openCaseTeam('${c.id}')`, 'fa-gavel', 'Assign lawyers'));
             if (canEditCase) actions.push(iconBtn(`openCaseForm('${c.id}')`, 'fa-pen', 'Edit case'));
@@ -5214,7 +5218,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         ${escapeHtml(c.title)}
                         <div class="ct-sub">${c.case_number ? '#' + escapeHtml(c.case_number) : ''}${c.court_branch ? (c.case_number ? ' • ' : '') + escapeHtml(c.court_branch) : ''}</div>
                     </td>
-                    <td>${clientName}</td>
+                    <td>${clientName}${linkClientBtn}</td>
                     <td>${escapeHtml(c.case_type || 'General')}${c.party_type ? `<div class="ct-sub">${escapeHtml(c.party_type)}</div>` : ''}</td>
                     <td>${c.case_stage ? `<span class="ct-badge ct-badge-stage">${escapeHtml(c.case_stage)}</span>` : '<span class="ct-muted">-</span>'}</td>
                     <td>${formatDate(c.date_filed || c.created_at)}</td>
@@ -6206,6 +6210,577 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }
         });
     }
+
+    // ====================================================================
+    // Case reports, case history and client linking
+    // ====================================================================
+    const CR_HEARING_TYPES = ['Hearing', 'Pre-Trial', 'Mediation/JDR', 'Filing', 'Conference', 'Decision', 'Other'];
+    const CR_EVENT_ICONS = {
+        case_opened: 'fa-folder-open',
+        stage_changed: 'fa-flag',
+        case_closed: 'fa-lock',
+        case_reopened: 'fa-rotate-left',
+        client_linked: 'fa-user-plus'
+    };
+
+    function crPad(n) { return String(n).padStart(2, '0'); }
+
+    function crDate(value) {
+        if (!value) return '';
+        const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value + 'T00:00:00') : new Date(value);
+        if (isNaN(d)) return '';
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    function crDateTime(value) {
+        if (!value) return '';
+        const d = new Date(value);
+        if (isNaN(d)) return '';
+        return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+
+    function crToDateTimeInput(value) {
+        if (!value) return '';
+        const d = new Date(value);
+        if (isNaN(d)) return '';
+        return `${d.getFullYear()}-${crPad(d.getMonth() + 1)}-${crPad(d.getDate())}T${crPad(d.getHours())}:${crPad(d.getMinutes())}`;
+    }
+
+    function crTodayKey() {
+        const d = new Date();
+        return `${d.getFullYear()}-${crPad(d.getMonth() + 1)}-${crPad(d.getDate())}`;
+    }
+
+    function crOpenOverlay(innerHtml, options) {
+        const opts = options || {};
+        document.querySelectorAll('.cr-overlay').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay cr-overlay';
+        overlay.innerHTML = innerHtml;
+        document.body.appendChild(overlay);
+
+        function onKey(e) {
+            if (e.key === 'Escape' && !document.querySelector('.dialog-overlay')) close();
+        }
+        function close() {
+            document.removeEventListener('keydown', onKey);
+            overlay.remove();
+        }
+        document.addEventListener('keydown', onKey);
+        overlay.addEventListener('mousedown', (e) => {
+            if (e.target === overlay && (!opts.backdrop || opts.backdrop())) close();
+        });
+        overlay.querySelectorAll('[data-cr-close]').forEach(btn => btn.addEventListener('click', close));
+        return { overlay, close };
+    }
+
+    async function crRefreshCases() {
+        try {
+            await renderCasesTabView();
+            updateDashboardStats();
+            renderMyCasesTab();
+        } catch (err) {
+            console.warn('Could not refresh the cases view:', err);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Reports and history modal
+    // ---------------------------------------------------------------
+    window.openCaseReports = async function(caseId) {
+        const record = (window.__casesRegistry || {})[caseId];
+        if (!record) { showToast('Could not find that case. Please refresh the page.', 'error'); return; }
+
+        const isAdmin = globalRoleName === 'admin';
+        const canWrite = isAdmin || globalRoleName === 'lawyer';
+        const hasClient = !!record.client_id;
+        const clientLabel = record.clients?.client_name || (hasClient ? 'Linked client' : 'No client linked');
+        const state = { tab: 'reports', reports: [], timeline: null, formOpen: false, editingId: null };
+
+        const ui = crOpenOverlay(`
+            <div class="modal-content cr-modal" role="dialog" aria-modal="true" aria-labelledby="cr-title">
+                <div class="cr-head">
+                    <span class="cr-head-icon"><i class="fa-solid fa-file-lines"></i></span>
+                    <div class="cr-head-text">
+                        <h2 id="cr-title">${escapeHtml(record.title)}</h2>
+                        <p>${record.case_number ? '#' + escapeHtml(record.case_number) + ' &bull; ' : ''}Client: ${escapeHtml(clientLabel)}</p>
+                    </div>
+                    <button type="button" class="cr-close" data-cr-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="cr-tabs" role="tablist">
+                    <button type="button" class="cr-tab active" role="tab" data-tab="reports">Reports</button>
+                    <button type="button" class="cr-tab" role="tab" data-tab="history">History</button>
+                </div>
+                <div class="cr-body" id="cr-body"></div>
+            </div>`, { backdrop: () => !state.formOpen });
+
+        const overlay = ui.overlay;
+        const body = overlay.querySelector('#cr-body');
+
+        const byId = id => state.reports.find(r => r.id === id);
+
+        async function loadReports() {
+            const { data, error } = await supabaseClient
+                .from('case_reports')
+                .select('*, author:profiles!case_reports_created_by_fkey(full_name)')
+                .eq('case_id', caseId)
+                .order('report_date', { ascending: false })
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            state.reports = data || [];
+        }
+
+        function formIsDirty() {
+            if (!state.formOpen) return false;
+            const t = overlay.querySelector('#cr-f-title');
+            const s = overlay.querySelector('#cr-f-summary');
+            return !!((t && t.value.trim()) || (s && s.value.trim()));
+        }
+
+        // ---------- reports tab ----------
+        function renderReportsTab() {
+            body.innerHTML = `
+                <div class="cr-toolbar">
+                    <span class="cr-count" id="cr-count"></span>
+                    ${canWrite ? '<button type="button" class="cr-add-btn" data-act="add"><i class="fa-solid fa-plus"></i> Add report</button>' : ''}
+                </div>
+                <div id="cr-form-wrap"></div>
+                <div id="cr-list-wrap"></div>`;
+            renderList();
+            renderForm();
+        }
+
+        function renderList() {
+            const wrap = overlay.querySelector('#cr-list-wrap');
+            const count = overlay.querySelector('#cr-count');
+            if (!wrap) return;
+            const n = state.reports.length;
+            if (count) count.textContent = n === 1 ? '1 report' : `${n} reports`;
+
+            if (n === 0) {
+                wrap.innerHTML = `<div class="cr-empty"><i class="fa-regular fa-file-lines"></i><p>No reports yet.</p><small>${canWrite ? 'Use "Add report" to record what happened at a hearing or update.' : 'Reports added by the lawyers on this case will appear here.'}</small></div>`;
+                return;
+            }
+
+            const rows = state.reports.map(r => {
+                const shared = r.visible_to_client;
+                const authorName = r.author && r.author.full_name ? r.author.full_name : '';
+                const actions = [];
+                if (canWrite) {
+                    actions.push(`<button type="button" class="cr-icon-btn" data-act="edit" data-id="${r.id}" title="Edit report" aria-label="Edit report"><i class="fa-solid fa-pen"></i></button>`);
+                    if (hasClient) {
+                        actions.push(`<button type="button" class="cr-icon-btn ${shared ? 'is-on' : ''}" data-act="share" data-id="${r.id}" title="${shared ? 'Hide from client' : 'Share with client'}" aria-label="${shared ? 'Hide from client' : 'Share with client'}"><i class="fa-solid ${shared ? 'fa-eye-slash' : 'fa-eye'}"></i></button>`);
+                    }
+                }
+                if (isAdmin) {
+                    actions.push(`<button type="button" class="cr-icon-btn is-danger" data-act="delete" data-id="${r.id}" title="Delete report" aria-label="Delete report"><i class="fa-solid fa-trash"></i></button>`);
+                }
+                return `
+                    <tr class="cr-row">
+                        <td class="cr-nowrap">${escapeHtml(crDate(r.report_date))}</td>
+                        <td><span class="cr-pill">${escapeHtml(r.hearing_type || 'Report')}</span></td>
+                        <td class="cr-title-cell">
+                            <button type="button" class="cr-link" data-act="toggle" data-id="${r.id}" aria-expanded="false">${escapeHtml(r.title)} <i class="fa-solid fa-chevron-down"></i></button>
+                        </td>
+                        <td>${r.outcome ? escapeHtml(r.outcome) : '<span class="cr-muted">-</span>'}</td>
+                        <td class="cr-nowrap">${r.next_hearing_date ? escapeHtml(crDateTime(r.next_hearing_date)) : '<span class="cr-muted">-</span>'}</td>
+                        <td>${shared ? '<span class="cr-badge cr-badge-shared"><i class="fa-solid fa-eye"></i> Shared</span>' : '<span class="cr-badge cr-badge-private"><i class="fa-solid fa-lock"></i> Private</span>'}</td>
+                        <td class="cr-actions-cell"><div>${actions.join('')}</div></td>
+                    </tr>
+                    <tr class="cr-detail" id="cr-detail-${r.id}" hidden>
+                        <td colspan="7">
+                            <div class="cr-detail-grid">
+                                <div><div class="cr-detail-label">What happened</div><div class="cr-pre">${escapeHtml(r.summary)}</div></div>
+                                ${r.next_steps ? `<div><div class="cr-detail-label">Next steps</div><div class="cr-pre">${escapeHtml(r.next_steps)}</div></div>` : ''}
+                                <div class="cr-detail-meta">${authorName ? 'Added by Atty. ' + escapeHtml(authorName) + ' &bull; ' : ''}${escapeHtml(crDateTime(r.created_at))}</div>
+                            </div>
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            wrap.innerHTML = `
+                <div class="cr-table-wrap">
+                    <table class="cr-table">
+                        <thead><tr>
+                            <th>Date</th><th>Type</th><th>Report</th><th>Outcome</th><th>Next hearing</th><th>Client</th><th class="cr-actions-head"></th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
+        }
+
+        function renderForm() {
+            const wrap = overlay.querySelector('#cr-form-wrap');
+            if (!wrap) return;
+            if (!state.formOpen) { wrap.innerHTML = ''; return; }
+
+            const r = state.editingId ? (byId(state.editingId) || {}) : {};
+            const typeOptions = '<option value="">Select type</option>' + CR_HEARING_TYPES.map(t =>
+                `<option value="${escapeHtml(t)}"${r.hearing_type === t ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('');
+
+            wrap.innerHTML = `
+                <form class="cr-form" id="cr-form" novalidate>
+                    <div class="cr-form-title">${state.editingId ? 'Edit report' : 'New report'}</div>
+                    <div class="cr-row2">
+                        <label class="cr-field"><span>Date</span>
+                            <input type="date" id="cr-f-date" class="cr-input" value="${escapeHtml(r.report_date || crTodayKey())}"></label>
+                        <label class="cr-field"><span>Type</span>
+                            <select id="cr-f-type" class="cr-input">${typeOptions}</select></label>
+                    </div>
+                    <label class="cr-field"><span>Title</span>
+                        <input type="text" id="cr-f-title" class="cr-input" maxlength="150" placeholder="e.g., Pre-trial conference" value="${escapeHtml(r.title || '')}"></label>
+                    <label class="cr-field"><span>What happened</span>
+                        <textarea id="cr-f-summary" class="cr-input cr-textarea" rows="4" maxlength="5000" placeholder="Describe what happened in this hearing or update">${escapeHtml(r.summary || '')}</textarea></label>
+                    <label class="cr-field"><span>Outcome <em>(optional)</em></span>
+                        <input type="text" id="cr-f-outcome" class="cr-input" maxlength="300" placeholder="e.g., Reset to next month" value="${escapeHtml(r.outcome || '')}"></label>
+                    <div class="cr-row2">
+                        <label class="cr-field"><span>Next hearing <em>(optional)</em></span>
+                            <input type="datetime-local" id="cr-f-next" class="cr-input" value="${escapeHtml(crToDateTimeInput(r.next_hearing_date))}"></label>
+                        <label class="cr-field"><span>Next steps <em>(optional)</em></span>
+                            <input type="text" id="cr-f-steps" class="cr-input" maxlength="500" placeholder="e.g., Submit position paper" value="${escapeHtml(r.next_steps || '')}"></label>
+                    </div>
+                    <label class="cr-share${hasClient ? '' : ' is-disabled'}">
+                        <input type="checkbox" id="cr-f-share"${r.visible_to_client ? ' checked' : ''}${hasClient ? '' : ' disabled'}>
+                        <span><strong>Share with client</strong>
+                        <small>${hasClient ? escapeHtml(clientLabel) + ' will see this report in their portal.' : 'Link a client to this case first.'}</small></span>
+                    </label>
+                    <div class="cr-form-actions">
+                        <button type="button" class="cr-btn-ghost" data-act="cancel">Cancel</button>
+                        <button type="submit" class="cr-btn-primary" id="cr-save">${state.editingId ? 'Save changes' : 'Save report'}</button>
+                    </div>
+                </form>`;
+            const first = wrap.querySelector('#cr-f-title');
+            if (first) first.focus();
+        }
+
+        // ---------- history tab ----------
+        async function renderHistoryTab() {
+            body.innerHTML = '<div class="cr-loading">Loading history...</div>';
+            try {
+                if (!state.timeline) {
+                    const { data, error } = await supabaseClient
+                        .from('case_timeline')
+                        .select('*')
+                        .eq('case_id', caseId)
+                        .order('event_at', { ascending: false });
+                    if (error) throw error;
+                    state.timeline = data || [];
+                }
+            } catch (err) {
+                console.error('Error loading case history:', err);
+                body.innerHTML = '<div class="cr-empty"><i class="fa-solid fa-triangle-exclamation"></i><p>Could not load the history.</p><small>' + escapeHtml(err.message || '') + '</small></div>';
+                return;
+            }
+            if (state.tab !== 'history') return;
+
+            if (state.timeline.length === 0) {
+                body.innerHTML = '<div class="cr-empty"><i class="fa-regular fa-clock"></i><p>No history yet.</p></div>';
+                return;
+            }
+
+            const items = state.timeline.map(e => {
+                const isReport = e.source === 'report';
+                const icon = isReport ? 'fa-file-lines' : (CR_EVENT_ICONS[e.event_type] || 'fa-circle');
+                const when = isReport ? crDate(String(e.event_at).slice(0, 10)) : crDateTime(e.event_at);
+                let detail = '';
+                if (isReport) {
+                    const parts = [];
+                    if (e.event_type) parts.push(e.event_type);
+                    if (e.outcome) parts.push('Outcome: ' + e.outcome);
+                    if (e.next_hearing_date) parts.push('Next hearing: ' + crDateTime(e.next_hearing_date));
+                    detail = parts.join(' \u2022 ');
+                }
+                const badge = isReport
+                    ? (e.visible_to_client
+                        ? '<span class="cr-badge cr-badge-shared"><i class="fa-solid fa-eye"></i> Shared</span>'
+                        : '<span class="cr-badge cr-badge-private"><i class="fa-solid fa-lock"></i> Private</span>')
+                    : '';
+                return `
+                    <li class="cr-tl-item">
+                        <span class="cr-tl-dot${isReport ? ' is-report' : ''}"><i class="fa-solid ${icon}"></i></span>
+                        <div class="cr-tl-main">
+                            <div class="cr-tl-title">${escapeHtml(e.title)} ${badge}</div>
+                            ${detail ? `<div class="cr-tl-detail">${escapeHtml(detail)}</div>` : ''}
+                            <div class="cr-tl-date">${escapeHtml(when)}</div>
+                        </div>
+                    </li>`;
+            }).join('');
+            body.innerHTML = `<ol class="cr-timeline">${items}</ol>`;
+        }
+
+        // ---------- actions ----------
+        async function saveReport() {
+            const val = id => (overlay.querySelector('#' + id)?.value || '').trim();
+            const title = val('cr-f-title');
+            const summary = val('cr-f-summary');
+            const reportDate = val('cr-f-date') || crTodayKey();
+            if (!title || !summary) {
+                showToast('Please enter a title and describe what happened.', 'error');
+                (overlay.querySelector(!title ? '#cr-f-title' : '#cr-f-summary'))?.focus();
+                return;
+            }
+
+            const nextRaw = val('cr-f-next');
+            const nextDate = nextRaw ? new Date(nextRaw) : null;
+            const payload = {
+                report_date: reportDate,
+                hearing_type: val('cr-f-type') || null,
+                title: title,
+                summary: summary,
+                outcome: val('cr-f-outcome') || null,
+                next_hearing_date: nextDate && !isNaN(nextDate) ? nextDate.toISOString() : null,
+                next_steps: val('cr-f-steps') || null,
+                visible_to_client: hasClient && !!overlay.querySelector('#cr-f-share')?.checked
+            };
+
+            const saveBtn = overlay.querySelector('#cr-save');
+            const idle = saveBtn ? saveBtn.textContent : '';
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+            try {
+                let result;
+                if (state.editingId) {
+                    result = await supabaseClient.from('case_reports').update(payload).eq('id', state.editingId).select('id');
+                } else {
+                    result = await supabaseClient.from('case_reports').insert([Object.assign({ case_id: caseId }, payload)]).select('id');
+                }
+                if (result.error) throw result.error;
+                if (!result.data || result.data.length === 0) {
+                    throw new Error('The report was not saved. You may not have permission to edit it.');
+                }
+                showToast(payload.visible_to_client ? 'Report saved and shared with the client.' : 'Report saved.', 'success');
+                state.formOpen = false;
+                state.editingId = null;
+                state.timeline = null;
+                await loadReports();
+                renderForm();
+                renderList();
+            } catch (err) {
+                console.error('Error saving report:', err);
+                showToast('Could not save the report: ' + err.message, 'error');
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = idle; }
+            }
+        }
+
+        async function toggleShare(id) {
+            const r = byId(id);
+            if (!r || !hasClient) return;
+            const makeVisible = !r.visible_to_client;
+            if (makeVisible) {
+                const ok = await confirmDialog({
+                    title: 'Share with client',
+                    confirmLabel: 'Share',
+                    message: `Share "${r.title}" with ${clientLabel}? They will be able to read it in their portal.`
+                });
+                if (!ok) return;
+            }
+            const { data, error } = await supabaseClient
+                .from('case_reports').update({ visible_to_client: makeVisible }).eq('id', id).select('id');
+            if (error || !data || data.length === 0) {
+                showToast('Could not update sharing: ' + (error ? error.message : 'permission denied'), 'error');
+                return;
+            }
+            showToast(makeVisible ? 'Report shared with the client.' : 'Report hidden from the client.', 'success');
+            state.timeline = null;
+            await loadReports();
+            renderList();
+        }
+
+        async function deleteReport(id) {
+            const r = byId(id);
+            if (!r || !isAdmin) return;
+            const ok = await confirmDialog({
+                title: 'Delete report', confirmLabel: 'Delete', danger: true,
+                message: `Delete the report "${r.title}"? This cannot be undone.`
+            });
+            if (!ok) return;
+            const { data, error } = await supabaseClient.from('case_reports').delete().eq('id', id).select('id');
+            if (error || !data || data.length === 0) {
+                showToast('Could not delete the report: ' + (error ? error.message : 'permission denied'), 'error');
+                return;
+            }
+            showToast('Report deleted.', 'success');
+            state.timeline = null;
+            await loadReports();
+            renderList();
+        }
+
+        async function switchTab(tab) {
+            if (tab === state.tab) return;
+            if (formIsDirty()) {
+                const ok = await confirmDialog({
+                    title: 'Discard this report?', confirmLabel: 'Discard', danger: true,
+                    message: 'You have an unsaved report. Switching tabs will discard it.'
+                });
+                if (!ok) return;
+            }
+            state.formOpen = false;
+            state.editingId = null;
+            state.tab = tab;
+            overlay.querySelectorAll('.cr-tab').forEach(t => {
+                const on = t.dataset.tab === tab;
+                t.classList.toggle('active', on);
+                t.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            if (tab === 'reports') renderReportsTab(); else renderHistoryTab();
+        }
+
+        overlay.addEventListener('click', async (e) => {
+            const tabBtn = e.target.closest('.cr-tab');
+            if (tabBtn) { switchTab(tabBtn.dataset.tab); return; }
+
+            const el = e.target.closest('[data-act]');
+            if (!el) return;
+            const id = el.dataset.id;
+            switch (el.dataset.act) {
+                case 'add':
+                    state.formOpen = true; state.editingId = null; renderForm();
+                    break;
+                case 'edit':
+                    state.formOpen = true; state.editingId = id; renderForm();
+                    overlay.querySelector('#cr-form-wrap')?.scrollIntoView({ block: 'nearest' });
+                    break;
+                case 'cancel':
+                    if (formIsDirty() && !(await confirmDialog({ title: 'Discard this report?', confirmLabel: 'Discard', danger: true, message: 'Your changes will be lost.' }))) break;
+                    state.formOpen = false; state.editingId = null; renderForm();
+                    break;
+                case 'toggle': {
+                    const detail = overlay.querySelector('#cr-detail-' + id);
+                    if (detail) {
+                        detail.hidden = !detail.hidden;
+                        el.setAttribute('aria-expanded', detail.hidden ? 'false' : 'true');
+                        el.classList.toggle('is-open', !detail.hidden);
+                    }
+                    break;
+                }
+                case 'share': toggleShare(id); break;
+                case 'delete': deleteReport(id); break;
+                default: break;
+            }
+        });
+
+        overlay.addEventListener('submit', (e) => {
+            if (e.target && e.target.id === 'cr-form') {
+                e.preventDefault();
+                saveReport();
+            }
+        });
+
+        // initial load
+        body.innerHTML = '<div class="cr-loading">Loading reports...</div>';
+        try {
+            await loadReports();
+            renderReportsTab();
+        } catch (err) {
+            console.error('Error loading case reports:', err);
+            body.innerHTML = '<div class="cr-empty"><i class="fa-solid fa-triangle-exclamation"></i><p>Could not load the reports.</p><small>' + escapeHtml(err.message || '') + '</small></div>';
+        }
+    };
+
+    // ---------------------------------------------------------------
+    // "+" link a client to a case
+    // ---------------------------------------------------------------
+    window.openLinkClient = async function(caseId) {
+        const record = (window.__casesRegistry || {})[caseId];
+        if (!record) { showToast('Could not find that case. Please refresh the page.', 'error'); return; }
+        if (record.client_id && globalRoleName !== 'admin') {
+            showToast('A client is already linked to this case.', 'info');
+            return;
+        }
+
+        let selected = null;
+        let clients = [];
+
+        const ui = crOpenOverlay(`
+            <div class="modal-content cr-modal cr-modal-sm" role="dialog" aria-modal="true" aria-labelledby="cr-link-title">
+                <div class="cr-head">
+                    <span class="cr-head-icon"><i class="fa-solid fa-user-plus"></i></span>
+                    <div class="cr-head-text">
+                        <h2 id="cr-link-title">Link a client</h2>
+                        <p>${escapeHtml(record.title)}</p>
+                    </div>
+                    <button type="button" class="cr-close" data-cr-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="cr-body">
+                    <p class="cr-hint">Choose the client for this case. Once linked, only an admin can change it, and the case will appear in the client's portal.</p>
+                    <input type="search" id="cr-client-search" class="cr-input" placeholder="Search clients" autocomplete="off" aria-label="Search clients">
+                    <div class="cr-client-list" id="cr-client-list" role="radiogroup" aria-label="Clients"><div class="cr-loading">Loading clients...</div></div>
+                    <div class="cr-form-actions">
+                        <button type="button" class="cr-btn-ghost" data-cr-close>Cancel</button>
+                        <button type="button" class="cr-btn-primary" id="cr-link-confirm" disabled>Link client</button>
+                    </div>
+                </div>
+            </div>`);
+
+        const overlay = ui.overlay;
+        const listEl = overlay.querySelector('#cr-client-list');
+        const confirmBtn = overlay.querySelector('#cr-link-confirm');
+        const searchEl = overlay.querySelector('#cr-client-search');
+
+        function paint() {
+            const term = (searchEl.value || '').trim().toLowerCase();
+            const shown = clients.filter(c => !term || String(c.client_name || '').toLowerCase().includes(term));
+            if (clients.length === 0) {
+                listEl.innerHTML = '<div class="cr-empty"><p>No approved clients in the system yet.</p></div>';
+                return;
+            }
+            if (shown.length === 0) {
+                listEl.innerHTML = '<div class="cr-empty"><p>No clients match your search.</p></div>';
+                return;
+            }
+            listEl.innerHTML = shown.map(c => `
+                <button type="button" class="cr-client-opt${selected && selected.id === c.id ? ' is-selected' : ''}" role="radio" aria-checked="${selected && selected.id === c.id ? 'true' : 'false'}" data-id="${c.id}">
+                    <span class="cr-client-avatar">${escapeHtml(String(c.client_name || '?').trim().charAt(0).toUpperCase())}</span>
+                    <span class="cr-client-name">${escapeHtml(c.client_name || 'Unnamed client')}</span>
+                    <i class="fa-solid fa-circle-check"></i>
+                </button>`).join('');
+        }
+
+        searchEl.addEventListener('input', paint);
+        listEl.addEventListener('click', (e) => {
+            const opt = e.target.closest('.cr-client-opt');
+            if (!opt) return;
+            selected = clients.find(c => String(c.id) === opt.dataset.id) || null;
+            confirmBtn.disabled = !selected;
+            paint();
+        });
+
+        confirmBtn.addEventListener('click', async () => {
+            if (!selected) return;
+            const ok = await confirmDialog({
+                title: 'Link client',
+                confirmLabel: 'Link client',
+                message: `Link ${selected.client_name} to "${record.title}"? Once linked, only an admin can change the client, and this case will appear in the client's portal.`
+            });
+            if (!ok) return;
+
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Linking...';
+            const { error } = await supabaseClient.rpc('link_case_client', {
+                p_case_id: caseId,
+                p_client_id: Number(selected.id)
+            });
+            if (error) {
+                console.error('Error linking client:', error);
+                showToast('Could not link the client: ' + error.message, 'error');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Link client';
+                return;
+            }
+            showToast('Client linked. The case now appears in the client\'s portal.', 'success');
+            ui.close();
+            await crRefreshCases();
+        });
+
+        try {
+            const { data, error } = await supabaseClient.rpc('list_linkable_clients');
+            if (error) throw error;
+            clients = data || [];
+            paint();
+        } catch (err) {
+            console.error('Error loading clients:', err);
+            listEl.innerHTML = '<div class="cr-empty"><i class="fa-solid fa-triangle-exclamation"></i><p>Could not load clients.</p><small>' + escapeHtml(err.message || '') + '</small></div>';
+        }
+    };
 
     window.openCaseForm = openCaseForm;
     window.openCaseTeam = function(caseId) { openTeamModal('case', caseId); };

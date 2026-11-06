@@ -197,6 +197,85 @@
             .c-skel { animation: none; }
             .p-case, .c-send, .p-logout { transition: none; }
         }
+
+        /* ---------- dashboard, case overview and history ---------- */
+        .p-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0 20px; }
+        .p-stat {
+            display: flex; align-items: center; gap: 14px; min-width: 0;
+            background: var(--p-card); border: 1px solid var(--p-line); border-radius: 16px;
+            padding: 16px 18px; text-align: left; font: inherit; color: inherit;
+        }
+        button.p-stat { cursor: pointer; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+        button.p-stat:hover:not(:disabled) { border-color: #bfdbfe; box-shadow: 0 6px 18px -10px rgba(59,130,246,0.45); }
+        button.p-stat:disabled { cursor: default; }
+        .p-stat-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex: 0 0 auto; }
+        .p-stat-icon.blue { background: #dbeafe; color: #2563eb; }
+        .p-stat-icon.green { background: #dcfce7; color: #16a34a; }
+        .p-stat-icon.slate { background: #f1f5f9; color: #475569; }
+        .p-stat-icon.amber { background: #fef3c7; color: #d97706; }
+        .p-stat-body { min-width: 0; }
+        .p-stat-num { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; line-height: 1.2; }
+        .p-stat-num.sm { font-size: 15px; letter-spacing: 0; }
+        .p-stat-label { font-size: 12px; color: var(--p-muted); margin-top: 2px; overflow-wrap: anywhere; }
+
+        .c-tabs { display: flex; gap: 4px; padding: 0 14px; border-bottom: 1px solid var(--p-line); background: #fff; overflow-x: auto; }
+        .c-tab {
+            padding: 12px 14px; border: none; border-bottom: 2px solid transparent; background: transparent;
+            color: var(--p-muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+        }
+        .c-tab:hover { color: var(--p-text); }
+        .c-tab.active { color: var(--p-blue-dark); border-bottom-color: var(--p-blue-dark); }
+        .c-tab:focus-visible, button.p-stat:focus-visible, .o-link-btn:focus-visible, .h-more summary:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+        .c-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+        .c-scroll { flex: 1; overflow-y: auto; padding: 20px 22px; background: #f8fafc; display: flex; flex-direction: column; gap: 14px; }
+
+        .o-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .o-card { background: #fff; border: 1px solid var(--p-line); border-radius: 14px; padding: 16px 18px; min-width: 0; }
+        .o-label { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--p-muted); }
+        .o-big { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; overflow-wrap: anywhere; }
+        .o-big.muted { font-size: 17px; color: #94a3b8; }
+        .o-sub { margin-top: 4px; font-size: 13px; line-height: 1.5; color: var(--p-muted); overflow-wrap: anywhere; }
+        .o-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 13px; }
+        .o-facts dt { color: var(--p-muted); }
+        .o-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+        .o-update-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
+        .o-text { margin-top: 10px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .o-link-btn { margin-top: 12px; padding: 0; background: none; border: none; color: var(--p-blue-dark); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .o-link-btn:hover { text-decoration: underline; }
+        .pill-soft { display: inline-block; padding: 3px 10px; border-radius: 99px; background: #eff6ff; color: #2563eb; font-size: 11px; font-weight: 700; white-space: nowrap; }
+
+        .h-timeline { position: relative; }
+        .h-timeline::before { content: ""; position: absolute; left: 16px; top: 8px; bottom: 8px; width: 2px; background: var(--p-line); }
+        .h-item { position: relative; display: flex; gap: 14px; padding-bottom: 16px; }
+        .h-item:last-child { padding-bottom: 0; }
+        .h-dot {
+            position: relative; z-index: 1; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            background: #fff; border: 2px solid #cbd5e1; color: #64748b; font-size: 12px;
+        }
+        .h-dot.report { border-color: var(--p-blue); color: var(--p-blue); }
+        .h-card { flex: 1; min-width: 0; background: #fff; border: 1px solid var(--p-line); border-radius: 14px; padding: 14px 16px; }
+        .h-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .h-title { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+        .h-date { margin-top: 3px; font-size: 12px; color: #94a3b8; }
+        .h-line { flex: 1; min-width: 0; padding-top: 7px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+        .h-line .h-title { font-weight: 600; }
+        .h-line .h-date { margin-top: 0; }
+        .h-meta { margin-top: 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+        .h-more { margin-top: 10px; }
+        .h-more summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--p-blue-dark); }
+        .h-label { margin: 10px 0 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--p-muted); }
+        .h-pre { font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .h-note { padding: 10px 14px; border-radius: 12px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 13px; margin-bottom: 14px; }
+
+        @media (max-width: 900px) {
+            .p-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .o-grid { grid-template-columns: 1fr; }
+            .c-scroll { overflow: visible; }
+        }
+        @media (max-width: 480px) {
+            .p-stats { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body class="portal-body">
@@ -233,6 +312,11 @@
             userId: null,
             cases: [],
             activeId: null,
+            tab: 'overview',
+            updates: [],
+            updatesSig: '',
+            updatesFailed: false,
+            draft: '',
             items: [],
             signature: '',
             pollTimer: null,
@@ -409,6 +493,7 @@
                     <h1>Welcome back, ${escapeHtml(firstName)}</h1>
 
                 </div>
+                <div class="p-stats" id="p-stats" aria-label="Your cases at a glance"></div>
                 <div class="p-shell">
                     <aside class="p-cases" aria-label="Your cases">
                         <h2 class="p-section-title">Your cases <span class="p-count">${state.cases.length}</span></h2>
@@ -416,6 +501,13 @@
                     </aside>
                     <section class="p-convo" id="convo" aria-label="Conversation"></section>
                 </div>`;
+
+            await loadUpdates();
+            renderStats();
+            document.getElementById('p-stats').addEventListener('click', (e) => {
+                const card = e.target.closest('[data-case-id]');
+                if (card) openCase(card.getAttribute('data-case-id'));
+            });
 
             document.getElementById('case-list').addEventListener('click', (e) => {
                 const card = e.target.closest('[data-case-id]');
@@ -477,20 +569,41 @@
                         <div><strong>${lawyer}</strong><span>${c.lead_lawyer ? 'Your lead lawyer' : 'Assignment pending'}</span></div>
                     </div>
                 </div>
-                <div class="c-thread" id="c-thread" role="log" aria-live="polite" aria-label="Messages" tabindex="0">
-                    <div class="c-skel"></div><div class="c-skel right"></div><div class="c-skel"></div>
+                <div class="c-tabs" role="tablist" aria-label="Case sections">
+                    <button type="button" class="c-tab active" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+                    <button type="button" class="c-tab" role="tab" data-tab="history" aria-selected="false">History</button>
+                    <button type="button" class="c-tab" role="tab" data-tab="messages" aria-selected="false">Messages</button>
                 </div>
-                <div id="c-footer"></div>`;
+                <div class="c-pane" id="c-pane"></div>`;
 
-            loadThread(caseId, false);
+            convo.querySelector('.c-tabs').addEventListener('click', (e) => {
+                const tabBtn = e.target.closest('.c-tab');
+                if (tabBtn && tabBtn.dataset.tab !== state.tab) showTab(tabBtn.dataset.tab);
+            });
+            convo.querySelector('#c-pane').addEventListener('click', (e) => {
+                const go = e.target.closest('[data-goto]');
+                if (go) showTab(go.dataset.goto);
+            });
+
+            state.tab = 'overview';
+            state.draft = '';
+            showTab('overview');
             startPolling();
         }
 
         function startPolling() {
             clearInterval(state.pollTimer);
-            state.pollTimer = setInterval(() => {
+            state.pollTimer = setInterval(async () => {
                 if (document.hidden || !state.activeId) return;
-                loadThread(state.activeId, true);
+                if (state.tab === 'messages') {
+                    loadThread(state.activeId, true);
+                    return;
+                }
+                const changed = await loadUpdates();
+                if (!changed) return;
+                renderStats();
+                if (state.tab === 'overview') renderOverview();
+                else if (state.tab === 'history') renderHistory();
             }, POLL_MS);
         }
 
@@ -504,7 +617,7 @@
                 .eq('is_sent', true)
                 .order('sent_at', { ascending: true });
 
-            if (token !== state.loadToken || String(caseId) !== String(state.activeId)) return;
+            if (token !== state.loadToken || String(caseId) !== String(state.activeId) || state.tab !== 'messages') return;
 
             if (error) {
                 if (!silent) renderThreadError(caseId);
@@ -632,6 +745,8 @@
                 count.className = left <= 50 ? 'warn' : '';
             };
 
+            if (state.draft) input.value = state.draft;
+
             input.addEventListener('input', sync);
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -676,11 +791,242 @@
                     renderThread(true);
                 }
                 input.value = '';
+                state.draft = '';
                 sync();
                 input.focus();
             });
 
             sync();
+        }
+
+
+        const EVENT_ICONS = {
+            case_opened: 'fa-folder-open',
+            stage_changed: 'fa-flag',
+            case_closed: 'fa-lock',
+            case_reopened: 'fa-rotate-left',
+            client_linked: 'fa-user-plus'
+        };
+
+        function fmtDate(value) {
+            const d = new Date(value);
+            if (isNaN(d)) return '';
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function fmtDateTime(value) {
+            const d = new Date(value);
+            if (isNaN(d)) return '';
+            return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+        }
+
+     
+        function fmtReportDay(value) {
+            const s = String(value || '').slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+            return new Date(s + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        async function loadUpdates() {
+            const { data, error } = await supabaseClient.rpc('portal_my_updates');
+            if (error) {
+                console.warn('Could not load case updates:', error.message);
+                const changed = !state.updatesFailed;
+                state.updatesFailed = true;
+                state.updates = [];
+                state.updatesSig = '';
+                return changed;
+            }
+            const next = data || [];
+            const sig = JSON.stringify(next);
+            const changed = state.updatesFailed || sig !== state.updatesSig;
+            state.updatesFailed = false;
+            state.updates = next;
+            state.updatesSig = sig;
+            return changed;
+        }
+
+        function updatesFor(caseId) {
+            return state.updates.filter(u => String(u.case_id) === String(caseId));
+        }
+
+        function nextHearingOf(reports) {
+            const now = Date.now();
+            return reports
+                .filter(r => r.next_hearing_date && new Date(r.next_hearing_date).getTime() > now)
+                .sort((a, b) => new Date(a.next_hearing_date) - new Date(b.next_hearing_date))[0] || null;
+        }
+
+        function renderStats() {
+            const el = document.getElementById('p-stats');
+            if (!el) return;
+            const active = state.cases.filter(c => c.status !== 'closed');
+            const closedCount = state.cases.length - active.length;
+            const activeIds = new Set(active.map(c => String(c.id)));
+            const reports = state.updates.filter(u => u.source === 'report');
+            const upcoming = nextHearingOf(reports.filter(r => activeIds.has(String(r.case_id))));
+            const upCase = upcoming ? state.cases.find(c => String(c.id) === String(upcoming.case_id)) : null;
+            const dash = state.updatesFailed;
+
+            el.innerHTML = `
+                <div class="p-stat">
+                    <span class="p-stat-icon blue" aria-hidden="true"><i class="fa-solid fa-briefcase"></i></span>
+                    <div class="p-stat-body"><div class="p-stat-num">${active.length}</div><div class="p-stat-label">Active cases</div></div>
+                </div>
+                <div class="p-stat">
+                    <span class="p-stat-icon slate" aria-hidden="true"><i class="fa-solid fa-lock"></i></span>
+                    <div class="p-stat-body"><div class="p-stat-num">${closedCount}</div><div class="p-stat-label">Closed cases</div></div>
+                </div>
+                <button type="button" class="p-stat" ${upCase ? `data-case-id="${escapeHtml(upCase.id)}"` : 'disabled'}>
+                    <span class="p-stat-icon amber" aria-hidden="true"><i class="fa-solid fa-calendar-check"></i></span>
+                    <div class="p-stat-body">
+                        <div class="p-stat-num sm">${upcoming ? escapeHtml(fmtDateTime(upcoming.next_hearing_date)) : (dash ? '-' : 'None scheduled')}</div>
+                        <div class="p-stat-label">Next hearing${upCase ? ' &bull; ' + escapeHtml(upCase.title) : ''}</div>
+                    </div>
+                </button>
+                <div class="p-stat">
+                    <span class="p-stat-icon green" aria-hidden="true"><i class="fa-solid fa-file-lines"></i></span>
+                    <div class="p-stat-body"><div class="p-stat-num">${dash ? '-' : reports.length}</div><div class="p-stat-label">Reports shared with you</div></div>
+                </div>`;
+        }
+
+        function renderOverview() {
+            const pane = document.getElementById('c-pane');
+            const c = activeCase();
+            if (!pane || !c) return;
+
+            const status = c.status === 'closed' ? 'closed' : 'active';
+            const reports = updatesFor(c.id).filter(u => u.source === 'report')
+                .sort((a, b) => String(b.event_at).localeCompare(String(a.event_at)));
+            const latest = reports[0] || null;
+            const next = status === 'closed' ? null : nextHearingOf(reports);
+
+            const facts = [
+                ['Status', `<span class="pill ${status}">${status}</span>`],
+                ['Stage', c.case_stage ? escapeHtml(c.case_stage) : '-'],
+                ['Case type', escapeHtml(c.case_type || 'General')],
+                ['Lead lawyer', c.lead_lawyer ? 'Atty. ' + escapeHtml(c.lead_lawyer) : 'Not assigned yet'],
+                c.case_number ? ['Case number', '#' + escapeHtml(c.case_number)] : null,
+                c.court_branch ? ['Court', escapeHtml(c.court_branch)] : null,
+                (c.date_filed || c.created_at) ? ['Date filed', escapeHtml(fmtDate(c.date_filed || c.created_at))] : null
+            ].filter(Boolean).map(f => `<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join('');
+
+            let latestHtml;
+            if (state.updatesFailed) {
+                latestHtml = '<div class="o-sub">Case updates are not available right now. Please try again later.</div>';
+            } else if (!latest) {
+                latestHtml = '<div class="o-sub">No reports have been shared with you yet. When your lawyer shares a hearing report, it will appear here.</div>';
+            } else {
+                const text = String(latest.detail || '');
+                const snippet = text.length > 280 ? text.slice(0, 280).trimEnd() + '\u2026' : text;
+                latestHtml = `
+                    <div class="o-update-title">${escapeHtml(latest.title)} <span class="pill-soft">${escapeHtml(latest.event_type || 'Report')}</span></div>
+                    <div class="o-sub">${escapeHtml(fmtReportDay(latest.event_at))}${latest.outcome ? ' &bull; Outcome: ' + escapeHtml(latest.outcome) : ''}</div>
+                    ${snippet ? `<div class="o-text">${escapeHtml(snippet)}</div>` : ''}
+                    <button type="button" class="o-link-btn" data-goto="history">See full history</button>`;
+            }
+
+            pane.innerHTML = `
+                <div class="c-scroll">
+                    <div class="o-grid">
+                        <section class="o-card">
+                            <div class="o-label"><i class="fa-solid fa-calendar-check"></i> Next hearing</div>
+                            ${next
+                                ? `<div class="o-big">${escapeHtml(fmtDateTime(next.next_hearing_date))}</div><div class="o-sub">${escapeHtml(next.title)}</div>`
+                                : `<div class="o-big muted">None scheduled</div><div class="o-sub">${status === 'closed' ? 'This case is closed.' : 'Your lawyer will share the next hearing date here once it is set.'}</div>`}
+                        </section>
+                        <section class="o-card">
+                            <div class="o-label"><i class="fa-solid fa-circle-info"></i> Case details</div>
+                            <dl class="o-facts">${facts}</dl>
+                        </section>
+                    </div>
+                    <section class="o-card">
+                        <div class="o-label"><i class="fa-solid fa-file-lines"></i> Latest update</div>
+                        ${latestHtml}
+                    </section>
+                </div>`;
+        }
+
+        function renderHistory() {
+            const pane = document.getElementById('c-pane');
+            const c = activeCase();
+            if (!pane || !c) return;
+
+            if (state.updatesFailed) {
+                pane.innerHTML = `<div class="c-scroll"><div class="c-state error"><i class="fa-solid fa-triangle-exclamation"></i><strong>We couldn't load your case history</strong><span>Please try again later.</span></div></div>`;
+                return;
+            }
+
+            const items = updatesFor(c.id).slice().sort((a, b) => new Date(b.event_at) - new Date(a.event_at));
+            const hasReports = items.some(i => i.source === 'report');
+
+            if (items.length === 0) {
+                pane.innerHTML = `<div class="c-scroll"><div class="c-empty"><i class="fa-regular fa-clock"></i><strong>No history yet</strong><span>Updates about your case will appear here.</span></div></div>`;
+                return;
+            }
+
+            const html = items.map(i => {
+                if (i.source === 'report') {
+                    return `
+                        <div class="h-item">
+                            <span class="h-dot report" aria-hidden="true"><i class="fa-solid fa-file-lines"></i></span>
+                            <div class="h-card">
+                                <div class="h-card-top"><span class="h-title">${escapeHtml(i.title)}</span><span class="pill-soft">${escapeHtml(i.event_type || 'Report')}</span></div>
+                                <div class="h-date">${escapeHtml(fmtReportDay(i.event_at))}</div>
+                                ${i.outcome ? `<div class="h-meta"><strong>Outcome:</strong> ${escapeHtml(i.outcome)}</div>` : ''}
+                                ${i.next_hearing_date ? `<div class="h-meta"><strong>Next hearing:</strong> ${escapeHtml(fmtDateTime(i.next_hearing_date))}</div>` : ''}
+                                <details class="h-more">
+                                    <summary>Read details</summary>
+                                    <div class="h-label">What happened</div>
+                                    <div class="h-pre">${escapeHtml(i.detail || '')}</div>
+                                    ${i.next_steps ? `<div class="h-label">Next steps</div><div class="h-pre">${escapeHtml(i.next_steps)}</div>` : ''}
+                                </details>
+                            </div>
+                        </div>`;
+                }
+                return `
+                    <div class="h-item">
+                        <span class="h-dot" aria-hidden="true"><i class="fa-solid ${EVENT_ICONS[i.event_type] || 'fa-circle'}"></i></span>
+                        <div class="h-line"><span class="h-title">${escapeHtml(i.title)}</span><span class="h-date">${escapeHtml(fmtDateTime(i.event_at))}</span></div>
+                    </div>`;
+            }).join('');
+
+            pane.innerHTML = `
+                <div class="c-scroll">
+                    ${hasReports ? '' : '<div class="h-note">Your lawyer hasn\'t shared any hearing reports yet. They will appear here when they do.</div>'}
+                    <div class="h-timeline">${html}</div>
+                </div>`;
+        }
+
+        function renderMessagesTab() {
+            const pane = document.getElementById('c-pane');
+            if (!pane) return;
+            pane.innerHTML = `
+                <div class="c-thread" id="c-thread" role="log" aria-live="polite" aria-label="Messages" tabindex="0">
+                    <div class="c-skel"></div><div class="c-skel right"></div><div class="c-skel"></div>
+                </div>
+                <div id="c-footer"></div>`;
+            loadThread(state.activeId, false);
+        }
+
+        function showTab(tab) {
+            const pane = document.getElementById('c-pane');
+            if (!pane) return;
+            if (state.tab === 'messages' && tab !== 'messages') {
+                const draftInput = document.getElementById('c-input');
+                if (draftInput) state.draft = draftInput.value;
+            }
+            state.tab = tab;
+            state.loadToken++;
+            state.signature = '';
+            document.querySelectorAll('.c-tab').forEach(t => {
+                const on = t.dataset.tab === tab;
+                t.classList.toggle('active', on);
+                t.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            if (tab === 'overview') renderOverview();
+            else if (tab === 'history') renderHistory();
+            else renderMessagesTab();
         }
 
         document.getElementById('portal-logout-btn').addEventListener('click', async () => {
