@@ -1303,7 +1303,7 @@ const row = Array.isArray(data) ? data[0] : data;
         };
         Object.entries(cardMap).forEach(([id, type]) => {
             const card = document.getElementById(id);
-            if (card) card.addEventListener('click', () => openStatDetails(type));
+            if (card) card.addEventListener('click', () => (type === 'cases' ? window.openCasesDashboard() : openStatDetails(type)));
         });
     }
 
@@ -6211,9 +6211,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         });
     }
 
-    // ====================================================================
-    // Case reports, case history and client linking
-    // ====================================================================
     const CR_HEARING_TYPES = ['Hearing', 'Pre-Trial', 'Mediation/JDR', 'Filing', 'Conference', 'Decision', 'Other'];
     const CR_EVENT_ICONS = {
         case_opened: 'fa-folder-open',
@@ -6246,21 +6243,23 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         return `${d.getFullYear()}-${crPad(d.getMonth() + 1)}-${crPad(d.getDate())}T${crPad(d.getHours())}:${crPad(d.getMinutes())}`;
     }
 
-    function crTodayKey() {
-        const d = new Date();
-        return `${d.getFullYear()}-${crPad(d.getMonth() + 1)}-${crPad(d.getDate())}`;
+    function crManilaToday() {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     }
 
     function crOpenOverlay(innerHtml, options) {
         const opts = options || {};
-        document.querySelectorAll('.cr-overlay').forEach(el => el.remove());
+        const cls = opts.cls || 'cr-overlay';
+        document.querySelectorAll('.' + cls).forEach(el => el.remove());
         const overlay = document.createElement('div');
-        overlay.className = 'modal-overlay cr-overlay';
+        overlay.className = 'modal-overlay ' + cls;
         overlay.innerHTML = innerHtml;
         document.body.appendChild(overlay);
 
         function onKey(e) {
-            if (e.key === 'Escape' && !document.querySelector('.dialog-overlay')) close();
+            if (e.key !== 'Escape' || document.querySelector('.dialog-overlay')) return;
+            if (cls !== 'cr-overlay' && document.querySelector('.cr-overlay')) return;
+            close();
         }
         function close() {
             document.removeEventListener('keydown', onKey);
@@ -6284,10 +6283,78 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         }
     }
 
-    // ---------------------------------------------------------------
-    // Reports and history modal
-    // ---------------------------------------------------------------
-    window.openCaseReports = async function(caseId) {
+    async function crSyncHearingEvent(record, reportId, nextIso) {
+        const { data: existing, error: findErr } = await supabaseClient
+            .from('calendar_events').select('id, assigned_to').eq('report_id', reportId).maybeSingle();
+        if (findErr) throw findErr;
+
+        if (!nextIso) {
+            if (!existing) return { action: 'none' };
+            const { data: gone, error: delErr } = await supabaseClient
+                .from('calendar_events').delete().eq('id', existing.id).select('id');
+            if (delErr) throw delErr;
+            return { action: (gone && gone.length) ? 'removed' : 'blocked' };
+        }
+
+        const start = new Date(nextIso);
+        const fields = {
+            title: 'Hearing: ' + record.title,
+            start_date: start.toISOString(),
+            end_date: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+            location: record.court_branch || null,
+            priority: 'high'
+        };
+
+        if (existing) {
+            const { data: upd, error: updErr } = await supabaseClient
+                .from('calendar_events').update(fields).eq('id', existing.id).select('id');
+            if (updErr) throw updErr;
+            if (!upd || upd.length === 0) return { action: 'blocked' };
+            return { action: 'updated', assignedTo: existing.assigned_to };
+        }
+
+        const assignedTo = globalRoleName === 'lawyer'
+            ? currentUser.id
+            : (getLeadLawyerId(record) || currentUser.id);
+        const row = Object.assign({
+            is_general: false,
+            assigned_to: assignedTo,
+            case_id: record.id,
+            report_id: reportId
+        }, fields);
+        if (record.client_id) row.client_id = record.client_id;
+
+        const { error: insErr } = await supabaseClient.from('calendar_events').insert([row]);
+        if (insErr) {
+            if (insErr.code === '23505') return { action: 'blocked' };
+            throw insErr;
+        }
+        return { action: 'created', assignedTo };
+    }
+
+    async function crHearingClash(assignedTo, startIso, reportId) {
+        if (!assignedTo || !startIso) return null;
+        const start = new Date(startIso).getTime();
+        const { data, error } = await supabaseClient
+            .from('calendar_events')
+            .select('id, title, start_date, report_id')
+            .eq('assigned_to', assignedTo)
+            .gte('start_date', new Date(start - 59 * 60 * 1000).toISOString())
+            .lte('start_date', new Date(start + 59 * 60 * 1000).toISOString());
+        if (error || !data) return null;
+        return data.find(e => e.report_id !== reportId) || null;
+    }
+
+    function crRefreshCalendar() {
+        [typeof generateCalendarGrid === 'function' ? generateCalendarGrid : null,
+         typeof renderResourcesWidget === 'function' ? renderResourcesWidget : null,
+         typeof updateDashboardStats === 'function' ? updateDashboardStats : null].forEach(fn => {
+            if (!fn) return;
+            try { Promise.resolve(fn()).catch(() => {}); } catch (e) {}
+        });
+    }
+
+    window.openCaseReports = async function(caseId, initialTab) {
         const record = (window.__casesRegistry || {})[caseId];
         if (!record) { showToast('Could not find that case. Please refresh the page.', 'error'); return; }
 
@@ -6337,7 +6404,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             return !!((t && t.value.trim()) || (s && s.value.trim()));
         }
 
-        // ---------- reports tab ----------
         function renderReportsTab() {
             body.innerHTML = `
                 <div class="cr-toolbar">
@@ -6383,7 +6449,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                             <button type="button" class="cr-link" data-act="toggle" data-id="${r.id}" aria-expanded="false">${escapeHtml(r.title)} <i class="fa-solid fa-chevron-down"></i></button>
                         </td>
                         <td>${r.outcome ? escapeHtml(r.outcome) : '<span class="cr-muted">-</span>'}</td>
-                        <td class="cr-nowrap">${r.next_hearing_date ? escapeHtml(crDateTime(r.next_hearing_date)) : '<span class="cr-muted">-</span>'}</td>
+                        <td class="cr-nowrap">${r.next_hearing_date ? '<i class="fa-solid fa-calendar-check cr-cal-ico" title="On the calendar"></i> ' + escapeHtml(crDateTime(r.next_hearing_date)) : '<span class="cr-muted">-</span>'}</td>
                         <td>${shared ? '<span class="cr-badge cr-badge-shared"><i class="fa-solid fa-eye"></i> Shared</span>' : '<span class="cr-badge cr-badge-private"><i class="fa-solid fa-lock"></i> Private</span>'}</td>
                         <td class="cr-actions-cell"><div>${actions.join('')}</div></td>
                     </tr>
@@ -6423,7 +6489,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     <div class="cr-form-title">${state.editingId ? 'Edit report' : 'New report'}</div>
                     <div class="cr-row2">
                         <label class="cr-field"><span>Date</span>
-                            <input type="date" id="cr-f-date" class="cr-input" value="${escapeHtml(r.report_date || crTodayKey())}"></label>
+                            <span class="cr-locked">
+                                <input type="text" id="cr-f-date" class="cr-input cr-input-locked" value="${escapeHtml(crDate(r.report_date || crManilaToday()))}" readonly aria-readonly="true" tabindex="-1" title="The report date is set automatically and cannot be changed">
+                                <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                            </span></label>
                         <label class="cr-field"><span>Type</span>
                             <select id="cr-f-type" class="cr-input">${typeOptions}</select></label>
                     </div>
@@ -6439,6 +6508,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         <label class="cr-field"><span>Next steps <em>(optional)</em></span>
                             <input type="text" id="cr-f-steps" class="cr-input" maxlength="500" placeholder="e.g., Submit position paper" value="${escapeHtml(r.next_steps || '')}"></label>
                     </div>
+                    <div class="cr-help"><i class="fa-regular fa-calendar-check" aria-hidden="true"></i><span>A next hearing is added to the Calendar automatically.</span></div>
                     <label class="cr-share${hasClient ? '' : ' is-disabled'}">
                         <input type="checkbox" id="cr-f-share"${r.visible_to_client ? ' checked' : ''}${hasClient ? '' : ' disabled'}>
                         <span><strong>Share with client</strong>
@@ -6453,7 +6523,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             if (first) first.focus();
         }
 
-        // ---------- history tab ----------
         async function renderHistoryTab() {
             body.innerHTML = '<div class="cr-loading">Loading history...</div>';
             try {
@@ -6508,12 +6577,10 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             body.innerHTML = `<ol class="cr-timeline">${items}</ol>`;
         }
 
-        // ---------- actions ----------
         async function saveReport() {
             const val = id => (overlay.querySelector('#' + id)?.value || '').trim();
             const title = val('cr-f-title');
             const summary = val('cr-f-summary');
-            const reportDate = val('cr-f-date') || crTodayKey();
             if (!title || !summary) {
                 showToast('Please enter a title and describe what happened.', 'error');
                 (overlay.querySelector(!title ? '#cr-f-title' : '#cr-f-summary'))?.focus();
@@ -6523,7 +6590,6 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             const nextRaw = val('cr-f-next');
             const nextDate = nextRaw ? new Date(nextRaw) : null;
             const payload = {
-                report_date: reportDate,
                 hearing_type: val('cr-f-type') || null,
                 title: title,
                 summary: summary,
@@ -6547,7 +6613,29 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 if (!result.data || result.data.length === 0) {
                     throw new Error('The report was not saved. You may not have permission to edit it.');
                 }
-                showToast(payload.visible_to_client ? 'Report saved and shared with the client.' : 'Report saved.', 'success');
+                const savedId = result.data[0].id;
+                let note = '';
+                let syncFailed = false;
+                try {
+                    const sync = await crSyncHearingEvent(record, savedId, payload.next_hearing_date);
+                    if (sync.action === 'created') note = ' The next hearing was added to the calendar.';
+                    else if (sync.action === 'updated') note = ' The calendar hearing was updated.';
+                    else if (sync.action === 'removed') note = ' The hearing was removed from the calendar.';
+                    else if (sync.action === 'blocked') note = ' The calendar hearing belongs to another lawyer, so it was not changed.';
+                    if (sync.action === 'created' || sync.action === 'updated') {
+                        const clash = await crHearingClash(sync.assignedTo, payload.next_hearing_date, savedId);
+                        if (clash) note += ' Heads up: "' + clash.title + '" is also scheduled around that time.';
+                    }
+                    crRefreshCalendar();
+                } catch (syncErr) {
+                    console.error('Error adding the hearing to the calendar:', syncErr);
+                    note = ' The hearing could not be added to the calendar: ' + syncErr.message;
+                    syncFailed = true;
+                }
+                showToast(
+                    (payload.visible_to_client ? 'Report saved and shared with the client.' : 'Report saved.') + note,
+                    syncFailed ? 'error' : 'success'
+                );
                 state.formOpen = false;
                 state.editingId = null;
                 state.timeline = null;
@@ -6665,20 +6753,17 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             }
         });
 
-        // initial load
         body.innerHTML = '<div class="cr-loading">Loading reports...</div>';
         try {
             await loadReports();
             renderReportsTab();
+            if (initialTab === 'history') await switchTab('history');
         } catch (err) {
             console.error('Error loading case reports:', err);
             body.innerHTML = '<div class="cr-empty"><i class="fa-solid fa-triangle-exclamation"></i><p>Could not load the reports.</p><small>' + escapeHtml(err.message || '') + '</small></div>';
         }
     };
 
-    // ---------------------------------------------------------------
-    // "+" link a client to a case
-    // ---------------------------------------------------------------
     window.openLinkClient = async function(caseId) {
         const record = (window.__casesRegistry || {})[caseId];
         if (!record) { showToast('Could not find that case. Please refresh the page.', 'error'); return; }
@@ -6779,6 +6864,259 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         } catch (err) {
             console.error('Error loading clients:', err);
             listEl.innerHTML = '<div class="cr-empty"><i class="fa-solid fa-triangle-exclamation"></i><p>Could not load clients.</p><small>' + escapeHtml(err.message || '') + '</small></div>';
+        }
+    };
+
+    const CD_STAGES = ['For Filing', 'Filed', 'Pre-Trial', 'Mediation/JDR', 'Trial - Plaintiff', 'Trial - Prosecution', 'Trial - Defense', 'Demurrer', 'For Decision', 'Appeal'];
+    const CD_TYPES = ['Civil', 'Criminal', 'Labor', 'Administrative'];
+
+    window.openCasesDashboard = async function() {
+        if (!currentUser) return;
+        const isLawyer = globalUserRole === 'lawyer';
+        const state = { tab: 'dashboard', cases: [], upcoming: [], activity: [], closedAt: {}, filter: 'all', search: '', partial: false };
+
+        const ui = crOpenOverlay(`
+            <div class="modal-content cr-modal cr-modal-lg" role="dialog" aria-modal="true" aria-labelledby="cd-title">
+                <div class="cr-head">
+                    <span class="cr-head-icon"><i class="fa-solid fa-briefcase"></i></span>
+                    <div class="cr-head-text">
+                        <h2 id="cd-title">Cases</h2>
+                        <p>${isLawyer ? 'Your cases' : 'All cases in the firm'}</p>
+                    </div>
+                    <button type="button" class="cr-close" data-cr-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="cr-tabs" role="tablist">
+                    <button type="button" class="cr-tab active" role="tab" data-tab="dashboard" aria-selected="true">Dashboard</button>
+                    <button type="button" class="cr-tab" role="tab" data-tab="history" aria-selected="false">History of cases</button>
+                </div>
+                <div class="cr-body" id="cd-body"><div class="cr-loading">Loading cases...</div></div>
+            </div>`, { cls: 'cr-dash-overlay' });
+
+        const overlay = ui.overlay;
+        const body = overlay.querySelector('#cd-body');
+
+        const isClosed = c => c.status === 'closed';
+        const clientOf = c => (c.clients && c.clients.client_name) || (c.client_id ? 'Linked client' : 'No client');
+        const filedOf = c => c.date_filed || c.created_at;
+        const closedOn = c => c.closed_at || state.closedAt[c.id] || '';
+        const caseById = id => state.cases.find(x => x.id === id);
+        const caseTitleById = id => { const c = caseById(id); return c ? c.title : 'Case'; };
+
+        async function load() {
+            let query = supabaseClient
+                .from('cases')
+                .select(casesSelect('*, clients(id, client_name, client_email, client_phone)', isLawyer))
+                .order('created_at', { ascending: false });
+            if (isLawyer) query = filterMyCases(query);
+            const { data, error } = await query;
+            if (error) throw error;
+
+            state.cases = data || [];
+            window.__casesRegistry = window.__casesRegistry || {};
+            state.cases.forEach(c => { window.__casesRegistry[c.id] = c; });
+
+            const [rep, tl, closed] = await Promise.all([
+                supabaseClient.from('case_reports')
+                    .select('id, case_id, title, hearing_type, next_hearing_date')
+                    .gte('next_hearing_date', new Date().toISOString())
+                    .order('next_hearing_date', { ascending: true })
+                    .limit(50),
+                supabaseClient.from('case_timeline')
+                    .select('*')
+                    .order('event_at', { ascending: false })
+                    .limit(10),
+                supabaseClient.from('case_history')
+                    .select('case_id, created_at')
+                    .eq('event_type', 'case_closed')
+                    .order('created_at', { ascending: false })
+            ]);
+
+            state.partial = !!(rep.error || tl.error || closed.error);
+            const activeIds = new Set(state.cases.filter(c => !isClosed(c)).map(c => c.id));
+            state.upcoming = (rep.data || []).filter(r => activeIds.has(r.case_id));
+            state.activity = tl.data || [];
+            state.closedAt = {};
+            (closed.data || []).forEach(row => { if (!state.closedAt[row.case_id]) state.closedAt[row.case_id] = row.created_at; });
+        }
+
+        function renderDashboard() {
+            const active = state.cases.filter(c => !isClosed(c));
+            const closedCount = state.cases.length - active.length;
+
+            const stageCounts = {};
+            const typeCounts = {};
+            active.forEach(c => {
+                const s = c.case_stage || 'Not set';
+                const t = c.case_type || 'Other';
+                stageCounts[s] = (stageCounts[s] || 0) + 1;
+                typeCounts[t] = (typeCounts[t] || 0) + 1;
+            });
+            const stageKeys = CD_STAGES.filter(k => stageCounts[k]).concat(Object.keys(stageCounts).filter(k => !CD_STAGES.includes(k)));
+            const typeKeys = CD_TYPES.filter(k => typeCounts[k]).concat(Object.keys(typeCounts).filter(k => !CD_TYPES.includes(k)));
+            const maxStage = Math.max(1, ...stageKeys.map(k => stageCounts[k]));
+
+            const stageHtml = stageKeys.length
+                ? stageKeys.map(k => `
+                    <div class="cd-bar-row">
+                        <span class="cd-bar-label">${escapeHtml(k)}</span>
+                        <span class="cd-bar-track"><span class="cd-bar-fill" style="width:${Math.round(stageCounts[k] / maxStage * 100)}%"></span></span>
+                        <span class="cd-bar-num">${stageCounts[k]}</span>
+                    </div>`).join('')
+                : '<div class="cr-muted">No active cases.</div>';
+
+            const typeHtml = typeKeys.length
+                ? `<div class="cd-chips">${typeKeys.map(k => `<span class="cd-chip">${escapeHtml(k)} <strong>${typeCounts[k]}</strong></span>`).join('')}</div>`
+                : '<div class="cr-muted">No active cases.</div>';
+
+            const upcomingHtml = state.upcoming.length
+                ? state.upcoming.slice(0, 5).map(r => {
+                    const c = caseById(r.case_id);
+                    return `
+                        <button type="button" class="cd-row" data-case-id="${escapeHtml(r.case_id)}">
+                            <span class="cd-row-icon"><i class="fa-solid fa-gavel"></i></span>
+                            <span class="cd-row-main">
+                                <span class="cd-row-title">${escapeHtml(caseTitleById(r.case_id))}</span>
+                                <span class="cd-row-sub">${escapeHtml(r.title)}${c ? ' &bull; ' + escapeHtml(clientOf(c)) : ''}</span>
+                            </span>
+                            <span class="cd-row-date">${escapeHtml(crDateTime(r.next_hearing_date))}</span>
+                        </button>`;
+                }).join('')
+                : '<div class="cr-muted">No upcoming hearings. Add a "Next hearing" to a report and it will show here.</div>';
+
+            const activityHtml = state.activity.length
+                ? state.activity.map(e => {
+                    const isReport = e.source === 'report';
+                    const icon = isReport ? 'fa-file-lines' : (CR_EVENT_ICONS[e.event_type] || 'fa-circle');
+                    const when = isReport ? crDate(String(e.event_at).slice(0, 10)) : crDateTime(e.event_at);
+                    return `
+                        <button type="button" class="cd-row" data-case-id="${escapeHtml(e.case_id)}" data-tab="history">
+                            <span class="cd-row-icon"><i class="fa-solid ${icon}"></i></span>
+                            <span class="cd-row-main">
+                                <span class="cd-row-title">${escapeHtml(caseTitleById(e.case_id))}</span>
+                                <span class="cd-row-sub">${escapeHtml(e.title)}</span>
+                            </span>
+                            <span class="cd-row-date">${escapeHtml(when)}</span>
+                        </button>`;
+                }).join('')
+                : '<div class="cr-muted">No activity yet.</div>';
+
+            body.innerHTML = `
+                ${state.partial ? '<div class="cr-note">Some details could not be loaded. Counts may be incomplete.</div>' : ''}
+                <div class="cd-tiles">
+                    <div class="cd-tile"><span class="cd-tile-icon blue"><i class="fa-solid fa-folder-open"></i></span><div><div class="cd-tile-num">${active.length}</div><div class="cd-tile-label">Active cases</div></div></div>
+                    <div class="cd-tile"><span class="cd-tile-icon slate"><i class="fa-solid fa-lock"></i></span><div><div class="cd-tile-num">${closedCount}</div><div class="cd-tile-label">Closed cases</div></div></div>
+                    <div class="cd-tile"><span class="cd-tile-icon green"><i class="fa-solid fa-briefcase"></i></span><div><div class="cd-tile-num">${state.cases.length}</div><div class="cd-tile-label">Total cases</div></div></div>
+                    <div class="cd-tile"><span class="cd-tile-icon amber"><i class="fa-solid fa-gavel"></i></span><div><div class="cd-tile-num">${state.upcoming.length}</div><div class="cd-tile-label">Upcoming hearings</div></div></div>
+                </div>
+                <div class="cd-grid2">
+                    <section class="cd-card"><h3>Active cases by stage</h3>${stageHtml}</section>
+                    <section class="cd-card"><h3>Active cases by type</h3>${typeHtml}</section>
+                </div>
+                <div class="cd-grid2">
+                    <section class="cd-card"><h3>Upcoming hearings</h3><div class="cd-list">${upcomingHtml}</div></section>
+                    <section class="cd-card"><h3>Recent activity</h3><div class="cd-list">${activityHtml}</div></section>
+                </div>`;
+        }
+
+        function renderHistoryTab() {
+            const total = state.cases.length;
+            const closedN = state.cases.filter(isClosed).length;
+            const filters = [['all', 'All', total], ['active', 'Active', total - closedN], ['closed', 'Closed', closedN]];
+            body.innerHTML = `
+                <div class="cd-toolbar">
+                    <input type="search" id="cd-search" class="cr-input" placeholder="Search by title, case number, client or court" value="${escapeHtml(state.search)}" aria-label="Search cases" autocomplete="off">
+                    <div class="cd-filters" role="group" aria-label="Filter cases">
+                        ${filters.map(f => `<button type="button" class="cd-filter${state.filter === f[0] ? ' active' : ''}" data-filter="${f[0]}">${f[1]} <span>${f[2]}</span></button>`).join('')}
+                    </div>
+                </div>
+                <div id="cd-list"></div>`;
+            renderHistoryList();
+        }
+
+        function renderHistoryList() {
+            const listEl = overlay.querySelector('#cd-list');
+            if (!listEl) return;
+            const term = state.search.trim().toLowerCase();
+            const rows = state.cases
+                .filter(c => {
+                    if (state.filter === 'active' && isClosed(c)) return false;
+                    if (state.filter === 'closed' && !isClosed(c)) return false;
+                    if (!term) return true;
+                    return [c.title, c.case_number, c.court_case_no, c.court_branch, clientOf(c)]
+                        .some(v => String(v || '').toLowerCase().includes(term));
+                })
+                .sort((a, b) => new Date(filedOf(b)) - new Date(filedOf(a)));
+
+            if (rows.length === 0) {
+                listEl.innerHTML = `<div class="cr-empty"><i class="fa-regular fa-folder-open"></i><p>${state.cases.length === 0 ? 'No cases yet.' : 'No cases match your search.'}</p></div>`;
+                return;
+            }
+
+            const dash = '<span class="cr-muted">-</span>';
+            listEl.innerHTML = `
+                <div class="cr-table-wrap">
+                    <table class="cr-table">
+                        <thead><tr><th>Case</th><th>Client</th><th>Type</th><th>Stage</th><th>Filed</th><th>Closed</th><th>Status</th><th class="cr-actions-head"></th></tr></thead>
+                        <tbody>${rows.map(c => `
+                            <tr class="cr-row">
+                                <td class="cr-title-cell"><div class="cd-case-title">${escapeHtml(c.title)}</div>${c.case_number ? `<div class="cd-case-sub">#${escapeHtml(c.case_number)}</div>` : ''}</td>
+                                <td>${escapeHtml(clientOf(c))}</td>
+                                <td>${c.case_type ? escapeHtml(c.case_type) : dash}</td>
+                                <td>${c.case_stage ? escapeHtml(c.case_stage) : dash}</td>
+                                <td class="cr-nowrap">${filedOf(c) ? escapeHtml(crDate(filedOf(c))) : dash}</td>
+                                <td class="cr-nowrap">${closedOn(c) ? escapeHtml(crDate(closedOn(c))) : dash}</td>
+                                <td>${isClosed(c) ? '<span class="cr-badge cr-badge-private">Closed</span>' : '<span class="cr-badge cr-badge-shared">Active</span>'}</td>
+                                <td class="cr-actions-cell"><div><button type="button" class="cd-link-btn" data-case-id="${escapeHtml(c.id)}" data-tab="history">View history</button></div></td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+        }
+
+        function showTab(tab) {
+            state.tab = tab;
+            overlay.querySelectorAll('.cr-tab').forEach(t => {
+                const on = t.dataset.tab === tab;
+                t.classList.toggle('active', on);
+                t.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            if (tab === 'dashboard') renderDashboard(); else renderHistoryTab();
+        }
+
+        overlay.addEventListener('click', (e) => {
+            const tabBtn = e.target.closest('.cr-tab');
+            if (tabBtn) { if (tabBtn.dataset.tab !== state.tab) showTab(tabBtn.dataset.tab); return; }
+
+            const filterBtn = e.target.closest('[data-filter]');
+            if (filterBtn) {
+                state.filter = filterBtn.dataset.filter;
+                overlay.querySelectorAll('.cd-filter').forEach(b => b.classList.toggle('active', b === filterBtn));
+                renderHistoryList();
+                return;
+            }
+
+            const caseBtn = e.target.closest('[data-case-id]');
+            if (caseBtn && typeof window.openCaseReports === 'function') {
+                window.openCaseReports(caseBtn.dataset.caseId, caseBtn.dataset.tab || 'reports');
+            }
+        });
+
+        overlay.addEventListener('input', (e) => {
+            if (e.target && e.target.id === 'cd-search') {
+                state.search = e.target.value;
+                renderHistoryList();
+            }
+        });
+
+        try {
+            await load();
+            if (!document.body.contains(overlay)) return;
+            renderDashboard();
+        } catch (err) {
+            console.error('Error loading the cases dashboard:', err);
+            if (document.body.contains(overlay)) {
+                body.innerHTML = '<div class="cr-empty"><i class="fa-solid fa-triangle-exclamation"></i><p>Could not load the cases.</p><small>' + escapeHtml(err.message || '') + '</small></div>';
+            }
         }
     };
 

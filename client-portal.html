@@ -198,7 +198,6 @@
             .p-case, .c-send, .p-logout { transition: none; }
         }
 
-        /* ---------- dashboard, case overview and history ---------- */
         .p-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0 20px; }
         .p-stat {
             display: flex; align-items: center; gap: 14px; min-width: 0;
@@ -799,7 +798,6 @@
             sync();
         }
 
-
         const EVENT_ICONS = {
             case_opened: 'fa-folder-open',
             stage_changed: 'fa-flag',
@@ -820,7 +818,6 @@
             return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
         }
 
-     
         function fmtReportDay(value) {
             const s = String(value || '').slice(0, 10);
             if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
