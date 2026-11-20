@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JuriSync - Login</title>
     <link rel="stylesheet" href="style.css">
-    <link 
-        rel="stylesheet" 
+    <link
+        rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     >
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -18,16 +18,15 @@
         </div>
         <span class="login-eyebrow">Staff sign-in</span>
         <h2>JuriSync</h2>
-        
 
         <div id="login-message" class="login-message" role="alert"></div>
-        
+
         <form id="login-form" autocomplete="off">
             <div class="form-group">
                 <label>Email</label>
                 <input type="email" id="email" placeholder="attorney@lawfirm.com" required autocomplete="off" autofocus>
             </div>
-            
+
             <div class="form-group">
                 <label>Password</label>
                 <div style="position: relative;">
@@ -41,7 +40,7 @@
             <div class="form-options">
                 <a href="#" class="forgot-password">Forgot password?</a>
             </div>
-            
+
             <button type="submit" class="btn-login">Sign In</button>
 
             <div class="login-footer">
@@ -53,7 +52,7 @@
 
     <script>
         const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5'; 
+        const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5';
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const loginMessageEl = document.getElementById('login-message');
@@ -86,12 +85,12 @@
         }
 
         document.getElementById('login-form').addEventListener('submit', async (e) => {
-            e.preventDefault(); 
-            
+            e.preventDefault();
+
             const emailInput = document.getElementById('email').value.trim();
             const passwordInput = document.getElementById('password').value;
             const loginBtn = document.querySelector('.btn-login');
-            
+
             loginMessageEl.className = 'login-message';
             loginBtn.disabled = true;
             loginBtn.innerText = 'Signing In...';
@@ -131,6 +130,24 @@
                 loginBtn.disabled = false;
                 loginBtn.innerText = 'Sign In';
                 return;
+            }
+
+            try {
+                await supabaseClient.from('audit_logs').insert([
+                    {
+                        table_name: 'auth',
+                        record_id: String(userId),
+                        action: 'LOGIN',
+                        old_data: null,
+                        new_data: {
+                            summary: (profileData.full_name || 'User') + ' signed in',
+                            role: profileData.roles && profileData.roles.name
+                        },
+                        changed_by: userId
+                    }
+                ]);
+            } catch (logErr) {
+                console.warn('Sign-in was not logged:', logErr);
             }
 
             localStorage.setItem('userProfile', JSON.stringify(profileData));

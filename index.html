@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JuriSync - Law Firm Management</title>
     <script>
-        /* Apply saved theme + sidebar state before first paint (prevents a light flash) */
         (function () {
             var de = document.documentElement, theme = 'light';
             try {
@@ -16,17 +15,17 @@
             de.setAttribute('data-theme', theme);
         })();
     </script>
-    
+
     <style>
         .mobile-topbar, .sidebar-backdrop, .app-loader { display: none; }
     </style>
-    <link rel="stylesheet" href="style.css?v=ui9">
-    <link 
-        rel="stylesheet" 
+    <link rel="stylesheet" href="style.css?v=ui10">
+    <link
+        rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     >
-    
-    <script 
+
+    <script
         src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
     ></script>
 </head>
@@ -71,12 +70,12 @@
                     <i class="fa-solid fa-table-columns"></i>
                     <span>Dashboard</span>
                 </li>
-                
+
                 <li data-target="calendar-view">
                     <i class="fa-solid fa-calendar-days"></i>
                     <span>Calendar</span>
                 </li>
-                
+
                 <li data-target="documents-view">
                     <i class="fa-solid fa-file-lines"></i>
                     <span>Documents</span>
@@ -91,7 +90,7 @@
                     <i class="fa-solid fa-address-book"></i>
                     <span>Clients</span>
                 </li>
-                
+
                 <li data-target="notifications-view">
                     <i class="fa-solid fa-bell"></i>
                     <span>Notifications</span>
@@ -211,7 +210,7 @@
 
                 <div class="schedule-tabs-container">
                     <button class="sched-tab-btn active" data-scheduletab="sched-today">Today</button>
-                    <button class="sched-tab-btn" id="sched-tab-btn-cases" data-scheduletab="sched-cases">My Cases</button>                    
+                    <button class="sched-tab-btn" id="sched-tab-btn-cases" data-scheduletab="sched-cases">My Cases</button>
                     <button class="sched-tab-btn" data-scheduletab="sched-perf">Performance</button>
                 </div>
 
@@ -241,7 +240,7 @@
                         <p>Performance data loading...</p>
                     </div>
                 </div>
-                
+
                 <div id="sched-cases" class="sched-tab-content hidden">
                     <div class="content-card">
                         <p>Cases data loading...</p>
@@ -273,7 +272,7 @@
                                 </button>
                             </div>
                         </div>
-                        
+
                         <div class="calendar-legend">
                             <span><i class="lg-dot lg-normal"></i> Event</span>
                             <span><i class="fa-solid fa-star lg-star"></i> High priority</span>
@@ -299,25 +298,25 @@
                     <aside class="calendar-sidebar-widgets">
                         <div class="widget-card">
                             <h4>
-                                <i class="fa-solid fa-calendar-check"></i> 
+                                <i class="fa-solid fa-calendar-check"></i>
                                 <span id="schedule-summary-title">Schedule Summary</span>
                             </h4>
                             <div id="widget-schedule-summary">
                                 </div>
                         </div>
-                        
+
                         <div class="widget-card">
                             <h4>
-                                <i class="fa-solid fa-location-dot"></i> 
+                                <i class="fa-solid fa-location-dot"></i>
                                 Location
                             </h4>
                             <div id="widget-resources-list">
                                 </div>
                         </div>
-                        
+
                         <div class="widget-card">
                             <h4>
-                                <i class="fa-solid fa-user-group"></i> 
+                                <i class="fa-solid fa-user-group"></i>
                                 Lawyers
                             </h4>
                             <ul id="lawyer-status-list-sidebar">
@@ -366,7 +365,7 @@
                 <div class="results-metadata">
                     <p id="docs-found-count">Found 0 documents</p>
                 </div>
-                
+
                 <div id="documents-grid-inject" class="documents-grid-layout">
                     </div>
             </section>
@@ -444,6 +443,7 @@
                             <option value="pending">Pending approval</option>
                             <option value="approved">Approved</option>
                             <option value="rejected">Rejected</option>
+                            <option value="archived">Archived</option>
                         </select>
                     </div>
                     <div id="clients-list-inject" style="margin-top: 14px;">
@@ -452,7 +452,7 @@
             </section>
 
 <section id="notifications-view" class="view-section hidden">
-                
+
                 <header class="view-header">
                     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                         <h1 style="margin: 0;">Notifications</h1>
@@ -473,7 +473,7 @@
 
                 <div id="notif-all" class="notif-content-pane">
                     <div class="notif-grid-layout">
-                        
+
                         <div class="notif-list-container">
                             <div class="content-card" style="padding: 0; overflow: hidden;">
                                 <div class="card-header-basic" style="padding: 20px 25px; border-bottom: 1px solid #f1f5f9; background: #fafbfc;">
@@ -611,6 +611,15 @@
                                 <option value="CLOSE">Case closed only</option>
                                 <option value="REOPEN">Case reopened only</option>
                                 <option value="RESCHEDULE">Event rescheduled only</option>
+                                <option value="ARCHIVE">Archived only</option>
+                                <option value="RESTORE">Restored only</option>
+                                <option value="LOGIN">Sign-ins only</option>
+                                <option value="LOGOUT">Sign-outs only</option>
+                                <option value="LOGIN_FAILED">Failed sign-ins only</option>
+                                <option value="ACCOUNT_LOCKED">Account lockouts only</option>
+                                <option value="MFA_RESET">2FA resets only</option>
+                                <option value="PASSWORD_CHANGE">Password changes only</option>
+                                <option value="PASSWORD_RESET">Password resets only</option>
                             </select>
                         </div>
                         <div class="cases-date-field">
@@ -641,6 +650,14 @@
                                 <option value="clients">Clients</option>
                                 <option value="calendar_events">Calendar events</option>
                                 <option value="profiles">Users / profiles</option>
+                                <option value="auth">Sign-ins and passwords</option>
+                                <option value="documents">Documents</option>
+                                <option value="case_reports">Case reports</option>
+                                <option value="case_history">Case history</option>
+                                <option value="case_lawyers">Case lawyers</option>
+                                <option value="client_lawyers">Client lawyers</option>
+                                <option value="email_queue">Emails</option>
+                                <option value="event_responses">Event responses</option>
                             </select>
                         </div>
                         <button type="button" id="audit-filter-clear" class="cases-clear-btn hidden">Clear filters</button>
@@ -652,7 +669,7 @@
                 </div>
             </section>
         </main>
-        
+
         <div id="logout-modal" class="modal-overlay hidden">
             <div class="modal-card" style="background: #ffffff; border-radius: 12px; padding: 30px;">
                 <h3>Confirm Logout</h3>
@@ -676,13 +693,12 @@
         </div>
 
         <div id="stat-details-modal" class="modal-overlay hidden">
-            <div class="modal-content" style="max-width: 550px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
-                <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
-                    <h2 id="stat-details-title" style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 0;">Details</h2>
-                    <button id="close-stat-details-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+            <div class="modal-content sd-modal">
+                <div class="sd-head">
+                    <h2 id="stat-details-title" class="sd-title">Details</h2>
+                    <button id="close-stat-details-btn" class="btn-close sd-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <div id="stat-details-list" style="display: flex; flex-direction: column; gap: 12px;">
-                    </div>
+                <div id="stat-details-list" class="sd-list"></div>
             </div>
         </div>
 
@@ -892,7 +908,7 @@
                     <button id="close-lawyer-modal-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Create a lawyer or secretary account.</p>
-                
+
                 <form id="add-lawyer-form">
                     <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 16px;">
                         <div class="form-group" style="flex: 2; margin-bottom: 0;">
@@ -961,10 +977,10 @@
                     <button id="close-edit-lawyer-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Update the lawyer's information below.</p>
-                
+
                 <form id="edit-lawyer-form">
                     <input type="hidden" id="edit-lawyer-id">
-                    
+
                     <div class="form-group" style="margin-bottom: 16px;">
                         <label style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 6px; font-weight: 600;">Full Name</label>
                         <input type="text" id="edit-lawyer-fullname" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
@@ -1079,6 +1095,8 @@
                         <div class="mc-field">
                             <label for="mc-phone">Phone</label>
                             <input type="tel" id="mc-phone" required placeholder="09123456789">
+                            <div class="mc-hint">Numbers only, for example 09123456789.</div>
+                            <div class="mc-error" id="mc-phone-error" role="alert"></div>
                         </div>
                     </div>
                     <div class="mc-field">
@@ -1094,7 +1112,10 @@
                         </span>
                     </label>
 
-                    <button type="submit" class="mc-submit">Add client</button>
+                    <div class="mc-actions">
+                        <button type="button" class="mc-cancel" id="mc-cancel">Cancel</button>
+                        <button type="submit" class="mc-submit">Add client</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -1102,7 +1123,10 @@
         <div id="edit-client-modal" class="modal-overlay hidden">
             <div class="modal-content mc-modal">
                 <div class="modal-header mc-modal-head">
-                    <div><h2>Edit Client</h2></div>
+                    <div>
+                        <h2>Edit Client</h2>
+                        <p>Update the client's contact details.</p>
+                    </div>
                     <button id="close-edit-client-btn" type="button" class="btn-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <form id="edit-client-form" class="mc-form" autocomplete="off">
@@ -1118,14 +1142,19 @@
                         </div>
                         <div class="mc-field">
                             <label for="ec-phone">Phone</label>
-                            <input type="tel" id="ec-phone" required>
+                            <input type="tel" id="ec-phone" required placeholder="09123456789">
+                            <div class="mc-hint">Numbers only, for example 09123456789.</div>
+                            <div class="mc-error" id="ec-phone-error" role="alert"></div>
                         </div>
                     </div>
                     <div class="mc-field">
                         <label for="ec-address">Address <span class="mc-optional">(optional)</span></label>
                         <input type="text" id="ec-address">
                     </div>
-                    <button type="submit" class="mc-submit">Save changes</button>
+                    <div class="mc-actions">
+                        <button type="button" class="mc-cancel" id="ec-cancel">Cancel</button>
+                        <button type="submit" class="mc-submit">Save changes</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -1144,24 +1173,6 @@
                     <input type="hidden" id="team-kind">
                     <input type="hidden" id="team-target-id">
                     <input type="hidden" id="team-approve">
-
-                    <div id="team-lock-notice" class="team-lock-notice hidden">
-                        <div class="team-lock-row">
-                            <div class="team-lock-text">
-                                <i class="fa-solid fa-lock"></i>
-                                <span>Lawyers are already assigned. Editing is locked.</span>
-                            </div>
-                            <button type="button" id="team-unlock-btn" class="team-unlock-btn">Unlock to edit</button>
-                        </div>
-                        <div id="team-unlock-auth" class="team-unlock-auth hidden">
-                            <label for="team-unlock-password">Enter your admin password to make changes</label>
-                            <div class="team-unlock-fields">
-                                <input type="password" id="team-unlock-password" autocomplete="current-password" placeholder="Admin password">
-                                <button type="button" id="team-unlock-confirm" class="team-unlock-confirm">Confirm</button>
-                            </div>
-                            <p id="team-unlock-error" class="team-inline-error hidden" role="alert"></p>
-                        </div>
-                    </div>
 
                     <div class="mc-field">
                         <label for="team-lead">Lead lawyer</label>
@@ -1315,8 +1326,8 @@
         </div>
 
     </div>
-    
-    <script src="main.js?v=ui11"></script>
-    
+
+    <script src="main.js?v=ui13"></script>
+
 </body>
 </html>

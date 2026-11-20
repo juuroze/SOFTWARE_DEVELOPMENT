@@ -61,6 +61,7 @@
             font-weight: 700; font-size: 13px; flex: 0 0 auto;
         }
         .p-avatar.sm { width: 32px; height: 32px; font-size: 12px; }
+        .p-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
         .p-avatar.soft { background: #dbeafe; color: var(--p-blue-dark); }
         .p-logout {
             background: rgba(255,255,255,0.06);
@@ -141,13 +142,37 @@
         .c-row.mine .c-bubble { background: var(--p-blue-dark); color: #fff; border-bottom-right-radius: 5px; }
         .c-subject { display: block; font-weight: 700; margin-bottom: 4px; }
         .c-attach {
-            display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;
-            padding: 7px 12px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe;
-            color: var(--p-blue-dark); font-size: 12px; font-weight: 600; text-decoration: none;
-            max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+            display: flex; align-items: center; gap: 10px; margin-top: 12px;
+            width: fit-content; max-width: 100%; box-sizing: border-box;
+            padding: 9px 14px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe;
+            color: var(--p-blue-dark); font-size: 13px; font-weight: 600; text-decoration: none;
+            white-space: normal; overflow-wrap: anywhere; line-height: 1.35;
         }
-        .c-attach:hover { background: #dbeafe; }
+        .c-attach:hover { background: #dbeafe; border-color: #93c5fd; }
+        .c-attach-icon { font-size: 18px; flex-shrink: 0; }
+        .c-attach-name { min-width: 0; }
+        .c-attach-open { font-size: 11px; opacity: 0.7; flex-shrink: 0; }
         .c-time { font-size: 11px; color: #94a3b8; padding: 0 4px; }
+        .d-upload { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 24px 18px; border: 2px dashed #bfdbfe; border-radius: 14px; background: #ffffff; color: var(--p-muted); transition: background 0.15s, border-color 0.15s; }
+        .d-upload.drag { background: #eff6ff; border-color: #60a5fa; }
+        .d-upload > i { font-size: 30px; color: #60a5fa; }
+        .d-upload strong { color: var(--p-text); font-size: 15px; }
+        .d-upload span { font-size: 12px; }
+        .d-btn { margin-top: 8px; display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border: none; border-radius: 10px; background: #0f172a; color: #ffffff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+        .d-btn:hover { background: #1e293b; }
+        .d-btn:disabled { opacity: 0.6; cursor: wait; }
+        .d-status { min-height: 18px; margin-top: 6px; font-size: 12px; font-weight: 600; }
+        .d-status.busy { color: #2563eb; }
+        .d-status.ok { color: #15803d; }
+        .d-status.err { color: #dc2626; }
+        .d-heading { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #94a3b8; margin-top: 4px; }
+        .d-item { display: flex; align-items: center; gap: 12px; padding: 11px 14px; background: #ffffff; border: 1px solid #e8eef5; border-radius: 12px; text-decoration: none; color: inherit; margin-bottom: 8px; transition: border-color 0.15s, box-shadow 0.15s; }
+        .d-item:hover { border-color: #bfdbfe; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06); }
+        .d-icon { width: 38px; height: 38px; border-radius: 10px; background: #eff6ff; color: #2563eb; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+        .d-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .d-name { font-size: 14px; font-weight: 600; color: var(--p-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .d-meta { font-size: 12px; color: var(--p-muted); }
+        .d-open { font-size: 12px; color: #94a3b8; flex-shrink: 0; }
         .c-empty, .c-state { margin: auto; text-align: center; color: var(--p-muted); max-width: 320px; padding: 20px; }
         .c-empty i, .c-state i { font-size: 30px; color: #93c5fd; margin-bottom: 12px; }
         .c-empty strong, .c-state strong { display: block; color: var(--p-text); margin-bottom: 4px; font-size: 15px; }
@@ -331,6 +356,12 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function avatarInner(name, url) {
+            const text = initials(name || 'JS');
+            if (!url) return escapeHtml(text);
+            return `<img src="${escapeHtml(url)}" alt="" onerror="this.replaceWith(document.createTextNode(this.dataset.fallback))" data-fallback="${escapeHtml(text)}">`;
+        }
+
         function initials(name) {
             const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
             if (parts.length === 0) return '?';
@@ -355,6 +386,15 @@
             if (dayKey(iso) === dayKey(today.toISOString())) return 'Today';
             if (dayKey(iso) === dayKey(yesterday.toISOString())) return 'Yesterday';
             return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+        }
+
+        function attachIcon(title) {
+            const ext = String(title || '').split('.').pop().toLowerCase();
+            if (ext === 'pdf') return 'fa-file-pdf';
+            if (ext === 'doc' || ext === 'docx') return 'fa-file-word';
+            if (ext === 'xls' || ext === 'xlsx' || ext === 'csv') return 'fa-file-excel';
+            if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) return 'fa-file-image';
+            return 'fa-file';
         }
 
         document.addEventListener('click', async (e) => {
@@ -474,6 +514,18 @@
             }
 
             state.cases = cases || [];
+            try {
+                const { data: avatarRows } = await supabaseClient.rpc('portal_lawyer_avatars');
+                const avatarByCase = {};
+                (avatarRows || []).forEach((r) => {
+                    avatarByCase[String(r.case_id)] = r.avatar_url;
+                });
+                state.cases.forEach((c) => {
+                    c.lead_lawyer_avatar = avatarByCase[String(c.id)] || null;
+                });
+            } catch (avatarErr) {
+                console.warn('Lawyer photos were not loaded:', avatarErr);
+            }
             const firstName = String(state.client.client_name || '').trim().split(/\s+/)[0] || 'there';
 
             if (state.cases.length === 0) {
@@ -564,7 +616,7 @@
                         </div>
                     </div>
                     <div class="c-lawyer">
-                        <span class="p-avatar sm soft" aria-hidden="true">${escapeHtml(initials(c.lead_lawyer || 'JS'))}</span>
+                        <span class="p-avatar sm soft" aria-hidden="true">${avatarInner(c.lead_lawyer, c.lead_lawyer_avatar)}</span>
                         <div><strong>${lawyer}</strong><span>${c.lead_lawyer ? 'Your lead lawyer' : 'Assignment pending'}</span></div>
                     </div>
                 </div>
@@ -572,6 +624,7 @@
                     <button type="button" class="c-tab active" role="tab" data-tab="overview" aria-selected="true">Overview</button>
                     <button type="button" class="c-tab" role="tab" data-tab="history" aria-selected="false">History</button>
                     <button type="button" class="c-tab" role="tab" data-tab="messages" aria-selected="false">Messages</button>
+                    <button type="button" class="c-tab" role="tab" data-tab="documents" aria-selected="false">Documents</button>
                 </div>
                 <div class="c-pane" id="c-pane"></div>`;
 
@@ -611,7 +664,9 @@
 
             const { data: rows, error } = await supabaseClient
                 .from('email_queue')
-                .select('*, documents(title, file_path)')
+                .select(
+                    '*, legacy_doc:documents!attachment_document_id(title, file_path), documents:documents!secure_attachment_document_id(title, file_path)'
+                )
                 .eq('case_id', caseId)
                 .eq('is_sent', true)
                 .order('sent_at', { ascending: true });
@@ -627,9 +682,9 @@
                 key: 'e' + m.id,
                 side: m.kind === 'client_message' ? 'client' : 'lawyer',
                 ts: m.sent_at || m.created_at,
-                subject: m.kind === 'client_message' ? '' : (m.subject || ''),
-                body: m.body || '',
-                doc: m.documents || null
+                subject: m.kind === 'client_message' ? '' : ((m.secure_subject != null ? m.secure_subject : m.subject) || ''),
+                body: (m.kind !== 'client_message' && m.secure_body != null ? m.secure_body : m.body) || '',
+                doc: m.documents || m.legacy_doc || null
             }));
             items.sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
@@ -689,11 +744,11 @@
                 }
                 const mine = item.side === 'client';
                 const attachment = item.doc
-                    ? `<a href="#" class="c-attach" data-doc-path="${escapeHtml(item.doc.file_path || '')}"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(item.doc.title)}</a>`
+                    ? `<a href="#" class="c-attach" title="Open ${escapeHtml(item.doc.title || 'file')}" data-doc-path="${escapeHtml(item.doc.file_path || '')}"><i class="fa-solid ${attachIcon(item.doc.title)} c-attach-icon"></i><span class="c-attach-name">${escapeHtml(item.doc.title)}</span><i class="fa-solid fa-arrow-up-right-from-square c-attach-open"></i></a>`
                     : '';
                 const subject = item.subject && item.subject.trim() && item.subject.trim() !== item.body.trim()
                     ? `<span class="c-subject">${escapeHtml(item.subject)}</span>` : '';
-                const avatar = mine ? '' : `<span class="p-avatar sm soft" aria-hidden="true">${escapeHtml(initials(c && c.lead_lawyer ? c.lead_lawyer : 'JS'))}</span>`;
+                const avatar = mine ? '' : `<span class="p-avatar sm soft" aria-hidden="true">${avatarInner(c && c.lead_lawyer ? c.lead_lawyer : '', c ? c.lead_lawyer_avatar : null)}</span>`;
                 html += `
                     <div class="c-row ${mine ? 'mine' : 'theirs'}">
                         ${avatar}
@@ -1006,6 +1061,121 @@
             loadThread(state.activeId, false);
         }
 
+        const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+        const UPLOAD_ALLOWED = /\.(pdf|docx?|xlsx?|csv|txt|png|jpe?g|gif|webp)$/i;
+
+        function setUploadStatus(text, kind) {
+            const el = document.getElementById('d-status');
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = 'd-status' + (kind ? ' ' + kind : '');
+        }
+
+        function renderDocumentsTab() {
+            const pane = document.getElementById('c-pane');
+            const c = activeCase();
+            if (!pane || !c) return;
+            pane.innerHTML = `
+                <div class="c-scroll">
+                    <div class="d-upload" id="d-drop">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <strong>Send a document to your lawyer</strong>
+                        <span>PDF, Word, Excel, text or image. Up to 10 MB.</span>
+                        <button type="button" class="d-btn" id="d-choose"><i class="fa-solid fa-paperclip"></i> Choose file</button>
+                        <input type="file" id="d-input" hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.gif,.webp">
+                        <div class="d-status" id="d-status" role="status" aria-live="polite"></div>
+                    </div>
+                    <div class="d-heading">Documents you sent</div>
+                    <div id="d-list"><div class="c-skel"></div></div>
+                </div>`;
+            const input = document.getElementById('d-input');
+            const drop = document.getElementById('d-drop');
+            document.getElementById('d-choose').addEventListener('click', () => input.click());
+            input.addEventListener('change', () => {
+                if (input.files && input.files[0]) uploadClientDocument(input.files[0]);
+                input.value = '';
+            });
+            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('drag'); }));
+            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('drag'); }));
+            drop.addEventListener('drop', (e) => {
+                const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (f) uploadClientDocument(f);
+            });
+            loadMyUploads();
+        }
+
+        async function loadMyUploads() {
+            const c = activeCase();
+            const listEl = document.getElementById('d-list');
+            if (!c || !listEl) return;
+            const caseId = c.id;
+            const { data, error } = await supabaseClient.rpc('portal_my_uploads', { p_case_id: caseId });
+            const stillHere = document.getElementById('d-list');
+            if (!stillHere || state.activeId !== caseId || state.tab !== 'documents') return;
+            if (error) {
+                stillHere.innerHTML = `<div class="c-state error"><i class="fa-solid fa-triangle-exclamation"></i><strong>We couldn't load your documents</strong><span>Please try again later.</span></div>`;
+                return;
+            }
+            if (!data || data.length === 0) {
+                stillHere.innerHTML = `<div class="c-empty"><i class="fa-regular fa-folder-open"></i><strong>Nothing sent yet</strong><span>Documents you send will be listed here.</span></div>`;
+                return;
+            }
+            stillHere.innerHTML = data.map(d => `
+                <a href="#" class="d-item" data-doc-path="${escapeHtml(d.file_path || '')}" title="Open ${escapeHtml(d.title)}">
+                    <span class="d-icon"><i class="fa-solid ${attachIcon(d.title)}"></i></span>
+                    <span class="d-info">
+                        <span class="d-name">${escapeHtml(d.title)}</span>
+                        <span class="d-meta">${escapeHtml(d.size || '')}${d.size ? ' • ' : ''}Sent ${escapeHtml(fmtDateTime(d.created_at))}</span>
+                    </span>
+                    <i class="fa-solid fa-arrow-up-right-from-square d-open"></i>
+                </a>`).join('');
+        }
+
+        async function uploadClientDocument(file) {
+            const c = activeCase();
+            if (!c || !file) return;
+            const chooseBtn = document.getElementById('d-choose');
+            if (!UPLOAD_ALLOWED.test(file.name)) {
+                setUploadStatus('This file type is not allowed. Please send a PDF, Word, Excel, text or image file.', 'err');
+                return;
+            }
+            if (file.size > UPLOAD_MAX_BYTES) {
+                setUploadStatus('This file is larger than 10 MB. Please send a smaller file.', 'err');
+                return;
+            }
+            if (file.size === 0) {
+                setUploadStatus('This file is empty.', 'err');
+                return;
+            }
+            if (chooseBtn) chooseBtn.disabled = true;
+            setUploadStatus('Uploading ' + file.name + '...', 'busy');
+
+            const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, '_');
+            const path = `client-uploads/${c.id}/${Date.now()}-${safeName}`;
+            try {
+                const { error: upErr } = await supabaseClient.storage.from('documents').upload(path, file, { upsert: false, contentType: file.type || undefined });
+                if (upErr) throw upErr;
+                const sizeText = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                const { error: regErr } = await supabaseClient.rpc('portal_register_upload', {
+                    p_case_id: c.id,
+                    p_title: file.name,
+                    p_file_path: path,
+                    p_size: sizeText
+                });
+                if (regErr) {
+                    await supabaseClient.storage.from('documents').remove([path]);
+                    throw regErr;
+                }
+                setUploadStatus('Sent. Your lawyer has been notified.', 'ok');
+                loadMyUploads();
+            } catch (err) {
+                console.error('Upload failed:', err);
+                setUploadStatus('We could not send this file. Please try again.', 'err');
+            } finally {
+                if (chooseBtn) chooseBtn.disabled = false;
+            }
+        }
+
         function showTab(tab) {
             const pane = document.getElementById('c-pane');
             if (!pane) return;
@@ -1023,6 +1193,7 @@
             });
             if (tab === 'overview') renderOverview();
             else if (tab === 'history') renderHistory();
+            else if (tab === 'documents') renderDocumentsTab();
             else renderMessagesTab();
         }
 
