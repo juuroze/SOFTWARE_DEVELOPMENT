@@ -19,7 +19,7 @@
     <style>
         .mobile-topbar, .sidebar-backdrop, .app-loader { display: none; }
     </style>
-    <link rel="stylesheet" href="style.css?v=ui10">
+    <link rel="stylesheet" href="style.css?v=ui11">
     <link
         rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
@@ -296,6 +296,15 @@
                     </div>
 
                     <aside class="calendar-sidebar-widgets">
+                        <div class="widget-card" id="widget-appointment-requests" style="display: none;">
+                            <h4>
+                                <i class="fa-solid fa-calendar-plus"></i>
+                                Appointment Requests
+                                <span class="appt-count" id="appt-count" style="display: none;">0</span>
+                            </h4>
+                            <div id="appt-requests-list"></div>
+                        </div>
+
                         <div class="widget-card">
                             <h4>
                                 <i class="fa-solid fa-calendar-check"></i>
@@ -345,6 +354,11 @@
                         <i class="fa-solid fa-filter"></i>
                         <select id="doc-filter">
                             <option value="all">All Documents</option>
+                            <optgroup label="Source">
+                                <option value="source:client-new">New from clients</option>
+                                <option value="source:client">All client uploads</option>
+                                <option value="source:firm">Firm documents only</option>
+                            </optgroup>
                             <optgroup label="For Court">
                                 <option value="pleadings">Pleadings</option>
                                 <option value="motions">Motions</option>
@@ -360,6 +374,13 @@
                             </optgroup>
                         </select>
                     </div>
+                </div>
+
+                <div id="docs-client-banner" class="docs-client-banner hidden" role="status">
+                    <i class="fa-solid fa-user-clock"></i>
+                    <span id="docs-client-banner-text"></span>
+                    <button type="button" id="docs-client-banner-btn">Show them</button>
+                    <button type="button" id="docs-client-banner-all" class="secondary">Mark all reviewed</button>
                 </div>
 
                 <div class="results-metadata">
@@ -438,7 +459,7 @@
                     </div>
                     <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                         <input type="search" id="clients-search" class="mc-search" style="flex: 1; min-width: 220px; margin-bottom: 0;" placeholder="Search by name, email, phone, case or lawyer">
-                        <select id="clients-status-filter" style="display: none; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; background: #f8fafc;">
+                        <select id="clients-status-filter" class="ui-select" style="display: none;">
                             <option value="all">All statuses</option>
                             <option value="pending">Pending approval</option>
                             <option value="approved">Approved</option>
@@ -459,6 +480,12 @@
                         <span id="notif-header-badge" class="badge-pill bg-red" style="font-size: 13px; padding: 4px 10px;">
                             Loading...
                         </span>
+                        <button type="button" id="notif-sound-toggle" class="notif-sound-btn" aria-pressed="false">
+                            <i class="fa-solid fa-volume-high"></i>
+                        </button>
+                        <button type="button" id="notif-sound-test" class="notif-sound-btn" title="Play a test sound" aria-label="Play a test sound">
+                            <i class="fa-regular fa-bell"></i>
+                        </button>
                     </div>
                 </header>
 
@@ -592,6 +619,15 @@
                     <div>
                         <h1>Audit Logs</h1>
                     </div>
+                    <div class="export-menu" id="audit-export-menu">
+                        <button type="button" class="btn-primary-black" id="audit-export-btn" aria-haspopup="true" aria-expanded="false">
+                            <i class="fa-solid fa-file-export"></i> Export <i class="fa-solid fa-chevron-down export-caret"></i>
+                        </button>
+                        <div class="export-dropdown" id="audit-export-dropdown" role="menu">
+                            <button type="button" role="menuitem" data-export="xlsx"><i class="fa-solid fa-file-excel"></i><span><strong>Excel (.xlsx)</strong><small>Formatted workbook</small></span></button>
+                            <button type="button" role="menuitem" data-export="pdf"><i class="fa-solid fa-file-pdf"></i><span><strong>PDF</strong><small>Formatted audit report</small></span></button>
+                        </div>
+                    </div>
                 </header>
 
                 <div class="content-card">
@@ -620,6 +656,7 @@
                                 <option value="MFA_RESET">2FA resets only</option>
                                 <option value="PASSWORD_CHANGE">Password changes only</option>
                                 <option value="PASSWORD_RESET">Password resets only</option>
+                                <option value="EXPORT">Exports only</option>
                             </select>
                         </div>
                         <div class="cases-date-field">
@@ -1327,7 +1364,7 @@
 
     </div>
 
-    <script src="main.js?v=ui13"></script>
+    <script src="main.js?v=ui19"></script>
 
 </body>
 </html>

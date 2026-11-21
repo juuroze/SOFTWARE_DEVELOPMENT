@@ -1,3 +1,113 @@
+(function () {
+    if (window.JuriSyncSound) return;
+    var STORAGE_KEY = 'jurisync-sound-muted';
+    var MIN_GAP_MS = 1500;
+    var ctx = null;
+    var lastPlayed = 0;
+    var buttons = [];
+
+    function isMuted() {
+        try {
+            return localStorage.getItem(STORAGE_KEY) === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function getContext() {
+        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return null;
+        if (!ctx) ctx = new AudioCtx();
+        return ctx;
+    }
+
+    function unlock() {
+        var c = getContext();
+        if (c && c.state === 'suspended') c.resume().catch(function () {});
+    }
+
+    ['pointerdown', 'keydown', 'touchstart'].forEach(function (evt) {
+        window.addEventListener(evt, unlock, { passive: true });
+    });
+
+    function note(c, frequency, startAt, duration, volume) {
+        var osc = c.createOscillator();
+        var overtone = c.createOscillator();
+        var gain = c.createGain();
+        osc.type = 'sine';
+        overtone.type = 'triangle';
+        osc.frequency.value = frequency;
+        overtone.frequency.value = frequency * 2;
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+        osc.connect(gain);
+        overtone.connect(gain);
+        gain.connect(c.destination);
+        osc.start(startAt);
+        overtone.start(startAt);
+        osc.stop(startAt + duration + 0.05);
+        overtone.stop(startAt + duration + 0.05);
+    }
+
+    function schedule(c) {
+        var t = c.currentTime + 0.02;
+        note(c, 784, t, 0.45, 0.16);
+        note(c, 988, t + 0.15, 0.45, 0.16);
+        note(c, 1175, t + 0.3, 0.7, 0.18);
+    }
+
+    function play(force) {
+        if (!force && isMuted()) return false;
+        var now = Date.now();
+        if (!force && now - lastPlayed < MIN_GAP_MS) return false;
+        lastPlayed = now;
+        var c = getContext();
+        if (!c) return false;
+        if (c.state === 'running') {
+            schedule(c);
+        } else {
+            c.resume().then(function () {
+                if (c.state === 'running') schedule(c);
+                else console.warn('Notification sound is blocked until you click or press a key on this page.');
+            }).catch(function () {
+                console.warn('Notification sound is blocked until you click or press a key on this page.');
+            });
+        }
+        return true;
+    }
+
+    function paint(btn) {
+        var muted = isMuted();
+        var icon = btn.querySelector('i');
+        if (icon) icon.className = muted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+        btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+        btn.setAttribute('aria-label', muted ? 'Turn notification sound on' : 'Turn notification sound off');
+        btn.title = muted ? 'Notification sound is off' : 'Notification sound is on';
+    }
+
+    function setMuted(value) {
+        try {
+            localStorage.setItem(STORAGE_KEY, value ? '1' : '0');
+        } catch (e) {}
+        buttons.forEach(paint);
+    }
+
+    function bindToggle(btn) {
+        if (!btn || btn.dataset.soundBound) return;
+        btn.dataset.soundBound = '1';
+        buttons.push(btn);
+        paint(btn);
+        btn.addEventListener('click', function () {
+            var nowMuted = !isMuted();
+            setMuted(nowMuted);
+            if (!nowMuted) play(true);
+        });
+    }
+
+    window.JuriSyncSound = { play: play, isMuted: isMuted, setMuted: setMuted, bindToggle: bindToggle };
+})();
+
 const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -929,6 +1039,9 @@ function setupRealtimeSubscriptions() {
                 renderNotificationsList();
             }
         )
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'appointment_requests' }, () => {
+            renderAppointmentRequests();
+        })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'email_queue' }, () => {
             renderEmailQueueList();
             const caseModal = document.getElementById('case-detail-modal');
@@ -940,7 +1053,226 @@ function setupRealtimeSubscriptions() {
         .subscribe();
 }
 
+const APPT_ERROR_TEXT = {
+    slot_taken: 'You already have an event at that time. Decline this request or move the other event first.',
+    room_taken: 'That room is already booked at that time. Choose the other room.',
+    in_the_past: 'This appointment time has already passed. Please decline the request.',
+    invalid_location: 'Please choose a location for the appointment.',
+    already_decided: 'This request was already answered.',
+    not_allowed: 'You are not allowed to answer this request.',
+    request_not_found: 'This request no longer exists.',
+    invalid_note: 'Your message is too long.'
+};
+
+let apptRequestsCache = [];
+let apptRenderPending = false;
+
+function appointmentErrorText(err) {
+    const key = err && err.message ? String(err.message).trim() : '';
+    return APPT_ERROR_TEXT[key] || 'Could not update this request. Please try again.';
+}
+
+async function renderAppointmentRequests(force) {
+    const card = document.getElementById('widget-appointment-requests');
+    const list = document.getElementById('appt-requests-list');
+    const badge = document.getElementById('appt-count');
+    if (!card || !list || !currentUser) return;
+    if (globalRoleName !== 'lawyer' && globalRoleName !== 'admin') {
+        card.style.display = 'none';
+        return;
+    }
+    card.style.display = '';
+
+    if (!force && list.querySelector('.appt-panel')) {
+        apptRenderPending = true;
+        return;
+    }
+    apptRenderPending = false;
+    if (!list.innerHTML.trim()) showSkeletonIfEmpty(list, skeletonRows(2));
+
+    try {
+        let query = supabaseClient
+            .from('appointment_requests')
+            .select(
+                'id, case_id, requested_start, requested_end, topic, notes, lawyer_id, created_at, clients(client_name), cases(title, case_number), profiles!appointment_requests_lawyer_id_fkey(full_name)'
+            )
+            .eq('status', 'pending')
+            .order('requested_start', { ascending: true })
+            .limit(50);
+        if (globalRoleName === 'lawyer') query = query.eq('lawyer_id', currentUser.id);
+        const { data, error } = await query;
+        if (error) throw error;
+
+        apptRequestsCache = data || [];
+        if (badge) {
+            badge.textContent = String(apptRequestsCache.length);
+            badge.style.display = apptRequestsCache.length ? '' : 'none';
+        }
+
+        if (apptRequestsCache.length === 0) {
+            list.innerHTML = '<p class="appt-empty">No pending appointment requests.</p>';
+            return;
+        }
+
+        list.innerHTML = apptRequestsCache
+            .map((r) => {
+                const clientName = (r.clients && r.clients.client_name) || 'Client';
+                const caseLabel = r.cases ? r.cases.title + (r.cases.case_number ? ' (#' + r.cases.case_number + ')' : '') : '';
+                const lawyerLine =
+                    globalRoleName === 'admin' && r.profiles && r.profiles.full_name
+                        ? `<div class="appt-lawyer">For Atty. ${escapeHtml(r.profiles.full_name)}</div>`
+                        : '';
+                return `
+                    <div class="appt-item" data-appt-id="${escapeHtml(r.id)}">
+                        <div class="appt-top">
+                            <div>
+                                <div class="appt-client">${escapeHtml(clientName)}</div>
+                                <div class="appt-when">${escapeHtml(formatDate(r.requested_start))}, ${escapeHtml(formatEventRange(r.requested_start, r.requested_end))}</div>
+                            </div>
+                        </div>
+                        <div class="appt-sub"><strong>${escapeHtml(r.topic)}</strong>${caseLabel ? '<br>' + escapeHtml(caseLabel) : ''}</div>
+                        ${r.notes ? `<div class="appt-notes">${escapeHtml(r.notes)}</div>` : ''}
+                        ${lawyerLine}
+                        <div class="appt-actions">
+                            <button type="button" class="appt-btn approve" data-appt-act="approve">Approve</button>
+                            <button type="button" class="appt-btn decline" data-appt-act="decline">Decline</button>
+                        </div>
+                        <div class="appt-panel-slot"></div>
+                    </div>`;
+            })
+            .join('');
+    } catch (error) {
+        console.error('Error loading appointment requests:', error);
+        list.innerHTML = errorStateHtml('Could not load appointment requests.', 'renderAppointmentRequests');
+    }
+}
+
+function openAppointmentPanel(item, action) {
+    const slot = item.querySelector('.appt-panel-slot');
+    if (!slot) return;
+    if (item.dataset.apptPanel === action) {
+        slot.innerHTML = '';
+        delete item.dataset.apptPanel;
+        item.classList.remove('appt-open');
+        if (apptRenderPending) renderAppointmentRequests();
+        return;
+    }
+    item.dataset.apptPanel = action;
+    item.classList.add('appt-open');
+    const isApprove = action === 'approve';
+    slot.innerHTML = `
+        <div class="appt-panel">
+            ${
+                isApprove
+                    ? `<label for="appt-loc-${escapeHtml(item.dataset.apptId)}">Location</label>
+                       <select id="appt-loc-${escapeHtml(item.dataset.apptId)}" data-appt-field="location">
+                           <option value="Conference Room A">Conference Room A</option>
+                           <option value="Conference Room B">Conference Room B</option>
+                       </select>`
+                    : ''
+            }
+            <label for="appt-note-${escapeHtml(item.dataset.apptId)}">${isApprove ? 'Message to client (optional)' : 'Reason for declining (optional)'}</label>
+            <textarea id="appt-note-${escapeHtml(item.dataset.apptId)}" data-appt-field="note" maxlength="500" placeholder="${isApprove ? 'e.g. Please bring your ID.' : 'e.g. I am in court that day. Please pick another time.'}"></textarea>
+            <div class="appt-actions">
+                <button type="button" class="appt-btn ${isApprove ? 'approve' : 'decline'}" data-appt-confirm="${action}">${isApprove ? 'Confirm approval' : 'Confirm decline'}</button>
+            </div>
+        </div>`;
+}
+
+async function respondToAppointment(item, action, btn) {
+    const id = item.dataset.apptId;
+    const locEl = item.querySelector('[data-appt-field="location"]');
+    const noteEl = item.querySelector('[data-appt-field="note"]');
+    const location = locEl ? locEl.value : null;
+    const note = noteEl ? noteEl.value.trim() : '';
+
+    item.querySelectorAll('button').forEach((b) => (b.disabled = true));
+    const { error } = await supabaseClient.rpc('staff_respond_appointment', {
+        p_id: id,
+        p_action: action,
+        p_location: location,
+        p_note: note || null
+    });
+
+    if (error) {
+        console.error('Appointment response failed:', error);
+        showToast(appointmentErrorText(error), 'warning');
+        if (error.message === 'already_decided' || error.message === 'request_not_found') {
+            renderAppointmentRequests(true);
+        } else {
+            item.querySelectorAll('button').forEach((b) => (b.disabled = false));
+        }
+        return;
+    }
+
+    showToast(
+        action === 'approve'
+            ? 'Appointment approved and added to the calendar.'
+            : 'Appointment request declined.',
+        'success'
+    );
+    await renderAppointmentRequests(true);
+    generateCalendarGrid();
+    renderScheduleSummaryWidget();
+    renderResourcesWidget();
+    renderLawyerStatusWidget();
+    updateDashboardStats();
+}
+
+function setupAppointmentRequests() {
+    const list = document.getElementById('appt-requests-list');
+    if (list && !list.dataset.bound) {
+        list.dataset.bound = '1';
+        list.addEventListener('click', (e) => {
+            const item = e.target.closest('.appt-item');
+            if (!item) return;
+            const actBtn = e.target.closest('[data-appt-act]');
+            if (actBtn) {
+                openAppointmentPanel(item, actBtn.dataset.apptAct);
+                return;
+            }
+            const confirmBtn = e.target.closest('[data-appt-confirm]');
+            if (confirmBtn) respondToAppointment(item, confirmBtn.dataset.apptConfirm, confirmBtn);
+        });
+    }
+    renderAppointmentRequests();
+}
+
+window.focusAppointmentRequest = async function (id) {
+    const nav = document.querySelector('.nav-links li[data-target="calendar-view"]');
+    if (nav) nav.click();
+    await renderAppointmentRequests(true);
+    const item = document.querySelector(`#appt-requests-list .appt-item[data-appt-id="${CSS.escape(String(id))}"]`);
+    const card = document.getElementById('widget-appointment-requests');
+    const target = item || card;
+    if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (item) {
+        item.classList.add('appt-flash');
+        setTimeout(() => item.classList.remove('appt-flash'), 2500);
+    } else if (id) {
+        showToast('This appointment request was already answered.', 'info');
+    }
+};
+
+async function pollNewNotifications() {
+    if (!currentUser || !window.__notifSeen) return;
+    const { data, error } = await supabaseClient
+        .from('notifications')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false })
+        .limit(50);
+    if (error || !data) return;
+    if (data.some((n) => !window.__notifSeen.has(n.id))) renderNotificationsList();
+}
+
 async function initializeApp() {
+    if (window.JuriSyncSound) {
+        window.JuriSyncSound.bindToggle(document.getElementById('notif-sound-toggle'));
+        const soundTest = document.getElementById('notif-sound-test');
+        if (soundTest) soundTest.addEventListener('click', () => window.JuriSyncSound.play(true));
+    }
     setupRealtimeSubscriptions();
     await updateDashboardStats();
     await renderDashboardContent();
@@ -970,6 +1302,7 @@ async function initializeApp() {
     setupRoomBookingModal();
     await renderScheduleSummaryWidget();
     await renderLawyerStatusWidget();
+    setupAppointmentRequests();
 
     setupScheduleTabs();
     setupScheduleButtons();
@@ -977,6 +1310,7 @@ async function initializeApp() {
 
     setupNotificationTabs();
     await renderNotificationsList();
+    setInterval(pollNewNotifications, 20000);
     await renderEmailQueueList();
     setupNotificationActions();
 
@@ -3357,6 +3691,93 @@ function generateTagsHtml(tagsStr) {
         .join('');
 }
 
+async function updateClientDocsBanner(activeFilter) {
+    const banner = document.getElementById('docs-client-banner');
+    if (!banner) return;
+    try {
+        const { count, error } = await supabaseClient
+            .from('documents')
+            .select('id', { count: 'exact', head: true })
+            .not('uploaded_by_client_id', 'is', null)
+            .is('reviewed_at', null);
+        if (error || !count || activeFilter === 'source:client-new') {
+            banner.classList.add('hidden');
+            return;
+        }
+        document.getElementById('docs-client-banner-text').textContent =
+            `${count} new document${count > 1 ? 's' : ''} from clients waiting for your review.`;
+        const allBtn = document.getElementById('docs-client-banner-all');
+        if (allBtn) {
+            allBtn.onclick = async () => {
+                allBtn.disabled = true;
+                const { data: pending } = await supabaseClient
+                    .from('documents')
+                    .select('id')
+                    .not('uploaded_by_client_id', 'is', null)
+                    .is('reviewed_at', null);
+                const ids = (pending || []).map((d) => d.id);
+                const done = ids.length > 0 && (await markDocsReviewed(ids));
+                allBtn.disabled = false;
+                if (done) {
+                    showToast(`${ids.length} document${ids.length > 1 ? 's' : ''} marked as reviewed.`, 'success');
+                    refreshDocumentList();
+                } else {
+                    showToast('Could not mark them as reviewed.', 'error');
+                }
+            };
+        }
+        const btn = document.getElementById('docs-client-banner-btn');
+        btn.onclick = () => {
+            const select = document.getElementById('doc-filter');
+            if (!select) return;
+            select.value = 'source:client-new';
+            select.dispatchEvent(new Event('change'));
+        };
+        banner.classList.remove('hidden');
+    } catch (err) {
+        banner.classList.add('hidden');
+    }
+}
+
+async function markDocsReviewed(ids) {
+    if (!ids || ids.length === 0) return true;
+    const { error } = await supabaseClient.rpc('mark_client_documents_reviewed', { p_ids: ids });
+    if (!error) return true;
+    const { data, error: updateError } = await supabaseClient
+        .from('documents')
+        .update({ reviewed_at: new Date().toISOString(), reviewed_by_id: currentUser ? currentUser.id : null })
+        .in('id', ids)
+        .is('reviewed_at', null)
+        .select('id');
+    if (updateError || !data || data.length === 0) {
+        console.error('Could not mark as reviewed:', updateError || error);
+        return false;
+    }
+    return true;
+}
+
+window.markClientDocReviewed = async function (id, silent) {
+    const ok = await markDocsReviewed([id]);
+    if (!ok) {
+        if (!silent) showToast('Could not mark this document as reviewed.', 'error');
+        return;
+    }
+    if (window.__docsRegistry && window.__docsRegistry[id]) window.__docsRegistry[id].reviewed_at = new Date().toISOString();
+    const filterEl = document.getElementById('doc-filter');
+    const filterVal = filterEl ? filterEl.value : 'all';
+    if (filterVal === 'source:client-new') {
+        refreshDocumentList();
+        return;
+    }
+    const card = document.querySelector('.doc-card[data-doc-id="' + String(id).replace(/"/g, '') + '"]');
+    if (card) {
+        card.classList.remove('doc-card-new');
+        card.querySelectorAll('.doc-new-badge, .doc-review-btn').forEach((el) => el.remove());
+    }
+    updateClientDocsBanner(filterVal);
+    if (!silent) showToast('Marked as reviewed.', 'success');
+};
+
 async function renderDocumentList(searchQuery = '', filterType = 'all') {
     const container = document.getElementById('documents-grid-inject');
     const countEl = document.getElementById('docs-found-count');
@@ -3367,16 +3788,29 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
         let query = supabaseClient
             .from('documents')
             .select(
-                'id, title, type, size, uploaded_by, uploaded_by_client_id, created_at, file_url, file_path, tags, case_id, client_id, ocr_status, ocr_pages, version_no, version_uploaded_by, version_uploaded_at, version_note, profiles(full_name), cases(case_number, title)'
+                'id, title, type, size, uploaded_by, uploaded_by_client_id, ' + (window.__docsNoReviewCol ? '' : 'reviewed_at, ') + 'created_at, file_url, file_path, tags, case_id, client_id, ocr_status, ocr_pages, version_no, version_uploaded_by, version_uploaded_at, version_note, profiles(full_name), cases(case_number, title)'
             )
             .order('created_at', { ascending: false });
 
-        if (filterType && filterType !== 'all') {
+        if (filterType && filterType.startsWith('source:')) {
+            if (filterType === 'source:firm') {
+                query = query.is('uploaded_by_client_id', null);
+            } else {
+                query = query.not('uploaded_by_client_id', 'is', null);
+                if (filterType === 'source:client-new' && !window.__docsNoReviewCol) query = query.is('reviewed_at', null);
+            }
+        } else if (filterType && filterType !== 'all') {
             query = query.eq('type', filterType.toLowerCase());
         }
 
         const { data: documents, error } = await query;
-        if (error) throw error;
+        if (error) {
+            if (!window.__docsNoReviewCol && /reviewed_at/i.test(error.message || '')) {
+                window.__docsNoReviewCol = true;
+                return renderDocumentList(searchQuery, filterType);
+            }
+            throw error;
+        }
 
         window.__docsRegistry = {};
         (documents || []).forEach((d) => {
@@ -3473,7 +3907,16 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                               .replace(/&gt;&gt;/g, '</mark>')}…</div>`
                         : '';
 
+                const isClientDoc = !!doc.uploaded_by_client_id;
+                const isNewClientDoc = isClientDoc && !doc.reviewed_at;
+                const clientBadge = isClientDoc
+                    ? `<span class="doc-from-client"><i class="fa-solid fa-user"></i> From client</span>${isNewClientDoc ? '<span class="doc-new-badge">New</span>' : ''}`
+                    : '';
+
                 const extraButtons = [
+                    isNewClientDoc
+                        ? `<button type="button" onclick="markClientDocReviewed(${idArg})" class="doc-small-btn doc-review-btn"><i class="fa-solid fa-circle-check"></i> Mark reviewed</button>`
+                        : '',
                     (doc.version_no || 1) > 1
                         ? `<button type="button" onclick="openDocumentHistory(${idArg})" class="doc-small-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</button>`
                         : '',
@@ -3493,7 +3936,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const typeColor = getCategoryColor(doc.type);
 
                 return `
-            <div class="doc-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-sizing: border-box;">
+            <div class="doc-card${isClientDoc ? ' doc-card-client' : ''}${isNewClientDoc ? ' doc-card-new' : ''}" data-doc-id="${escapeHtml(String(doc.id))}" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-sizing: border-box;">
                 <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-start;">
                     <div style="background: #eff6ff; color: #3b82f6; width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fa-solid fa-file-lines" style="font-size: 18px;"></i>
@@ -3501,10 +3944,11 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     <div>
                         <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
                         <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                            <span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>
+                            ${isClientDoc ? '' : `<span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>`}
                             <span style="font-size: 11px; color: #64748b;">${escapeHtml(doc.size || '0 KB')}</span>
                             ${versionBadge}
                             ${chip}
+                            ${clientBadge}
                         </div>
                     </div>
                 </div>
@@ -3527,14 +3971,14 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 </div>
 
                 <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px;">
-                    ${generateTagsHtml(doc.tags)}
+                    ${generateTagsHtml(isClientDoc ? String(doc.tags || '').split(',').map((t) => t.trim()).filter((t) => t && t.toLowerCase() !== 'client upload').join(', ') : doc.tags)}
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
-                    <button type="button" class="doc-action-btn" onclick="${onBtnClick}">
+                    <button type="button" class="doc-action-btn" onclick="${isNewClientDoc ? `markClientDocReviewed(${idArg}, true); ` : ''}${onBtnClick}">
                         <i class="fa-regular fa-eye"></i> View
                     </button>
-                    <button type="button" class="doc-action-btn" onclick="${onDownloadClick}">
+                    <button type="button" class="doc-action-btn" onclick="${isNewClientDoc ? `markClientDocReviewed(${idArg}, true); ` : ''}${onDownloadClick}">
                         <i class="fa-solid fa-download"></i> Download
                     </button>
                 </div>
@@ -3545,6 +3989,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             .join('');
 
         if (countEl) countEl.textContent = `Found ${filteredDocs.length} document${filteredDocs.length > 1 ? 's' : ''}`;
+        updateClientDocsBanner(filterType);
     } catch (error) {
         console.error('Error rendering documents:', error);
         container.innerHTML = errorStateHtml('Could not load documents.', 'refreshDocumentList');
@@ -4381,6 +4826,7 @@ const NOTIF_STYLES = {
     conflict: { icon: 'fa-solid fa-triangle-exclamation', color: '#ef4444' },
     event_reminder: { icon: 'fa-regular fa-bell', color: '#a855f7' },
     client_upload: { icon: 'fa-solid fa-file-arrow-up', color: '#0ea5e9' },
+    appointment_request: { icon: 'fa-solid fa-calendar-plus', color: '#f59e0b' },
     email_failed: { icon: 'fa-solid fa-triangle-exclamation', color: '#ef4444' }
 };
 
@@ -4449,6 +4895,11 @@ async function renderNotificationsList() {
         if (error) throw error;
 
         window.__notifications = notes || [];
+        if (window.__notifSeen) {
+            const hasNew = window.__notifications.some((n) => !n.is_read && !window.__notifSeen.has(n.id));
+            if (hasNew && window.JuriSyncSound) window.JuriSyncSound.play();
+        }
+        window.__notifSeen = new Set(window.__notifications.map((n) => n.id));
         const unread = window.__notifications.filter((n) => !n.is_read);
         const high = unread.filter((n) => n.priority === 'high');
         updateNotificationCounters(unread.length, high.length);
@@ -4497,6 +4948,8 @@ window.openNotification = async function (id) {
 
     if (n.link_type === 'event' && n.link_id) {
         window.openEventDetails(n.link_id);
+    } else if (n.link_type === 'appointment' && n.link_id) {
+        window.focusAppointmentRequest(n.link_id);
     } else {
         const target = { client: 'clients-view', case: 'cases-view', document: 'documents-view' }[n.link_type];
         const nav = target ? document.querySelector(`.nav-links li[data-target="${target}"]`) : null;
@@ -10161,7 +10614,10 @@ const AUDIT_ACTIONS = {
     MFA_RESET: { label: '2FA reset', color: '#be185d', icon: 'fa-user-shield' },
     LOGOUT: { label: 'Signed out', color: '#64748b', icon: 'fa-right-from-bracket' },
     PASSWORD_CHANGE: { label: 'Password changed', color: '#be185d', icon: 'fa-key' },
-    PASSWORD_RESET: { label: 'Password reset', color: '#be185d', icon: 'fa-key' }
+    PASSWORD_RESET: { label: 'Password reset', color: '#be185d', icon: 'fa-key' },
+    EXPORT: { label: 'Exported', color: '#475569', icon: 'fa-file-export' },
+    APPROVE: { label: 'Approved', color: '#15803d', icon: 'fa-circle-check' },
+    DECLINE: { label: 'Declined', color: '#dc2626', icon: 'fa-circle-xmark' }
 };
 
 const AUDIT_ENTITIES = {
@@ -10179,6 +10635,7 @@ const AUDIT_ENTITIES = {
     case_reports: 'Case report',
     case_history: 'Case history',
     event_responses: 'Event response',
+    appointment_requests: 'Appointment request',
     roles: 'Role'
 };
 
@@ -10189,8 +10646,41 @@ function auditEntityLabel(table) {
     return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+function auditFriendlyFields(fields) {
+    const seen = new Set();
+    const out = [];
+    String(fields)
+        .split(';')
+        .map((f) => f.trim())
+        .forEach((f) => {
+            let text = f;
+            if (/^is read: false to true$/.test(f)) text = 'marked as read';
+            else if (/^read date$/.test(f)) text = '';
+            else if (/^reviewed date$/.test(f)) text = 'marked as reviewed';
+            else if (/^reviewed by id$/.test(f)) text = '';
+            else if (/^archived date$/.test(f)) text = 'archived';
+            else if (/^archived by id$/.test(f)) text = '';
+            else if (/^closed date$/.test(f)) text = 'closed';
+            else text = f.replace(/ id$/, '');
+            if (text && !seen.has(text)) {
+                seen.add(text);
+                out.push(text);
+            }
+        });
+    return out.join('; ');
+}
+
+function auditFriendlyDetails(text) {
+    const m = String(text).match(/^(Updated [a-z ]+: .+?) - ([a-z][a-z ;:_,.\-0-9]*)$/);
+    if (!m) return text;
+    const parts = m[2].split(';').map((p) => p.trim());
+    if (!parts.every((p) => /^[a-z ]+( date)?(: [^;]+ to [^;]+)?$/.test(p))) return text;
+    const fields = auditFriendlyFields(m[2]);
+    return fields ? `${m[1]} - ${fields}` : m[1];
+}
+
 function auditPrettySummary(summary, table) {
-    const raw = String(summary || '');
+    const raw = auditFriendlyDetails(String(summary || ''));
     const key = String(table || '').toLowerCase();
     const m = raw.match(/^(Added|Updated|Deleted) ([a-z ]+): (.*?)(?: \(([a-z_ ,]+)\))?$/);
     if (!m || m[2] !== key.replace(/_/g, ' ')) return raw;
@@ -10405,3 +10895,773 @@ async function logAuditActivity(action, entity, summary, recordId, oldData, newD
         console.warn('Audit log was not saved:', err);
     }
 }
+
+
+const AUDIT_EXPORT_PAGE = 1000;
+const AUDIT_EXPORT_MAX = 20000;
+let auditExporting = false;
+
+function auditSelectText(id) {
+    const el = document.getElementById(id);
+    return el && el.selectedOptions && el.selectedOptions[0] ? el.selectedOptions[0].textContent.trim() : '';
+}
+
+function auditExportFilterText(filters, term) {
+    const parts = [];
+    if (filters.action !== 'all') parts.push(`Action: ${auditSelectText('audit-filter-action')}`);
+    if (filters.entity !== 'all') parts.push(`Record type: ${auditSelectText('audit-filter-entity')}`);
+    if (filters.period === 'custom') {
+        parts.push(`Date: ${filters.from || 'start'} to ${filters.to || 'today'}`);
+    } else if (filters.period !== 'all') {
+        parts.push(`Date: ${auditSelectText('audit-filter-period')}`);
+    }
+    if (term) parts.push(`Search: "${term}"`);
+    return parts.length ? parts.join('  |  ') : 'None (all records)';
+}
+
+async function fetchAllAuditLogs(filters) {
+    const range = getAuditDateRange(filters);
+    const logs = [];
+    for (let from = 0; from < AUDIT_EXPORT_MAX; from += AUDIT_EXPORT_PAGE) {
+        let query = supabaseClient
+            .from('audit_logs')
+            .select('*')
+            .order('changed_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, from + AUDIT_EXPORT_PAGE - 1);
+        if (filters.action !== 'all') query = query.eq('action', filters.action);
+        if (filters.entity !== 'all') query = query.ilike('table_name', filters.entity);
+        if (range.from) query = query.gte('changed_at', range.from.toISOString());
+        if (range.to) query = query.lt('changed_at', range.to.toISOString());
+        const { data, error } = await query;
+        if (error) throw error;
+        logs.push(...(data || []));
+        if (!data || data.length < AUDIT_EXPORT_PAGE) break;
+    }
+    return logs;
+}
+
+async function fetchAuditUserNames(logs) {
+    const ids = [...new Set(logs.map((l) => l.changed_by).filter(Boolean))];
+    const names = {};
+    for (let i = 0; i < ids.length; i += 100) {
+        const { data, error } = await supabaseClient
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', ids.slice(i, i + 100));
+        if (error) throw error;
+        (data || []).forEach((p) => {
+            names[p.id] = p.full_name;
+        });
+    }
+    return names;
+}
+
+function buildAuditExportRows(logs, names, term) {
+    return logs
+        .map((log) => {
+            const action = AUDIT_ACTIONS[log.action] ? AUDIT_ACTIONS[log.action].label : log.action || 'Changed';
+            const entity = auditEntityLabel(log.table_name);
+            const user = names[log.changed_by] || (log.changed_by ? 'Unknown user' : 'System');
+            const summary =
+                log.new_data && log.new_data.summary ? auditPrettySummary(log.new_data.summary, log.table_name) : '';
+            const details = summary || `${entity} ${action.toLowerCase()}`;
+            const d = new Date(log.changed_at);
+            const when = isNaN(d.getTime())
+                ? ''
+                : d.toLocaleString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: true
+                  });
+            return {
+                when,
+                iso: isNaN(d.getTime()) ? '' : d.toISOString(),
+                action,
+                color: (AUDIT_ACTIONS[log.action] && AUDIT_ACTIONS[log.action].color) || '#334155',
+                entity,
+                details,
+                user,
+                table: log.table_name || '',
+                recordId: String(log.record_id || (log.new_data && log.new_data.original_int_id) || ''),
+                logId: log.id
+            };
+        })
+        .filter((r) => !term || `${r.details} ${r.user} ${r.entity} ${r.action}`.toLowerCase().includes(term));
+}
+
+function auditStamp() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function downloadAuditBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function loadAuditScript(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[data-audit-lib="${src}"]`)) {
+            resolve();
+            return;
+        }
+        const s = document.createElement('script');
+        s.src = src;
+        s.dataset.auditLib = src;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('Could not load the PDF library.'));
+        document.head.appendChild(s);
+    });
+}
+
+async function ensureAuditPdfLibs() {
+    if (!(window.jspdf && window.jspdf.jsPDF)) {
+        await loadAuditScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    }
+    const probe = new window.jspdf.jsPDF();
+    if (typeof probe.autoTable !== 'function') {
+        await loadAuditScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    }
+}
+
+function auditPdfText(value) {
+    return String(value === undefined || value === null ? '' : value)
+        .replace(/[\u2018\u2019]/g, "'")
+        .replace(/[\u201c\u201d]/g, '"')
+        .replace(/[\u2013\u2014]/g, '-')
+        .replace(/\u2026/g, '...')
+        .replace(/[^\x09\x0a\x0d\x20-\x7e\xa0-\xff]/g, '?');
+}
+
+async function ensureAuditExcelLib() {
+    if (!window.ExcelJS) {
+        await loadAuditScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
+    }
+}
+
+function auditLocalAsUtc(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()));
+}
+
+let auditLogoCache = null;
+
+async function loadAuditLogo() {
+    if (auditLogoCache !== null) return auditLogoCache || null;
+    try {
+        const img = document.querySelector('img[alt="JuriSync Logo"]');
+        const src = (img && img.getAttribute('src')) || 'logo11.png';
+        const res = await fetch(src);
+        if (!res.ok) throw new Error('logo unavailable');
+        const blob = await res.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(fr.result);
+            fr.onerror = reject;
+            fr.readAsDataURL(blob);
+        });
+        const dims = await new Promise((resolve, reject) => {
+            const im = new Image();
+            im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+            im.onerror = reject;
+            im.src = dataUrl;
+        });
+        const isJpeg = /jpe?g/i.test(blob.type);
+        auditLogoCache = {
+            dataUrl,
+            base64: dataUrl.split(',')[1],
+            ext: isJpeg ? 'jpeg' : 'png',
+            pdfFormat: isJpeg ? 'JPEG' : 'PNG',
+            ratio: dims.w / dims.h
+        };
+    } catch (err) {
+        auditLogoCache = false;
+    }
+    return auditLogoCache || null;
+}
+
+function auditReportInfo(rows, meta) {
+    const now = new Date();
+    const p2 = (n) => String(n).padStart(2, '0');
+    const reference = `AL-${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}-${p2(now.getHours())}${p2(now.getMinutes())}`;
+    const fmt = (iso) =>
+        new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const dated = rows.filter((r) => r.iso);
+    let period = 'Not available';
+    if (dated.length) {
+        const latest = fmt(dated[0].iso);
+        const earliest = fmt(dated[dated.length - 1].iso);
+        period = latest === earliest ? latest : `${earliest} to ${latest}`;
+    }
+    const actionMap = new Map();
+    const userMap = new Map();
+    rows.forEach((r) => {
+        const a = actionMap.get(r.action) || { label: r.action, color: r.color, count: 0 };
+        a.count += 1;
+        actionMap.set(r.action, a);
+        userMap.set(r.user, (userMap.get(r.user) || 0) + 1);
+    });
+    return {
+        reference,
+        period,
+        total: rows.length,
+        byAction: [...actionMap.values()].sort((x, y) => y.count - x.count),
+        byUser: [...userMap.entries()].sort((x, y) => y[1] - x[1]),
+        filters: meta.filters,
+        user: meta.user,
+        generatedAt: meta.generatedAt
+    };
+}
+
+async function exportAuditPdf(rows, meta) {
+    await ensureAuditPdfLibs();
+    const logo = await loadAuditLogo();
+    const info = auditReportInfo(rows, meta);
+    const doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const M = 40;
+    const NAVY = [31, 42, 68];
+    const GOLD = [176, 141, 87];
+    const INK = [30, 41, 59];
+    const MUTED = [100, 116, 139];
+    const CREAM = [248, 245, 238];
+    const RULE = [214, 206, 190];
+
+    let textX = M;
+    if (logo) {
+        const lh = 44;
+        const lw = lh * logo.ratio;
+        doc.addImage(logo.dataUrl, logo.pdfFormat, M, 36, lw, lh);
+        textX = M + lw + 14;
+    }
+    doc.setTextColor(...NAVY);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(24);
+    doc.text('JURISYNC', textX, 58);
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...GOLD);
+    doc.text('LAW FIRM MANAGEMENT', textX, 72, { charSpace: 2 });
+
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.8);
+    doc.rect(W - M - 118, 42, 118, 26);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...NAVY);
+    doc.text('CONFIDENTIAL', W - M - 59, 59, { align: 'center', charSpace: 1.5 });
+
+    doc.setLineWidth(1.6);
+    doc.line(M, 84, W - M, 84);
+    doc.setDrawColor(...NAVY);
+    doc.setLineWidth(0.5);
+    doc.line(M, 88, W - M, 88);
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(...NAVY);
+    doc.text('Audit Log Report', M, 118);
+
+    doc.autoTable({
+        startY: 138,
+        margin: { left: M, right: M },
+        theme: 'plain',
+        body: [
+            ['Report reference', info.reference, 'Records included', String(info.total)],
+            ['Date generated', auditPdfText(info.generatedAt), 'Period covered', auditPdfText(info.period)],
+            ['Prepared by', auditPdfText(info.user), 'Filters applied', auditPdfText(info.filters)]
+        ],
+        styles: { font: 'times', fontSize: 9.5, cellPadding: { top: 3, bottom: 3, left: 6, right: 6 }, textColor: INK, valign: 'top' },
+        columnStyles: {
+            0: { fontStyle: 'bold', textColor: NAVY, cellWidth: 100, fillColor: CREAM },
+            1: { cellWidth: 230 },
+            2: { fontStyle: 'bold', textColor: NAVY, cellWidth: 100, fillColor: CREAM },
+            3: { cellWidth: 'auto' }
+        },
+        tableLineColor: RULE,
+        tableLineWidth: 0.5
+    });
+
+    let y = doc.lastAutoTable.finalY + 26;
+    doc.setFont('times', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...NAVY);
+    doc.text('Summary of Activity', M, y);
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.8);
+    doc.line(M, y + 5, M + 130, y + 5);
+
+    doc.autoTable({
+        startY: y + 14,
+        margin: { left: M, right: M },
+        theme: 'grid',
+        head: [[...info.byAction.map((a) => auditPdfText(a.label)), 'Total']],
+        body: [[...info.byAction.map((a) => String(a.count)), String(info.total)]],
+        styles: { font: 'times', fontSize: 9.5, halign: 'center', cellPadding: 5, textColor: INK, lineColor: RULE, lineWidth: 0.5 },
+        headStyles: { fillColor: CREAM, textColor: NAVY, fontStyle: 'bold' },
+        didParseCell: (d) => {
+            if (d.section === 'body' && d.column.index === info.byAction.length) d.cell.styles.fontStyle = 'bold';
+        }
+    });
+
+    y = doc.lastAutoTable.finalY + 28;
+    let startY = y + 12;
+    if (y + 90 > H - 60) {
+        doc.addPage();
+        y = 62;
+        startY = y + 12;
+    }
+    doc.setFont('times', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...NAVY);
+    doc.text('Detailed Record of Activity', M, y);
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.8);
+    doc.line(M, y + 5, M + 160, y + 5);
+
+    doc.autoTable({
+        startY,
+        margin: { left: M, right: M, top: 54, bottom: 50 },
+        theme: 'striped',
+        head: [['Date & Time', 'Action', 'Record', 'Details', 'Done By', 'Record ID']],
+        body: rows.map((r) => [
+            auditPdfText(r.when),
+            auditPdfText(r.action),
+            auditPdfText(r.entity),
+            auditPdfText(r.details),
+            auditPdfText(r.user),
+            auditPdfText(r.recordId)
+        ]),
+        styles: { font: 'times', fontSize: 9, cellPadding: { top: 4, bottom: 4, left: 5, right: 5 }, overflow: 'linebreak', valign: 'top', textColor: INK, lineColor: RULE },
+        headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 9.5 },
+        alternateRowStyles: { fillColor: CREAM },
+        columnStyles: {
+            0: { cellWidth: 100 },
+            1: { cellWidth: 66, fontStyle: 'bold' },
+            2: { cellWidth: 76 },
+            3: { cellWidth: 'auto' },
+            4: { cellWidth: 90 },
+            5: { cellWidth: 118 }
+        },
+        didParseCell: (d) => {
+            if (d.section === 'body' && d.column.index === 5) {
+                d.cell.styles.font = 'courier';
+                d.cell.styles.fontSize = 6.5;
+                d.cell.styles.textColor = MUTED;
+            }
+        }
+    });
+
+    y = doc.lastAutoTable.finalY + 30;
+    if (y + 130 > H - 50) {
+        doc.addPage();
+        y = 70;
+    }
+    doc.setFont('times', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...NAVY);
+    doc.text('Certification', M, y);
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.8);
+    doc.line(M, y + 5, M + 78, y + 5);
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...INK);
+    const cert = doc.splitTextToSize(
+        'This report was generated from the JuriSync audit trail on the date stated above and reflects the records that match the filters shown. The generation of this report is itself recorded in the audit trail.',
+        W - M * 2
+    );
+    doc.text(cert, M, y + 22);
+
+    const sy = y + 22 + cert.length * 12 + 46;
+    doc.setDrawColor(...INK);
+    doc.setLineWidth(0.6);
+    const blocks = [
+        { x: M, label: 'Prepared by (signature over printed name)' },
+        { x: M + 300, label: 'Reviewed by (signature over printed name)' }
+    ];
+    blocks.forEach((b) => {
+        doc.line(b.x, sy, b.x + 230, sy);
+        doc.line(b.x + 250, sy, b.x + 340, sy);
+        doc.setFont('times', 'italic');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...MUTED);
+        doc.text(b.label, b.x, sy + 11);
+        doc.text('Date', b.x + 250, sy + 11);
+    });
+
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+        doc.setPage(i);
+        if (i > 1) {
+            doc.setFont('times', 'italic');
+            doc.setFontSize(8.5);
+            doc.setTextColor(...MUTED);
+            doc.text('JuriSync Audit Log Report', M, 30);
+            doc.text(info.reference, W - M, 30, { align: 'right' });
+            doc.setDrawColor(...GOLD);
+            doc.setLineWidth(0.8);
+            doc.line(M, 36, W - M, 36);
+        }
+        doc.setDrawColor(...NAVY);
+        doc.setLineWidth(0.5);
+        doc.line(M, H - 34, W - M, H - 34);
+        doc.setFont('times', 'italic');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...MUTED);
+        doc.text('JuriSync Law Firm Management  |  Confidential - for authorized firm use only', M, H - 21);
+        doc.text(`${info.reference}  |  Page ${i} of ${pages}`, W - M, H - 21, { align: 'right' });
+    }
+
+    doc.save(`jurisync-audit-logs-${auditStamp()}.pdf`);
+}
+
+async function exportAuditXlsx(rows, meta) {
+    await ensureAuditExcelLib();
+    const logo = await loadAuditLogo();
+    const info = auditReportInfo(rows, meta);
+    const NAVY = 'FF1F2A44';
+    const GOLD = 'FFB08D57';
+    const CREAM = 'FFF8F5EE';
+    const SAND = 'FFF1ECE0';
+    const RULE = 'FFD6CEBE';
+    const INK = 'FF1E293B';
+    const MUTED = 'FF64748B';
+    const SERIF = 'Cambria';
+    const SANS = 'Calibri';
+    const solid = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+    const hair = { style: 'thin', color: { argb: RULE } };
+    const rowBorder = { top: hair, bottom: hair };
+    const goldBottom = { bottom: { style: 'medium', color: { argb: GOLD } } };
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = info.user;
+    wb.created = new Date();
+    wb.title = 'JuriSync Audit Log Report';
+
+    const sm = wb.addWorksheet('Summary', {
+        views: [{ showGridLines: false }],
+        pageSetup: {
+            paperSize: 9,
+            orientation: 'portrait',
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0,
+            margins: { left: 0.7, right: 0.7, top: 0.7, bottom: 0.8, header: 0.3, footer: 0.3 }
+        },
+        headerFooter: { oddFooter: '&L&8JuriSync Law Firm Management - Confidential&R&8Page &P of &N' }
+    });
+    sm.columns = [{ width: 34 }, { width: 16 }, { width: 16 }, { width: 8 }, { width: 22 }];
+    const SC = 5;
+
+    const putMerged = (ws, r, c1, c2, value, font, alignment, fill, border) => {
+        if (c2 > c1) ws.mergeCells(r, c1, r, c2);
+        for (let c = c1; c <= c2; c++) {
+            const cell = ws.getCell(r, c);
+            if (fill) cell.fill = fill;
+            if (border) cell.border = border;
+        }
+        const cell = ws.getCell(r, c1);
+        cell.value = value;
+        cell.font = font;
+        cell.alignment = alignment;
+        return cell;
+    };
+
+    putMerged(sm, 1, 1, SC, 'JURISYNC  |  LAW FIRM MANAGEMENT', { name: SERIF, size: 10, bold: true, color: { argb: GOLD } }, { vertical: 'middle', horizontal: 'left' });
+    sm.getRow(1).height = 20;
+    putMerged(sm, 2, 1, SC, 'Audit Log Report', { name: SERIF, size: 26, bold: true, color: { argb: NAVY } }, { vertical: 'middle', horizontal: 'left' }, null, goldBottom);
+    sm.getRow(2).height = 40;
+    sm.getRow(3).height = 10;
+
+    const details = [
+        ['Report reference', info.reference],
+        ['Date generated', info.generatedAt],
+        ['Prepared by', info.user],
+        ['Period covered', info.period],
+        ['Records included', info.total],
+        ['Filters applied', info.filters]
+    ];
+    details.forEach((pair, i) => {
+        const r = 5 + i;
+        putMerged(sm, r, 1, 1, pair[0], { name: SERIF, size: 11, bold: true, color: { argb: NAVY } }, { vertical: 'middle', horizontal: 'left', indent: 1 }, solid(SAND), rowBorder);
+        putMerged(sm, r, 2, SC, pair[1], { name: SANS, size: 11, color: { argb: INK } }, { vertical: 'middle', horizontal: 'left', wrapText: true, indent: 1 }, null, rowBorder);
+        sm.getRow(r).height = pair[0] === 'Filters applied' ? 34 : 22;
+    });
+
+    const sectionTitle = (r, text) => {
+        putMerged(sm, r, 1, SC, text, { name: SERIF, size: 14, bold: true, color: { argb: NAVY } }, { vertical: 'middle', horizontal: 'left' }, null, goldBottom);
+        sm.getRow(r).height = 26;
+    };
+    const tableHead = (r, labels) => {
+        labels.forEach((text, i) => {
+            const c = sm.getCell(r, i + 1);
+            c.value = text;
+            c.font = { name: SERIF, size: 11, bold: true, color: { argb: NAVY } };
+            c.fill = solid(SAND);
+            c.border = { top: hair, bottom: { style: 'thin', color: { argb: GOLD } } };
+            c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center', indent: i === 0 ? 1 : 0 };
+        });
+        sm.getRow(r).height = 22;
+    };
+
+    let r = 12;
+    sectionTitle(r, 'Activity by Action');
+    r += 2;
+    tableHead(r, ['Action', 'Records', 'Share']);
+    r += 1;
+    info.byAction.forEach((a, i) => {
+        const vals = [a.label, a.count, a.count / info.total];
+        vals.forEach((v, idx) => {
+            const c = sm.getCell(r, idx + 1);
+            c.value = v;
+            c.border = rowBorder;
+            c.font = idx === 0
+                ? { name: SANS, size: 11, bold: true, color: { argb: 'FF' + String(a.color).replace('#', '').toUpperCase() } }
+                : { name: SANS, size: 11, color: { argb: INK } };
+            c.alignment = { vertical: 'middle', horizontal: idx === 0 ? 'left' : 'center', indent: idx === 0 ? 1 : 0 };
+            if (i % 2 === 1) c.fill = solid(CREAM);
+        });
+        sm.getCell(r, 3).numFmt = '0.0%';
+        sm.getRow(r).height = 20;
+        r += 1;
+    });
+    ['Total', info.total, 1].forEach((v, idx) => {
+        const c = sm.getCell(r, idx + 1);
+        c.value = v;
+        c.font = { name: SERIF, size: 11, bold: true, color: { argb: NAVY } };
+        c.border = { top: { style: 'thin', color: { argb: GOLD } }, bottom: { style: 'double', color: { argb: GOLD } } };
+        c.alignment = { vertical: 'middle', horizontal: idx === 0 ? 'left' : 'center', indent: idx === 0 ? 1 : 0 };
+    });
+    sm.getCell(r, 3).numFmt = '0.0%';
+    sm.getRow(r).height = 22;
+
+    r += 3;
+    sectionTitle(r, 'Activity by User');
+    r += 2;
+    tableHead(r, ['Done by', 'Records', 'Share']);
+    r += 1;
+    info.byUser.forEach(([name, count], i) => {
+        [name, count, count / info.total].forEach((v, idx) => {
+            const c = sm.getCell(r, idx + 1);
+            c.value = v;
+            c.border = rowBorder;
+            c.font = { name: SANS, size: 11, color: { argb: INK } };
+            c.alignment = { vertical: 'middle', horizontal: idx === 0 ? 'left' : 'center', indent: idx === 0 ? 1 : 0 };
+            if (i % 2 === 1) c.fill = solid(CREAM);
+        });
+        sm.getCell(r, 3).numFmt = '0.0%';
+        sm.getRow(r).height = 20;
+        r += 1;
+    });
+
+    r += 2;
+    sectionTitle(r, 'Certification');
+    r += 1;
+    putMerged(
+        sm,
+        r,
+        1,
+        SC,
+        'This report was generated from the JuriSync audit trail on the date stated above and reflects the records that match the filters shown. The generation of this report is itself recorded in the audit trail.',
+        { name: SANS, size: 10.5, color: { argb: INK } },
+        { vertical: 'top', horizontal: 'left', wrapText: true }
+    );
+    sm.getRow(r).height = 48;
+
+    r += 3;
+    ['Prepared by', 'Reviewed by'].forEach((label) => {
+        const ln = { bottom: { style: 'thin', color: { argb: INK } } };
+        sm.getCell(r, 1).value = '';
+        putMerged(sm, r, 1, 3, '', { name: SANS, size: 11 }, { vertical: 'bottom' }, null, ln);
+        putMerged(sm, r, 5, 5, '', { name: SANS, size: 11 }, { vertical: 'bottom' }, null, ln);
+        putMerged(sm, r + 1, 1, 3, `${label} (signature over printed name)`, { name: SANS, size: 9, italic: true, color: { argb: MUTED } }, { vertical: 'top', horizontal: 'left' });
+        putMerged(sm, r + 1, 5, 5, 'Date', { name: SANS, size: 9, italic: true, color: { argb: MUTED } }, { vertical: 'top', horizontal: 'left' });
+        sm.getRow(r).height = 34;
+        r += 3;
+    });
+
+    const HEADER_ROW = 6;
+    const LAST_COL = 8;
+    const ws = wb.addWorksheet('Audit Log', {
+        views: [{ state: 'frozen', ySplit: HEADER_ROW, showGridLines: false }],
+        pageSetup: {
+            paperSize: 9,
+            orientation: 'landscape',
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0,
+            margins: { left: 0.5, right: 0.5, top: 0.6, bottom: 0.7, header: 0.3, footer: 0.3 },
+            printTitlesRow: `${HEADER_ROW}:${HEADER_ROW}`
+        },
+        headerFooter: {
+            oddFooter: '&L&8JuriSync Law Firm Management - Confidential&C&8Audit Log Report&R&8Page &P of &N'
+        }
+    });
+    ws.columns = [{ width: 7 }, { width: 25 }, { width: 16 }, { width: 18 }, { width: 62 }, { width: 24 }, { width: 38 }, { width: 38 }];
+
+    putMerged(ws, 1, 1, LAST_COL, 'JURISYNC  |  LAW FIRM MANAGEMENT', { name: SERIF, size: 10, bold: true, color: { argb: GOLD } }, { vertical: 'middle', horizontal: 'left' });
+    ws.getRow(1).height = 20;
+    putMerged(ws, 2, 1, LAST_COL, 'Audit Log Register', { name: SERIF, size: 22, bold: true, color: { argb: NAVY } }, { vertical: 'middle', horizontal: 'left' }, null, goldBottom);
+    ws.getRow(2).height = 34;
+    putMerged(ws, 3, 1, LAST_COL, `Reference ${info.reference}   |   Generated ${info.generatedAt}   |   ${info.total} records`, { name: SANS, size: 10, italic: true, color: { argb: MUTED } }, { vertical: 'middle', horizontal: 'left' });
+    ws.getRow(3).height = 20;
+    putMerged(ws, 4, 1, LAST_COL, `Filters applied: ${info.filters}`, { name: SANS, size: 10, italic: true, color: { argb: MUTED } }, { vertical: 'middle', horizontal: 'left' });
+    ws.getRow(4).height = 20;
+    ws.getRow(5).height = 8;
+
+    const headers = ['No.', 'Date & Time', 'Action', 'Record Type', 'Details', 'Done By', 'Record ID', 'Log ID'];
+    const headRow = ws.getRow(HEADER_ROW);
+    headers.forEach((text, i) => {
+        const c = headRow.getCell(i + 1);
+        c.value = text;
+        c.font = { name: SERIF, size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = solid(NAVY);
+        c.border = goldBottom;
+        c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'center' : 'left', indent: i === 0 ? 0 : 1 };
+    });
+    headRow.height = 28;
+
+    rows.forEach((rec, i) => {
+        const row = ws.getRow(HEADER_ROW + 1 + i);
+        const when = auditLocalAsUtc(rec.iso);
+        const values = [i + 1, when || rec.when, rec.action, rec.entity, rec.details, rec.user, rec.recordId, String(rec.logId || '')];
+        values.forEach((v, idx) => {
+            const c = row.getCell(idx + 1);
+            c.value = v;
+            c.border = rowBorder;
+            c.font = { name: SANS, size: 10, color: { argb: INK } };
+            c.alignment = { vertical: 'top', horizontal: idx === 0 ? 'center' : 'left', wrapText: idx === 4, indent: idx === 0 ? 0 : 1 };
+            if (i % 2 === 1) c.fill = solid(CREAM);
+        });
+        row.getCell(2).numFmt = 'mmm d, yyyy  h:mm AM/PM';
+        row.getCell(3).font = { name: SANS, size: 10, bold: true, color: { argb: 'FF' + String(rec.color).replace('#', '').toUpperCase() } };
+        [7, 8].forEach((n) => {
+            row.getCell(n).font = { name: 'Consolas', size: 9, color: { argb: MUTED } };
+        });
+    });
+
+    ws.autoFilter = { from: { row: HEADER_ROW, column: 1 }, to: { row: HEADER_ROW + rows.length, column: LAST_COL } };
+
+    if (logo) {
+        const placeLogo = (sheet, colIndex, colPx, heightPx) => {
+            const widthPx = heightPx * logo.ratio;
+            const frac = Math.max(0, (colPx - widthPx - 8) / colPx);
+            const id = wb.addImage({ base64: logo.base64, extension: logo.ext });
+            sheet.addImage(id, {
+                tl: { col: colIndex + frac, row: 0.15 },
+                ext: { width: widthPx, height: heightPx },
+                editAs: 'oneCell'
+            });
+        };
+        placeLogo(sm, 4, 159, 54);
+        placeLogo(ws, 7, 271, 46);
+    }
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    downloadAuditBlob(blob, `jurisync-audit-logs-${auditStamp()}.xlsx`);
+}
+
+async function runAuditExport(format) {
+    if (auditExporting) return;
+    if (globalRoleName !== 'admin' && globalRoleName !== 'secretary') {
+        showToast('You do not have access to export audit logs.', 'error');
+        return;
+    }
+    auditExporting = true;
+    const btn = document.getElementById('audit-export-btn');
+    const original = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Preparing...';
+    }
+    try {
+        const filters = getAuditFilters();
+        const term = (document.getElementById('audit-search')?.value || '').trim().toLowerCase();
+        const logs = await fetchAllAuditLogs(filters);
+        const names = await fetchAuditUserNames(logs);
+        const rows = buildAuditExportRows(logs, names, term);
+        if (rows.length === 0) {
+            showToast('There are no audit records to export for these filters.', 'info');
+            return;
+        }
+        const filterText = auditExportFilterText(filters, term);
+        const meta = {
+            filters: filterText,
+            user: globalUserName || 'User',
+            generatedAt: new Date().toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            })
+        };
+        if (format === 'pdf') {
+            await exportAuditPdf(rows, meta);
+        } else {
+            await exportAuditXlsx(rows, meta);
+        }
+        const label = format === 'pdf' ? 'PDF' : 'Excel';
+        const capped = logs.length >= AUDIT_EXPORT_MAX ? ` (limited to the latest ${AUDIT_EXPORT_MAX.toLocaleString()})` : '';
+        showToast(`Exported ${rows.length} audit ${rows.length === 1 ? 'record' : 'records'} as ${label}${capped}.`, 'success');
+        logSystemEvent(
+            'EXPORT',
+            'audit_logs',
+            `${globalUserName || 'User'} exported ${rows.length} audit ${rows.length === 1 ? 'record' : 'records'} as ${label}`,
+            null,
+            { format: format, record_count: rows.length, filters: filterText }
+        );
+    } catch (err) {
+        console.error('Audit export failed:', err);
+        showToast('Could not export the audit logs. Please try again.', 'error');
+    } finally {
+        auditExporting = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    }
+}
+
+function setAuditExportMenu(open) {
+    const menu = document.getElementById('audit-export-menu');
+    const btn = document.getElementById('audit-export-btn');
+    if (!menu || !btn) return;
+    menu.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('audit-export-menu');
+    if (!menu) return;
+    const toggle = e.target.closest('#audit-export-btn');
+    const item = e.target.closest('#audit-export-dropdown [data-export]');
+    if (toggle) {
+        setAuditExportMenu(!menu.classList.contains('open'));
+    } else if (item) {
+        setAuditExportMenu(false);
+        runAuditExport(item.dataset.export);
+    } else {
+        setAuditExportMenu(false);
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setAuditExportMenu(false);
+});

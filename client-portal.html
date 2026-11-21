@@ -17,6 +17,117 @@
         })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+(function () {
+    if (window.JuriSyncSound) return;
+    var STORAGE_KEY = 'jurisync-sound-muted';
+    var MIN_GAP_MS = 1500;
+    var ctx = null;
+    var lastPlayed = 0;
+    var buttons = [];
+
+    function isMuted() {
+        try {
+            return localStorage.getItem(STORAGE_KEY) === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function getContext() {
+        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return null;
+        if (!ctx) ctx = new AudioCtx();
+        return ctx;
+    }
+
+    function unlock() {
+        var c = getContext();
+        if (c && c.state === 'suspended') c.resume().catch(function () {});
+    }
+
+    ['pointerdown', 'keydown', 'touchstart'].forEach(function (evt) {
+        window.addEventListener(evt, unlock, { passive: true });
+    });
+
+    function note(c, frequency, startAt, duration, volume) {
+        var osc = c.createOscillator();
+        var overtone = c.createOscillator();
+        var gain = c.createGain();
+        osc.type = 'sine';
+        overtone.type = 'triangle';
+        osc.frequency.value = frequency;
+        overtone.frequency.value = frequency * 2;
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+        osc.connect(gain);
+        overtone.connect(gain);
+        gain.connect(c.destination);
+        osc.start(startAt);
+        overtone.start(startAt);
+        osc.stop(startAt + duration + 0.05);
+        overtone.stop(startAt + duration + 0.05);
+    }
+
+    function schedule(c) {
+        var t = c.currentTime + 0.02;
+        note(c, 784, t, 0.45, 0.16);
+        note(c, 988, t + 0.15, 0.45, 0.16);
+        note(c, 1175, t + 0.3, 0.7, 0.18);
+    }
+
+    function play(force) {
+        if (!force && isMuted()) return false;
+        var now = Date.now();
+        if (!force && now - lastPlayed < MIN_GAP_MS) return false;
+        lastPlayed = now;
+        var c = getContext();
+        if (!c) return false;
+        if (c.state === 'running') {
+            schedule(c);
+        } else {
+            c.resume().then(function () {
+                if (c.state === 'running') schedule(c);
+                else console.warn('Notification sound is blocked until you click or press a key on this page.');
+            }).catch(function () {
+                console.warn('Notification sound is blocked until you click or press a key on this page.');
+            });
+        }
+        return true;
+    }
+
+    function paint(btn) {
+        var muted = isMuted();
+        var icon = btn.querySelector('i');
+        if (icon) icon.className = muted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+        btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+        btn.setAttribute('aria-label', muted ? 'Turn notification sound on' : 'Turn notification sound off');
+        btn.title = muted ? 'Notification sound is off' : 'Notification sound is on';
+    }
+
+    function setMuted(value) {
+        try {
+            localStorage.setItem(STORAGE_KEY, value ? '1' : '0');
+        } catch (e) {}
+        buttons.forEach(paint);
+    }
+
+    function bindToggle(btn) {
+        if (!btn || btn.dataset.soundBound) return;
+        btn.dataset.soundBound = '1';
+        buttons.push(btn);
+        paint(btn);
+        btn.addEventListener('click', function () {
+            var nowMuted = !isMuted();
+            setMuted(nowMuted);
+            if (!nowMuted) play(true);
+        });
+    }
+
+    window.JuriSyncSound = { play: play, isMuted: isMuted, setMuted: setMuted, bindToggle: bindToggle };
+})();
+    </script>
     <style>
         :root {
             --p-navy: #0f172a;
@@ -76,6 +187,20 @@
             display: inline-flex; align-items: center; gap: 8px;
             transition: background-color 0.2s ease;
         }
+        .p-sound {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(148,163,184,0.25);
+            color: #e2e8f0;
+            width: 36px; height: 36px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: background-color 0.2s ease;
+        }
+        .p-sound:hover { background: rgba(255,255,255,0.14); }
+        .p-sound[aria-pressed="true"] { color: #94a3b8; }
+        .p-sound:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
         .p-logout:hover { background: rgba(248,113,113,0.16); color: #fecaca; }
         .p-logout:focus-visible, .p-case:focus-visible, .c-send:focus-visible, .p-retry:focus-visible {
             outline: 2px solid #60a5fa; outline-offset: 2px;
@@ -300,6 +425,70 @@
         @media (max-width: 480px) {
             .p-stats { grid-template-columns: 1fr; }
         }
+
+        .a-card { background: #fff; border: 1px solid var(--p-line); border-radius: 16px; flex: 0 0 auto; }
+        .a-card-head { border-radius: 16px 16px 0 0; }
+        .c-scroll > * { flex-shrink: 0; }
+        .a-card-head { padding: 18px 22px 16px; border-bottom: 1px solid var(--p-line); }
+        .a-card-head h3 { margin: 0; font-size: 17px; letter-spacing: -0.2px; color: var(--p-navy); }
+        .a-card-head p { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--p-muted); }
+        .a-card-body { padding: 18px 22px 22px; }
+        .a-intro { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .a-intro-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #f8fafc; border: 1px solid var(--p-line); border-radius: 12px; min-width: 0; }
+        .a-intro-item > i { width: 34px; height: 34px; border-radius: 10px; background: #e0ecff; color: var(--p-blue-dark); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex: 0 0 auto; }
+        .a-intro-item span { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--p-muted); }
+        .a-intro-item strong { display: block; margin-top: 2px; font-size: 13px; color: var(--p-navy); overflow-wrap: anywhere; }
+        .a-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+        .a-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+        .a-step { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: var(--p-navy); margin-top: 6px; }
+        .a-col > .a-step:first-child { margin-top: 0; }
+        .a-step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--p-navy); color: #fff; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+        .a-label { margin-top: 6px; font-size: 13px; font-weight: 600; color: #334155; }
+        .a-label small { font-weight: 400; color: var(--p-muted); }
+        .a-input { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; background: #fff; color: var(--p-text); }
+        textarea.a-input { resize: vertical; min-height: 96px; line-height: 1.5; }
+        .a-input:focus { outline: none; border-color: var(--p-blue); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        .a-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+        .a-slot { padding: 10px 8px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff; color: var(--p-text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; }
+        .a-slot:hover:not(:disabled) { border-color: #93c5fd; background: #eff6ff; }
+        .a-slot.sel { background: var(--p-navy); border-color: var(--p-navy); color: #fff; }
+        .a-slot:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; border-color: #e2e8f0; }
+        .a-slot:focus-visible, .a-cancel:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+        .a-slot small { display: block; margin-top: 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+        .a-avail { font-size: 12px; font-weight: 600; color: var(--p-muted); min-height: 16px; }
+        .a-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; font-size: 12px; color: var(--p-muted); }
+        .a-legend span { display: inline-flex; align-items: center; gap: 6px; }
+        .a-key { width: 12px; height: 12px; border-radius: 4px; display: inline-block; border: 1px solid #cbd5e1; background: #fff; }
+        .a-key.sel { background: var(--p-navy); border-color: var(--p-navy); }
+        .a-key.off { background: #f1f5f9; border-color: #e2e8f0; }
+        .a-hint { grid-column: 1 / -1; font-size: 13px; line-height: 1.5; color: var(--p-muted); padding: 12px 14px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; }
+        .a-summary { margin-top: 8px; padding: 12px 14px; border-radius: 10px; background: #f8fafc; border: 1px solid var(--p-line); font-size: 13px; line-height: 1.5; color: var(--p-muted); }
+        .a-summary.ready { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+        .a-summary b { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 2px; }
+        .a-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+        .a-actions .d-btn { margin-top: 0; padding: 11px 22px; }
+        .a-actions .d-btn:disabled { background: #94a3b8; cursor: not-allowed; opacity: 1; }
+        .a-actions .d-status { margin-top: 0; flex: 1; min-width: 160px; }
+        .a-closed { font-size: 14px; line-height: 1.6; color: var(--p-muted); }
+        @media (max-width: 900px) {
+            .a-grid { grid-template-columns: 1fr; gap: 20px; }
+            .a-intro { grid-template-columns: 1fr; }
+            .a-card-head, .a-card-body { padding-left: 16px; padding-right: 16px; }
+        }
+        .a-item { background: #fff; border: 1px solid var(--p-line); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+        .a-item-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+        .a-item-title { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+        .a-item-when { margin-top: 3px; font-size: 13px; color: var(--p-muted); }
+        .a-item-note { margin-top: 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+        .a-item-note b { font-weight: 700; }
+        .a-pill { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 99px; text-transform: capitalize; white-space: nowrap; }
+        .a-pill.pending { background: #fef3c7; color: #b45309; }
+        .a-pill.approved { background: #dcfce7; color: #16a34a; }
+        .a-pill.declined { background: #fee2e2; color: #dc2626; }
+        .a-pill.cancelled { background: #f1f5f9; color: #64748b; }
+        .a-cancel { margin-top: 10px; padding: 0; background: none; border: none; color: #dc2626; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .a-cancel:hover { text-decoration: underline; }
+        .a-cancel:disabled { opacity: 0.6; cursor: wait; }
     </style>
 </head>
 <body class="portal-body">
@@ -314,6 +503,8 @@
         <div class="p-user">
             <span class="p-avatar" id="p-avatar" aria-hidden="true"></span>
             <span class="p-user-name" id="p-username"></span>
+            <button class="p-sound" id="portal-sound-toggle" type="button" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
+            <button class="p-sound" id="portal-sound-test" type="button" title="Play a test sound" aria-label="Play a test sound"><i class="fa-regular fa-bell"></i></button>
             <button class="p-logout" id="portal-logout-btn" type="button"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
         </div>
     </header>
@@ -625,6 +816,7 @@
                     <button type="button" class="c-tab" role="tab" data-tab="history" aria-selected="false">History</button>
                     <button type="button" class="c-tab" role="tab" data-tab="messages" aria-selected="false">Messages</button>
                     <button type="button" class="c-tab" role="tab" data-tab="documents" aria-selected="false">Documents</button>
+                    <button type="button" class="c-tab" role="tab" data-tab="appointments" aria-selected="false">Appointments</button>
                 </div>
                 <div class="c-pane" id="c-pane"></div>`;
 
@@ -643,16 +835,86 @@
             startPolling();
         }
 
+        function playPortalSound() {
+            if (window.JuriSyncSound) window.JuriSyncSound.play();
+        }
+
+        async function checkIncomingAlerts() {
+            const caseId = state.activeId;
+            if (!caseId) return false;
+            let fired = false;
+
+            const { count, error } = await supabaseClient
+                .from('email_queue')
+                .select('id', { count: 'exact', head: true })
+                .eq('case_id', caseId)
+                .eq('is_sent', true)
+                .neq('kind', 'client_message');
+            if (String(caseId) !== String(state.activeId)) return false;
+            if (!error && count !== null) {
+                if (state.msgWatch && String(state.msgWatch.caseId) === String(caseId) && count > state.msgWatch.count) fired = true;
+                state.msgWatch = { caseId, count };
+            }
+
+            const { data: appts, error: apptErr } = await supabaseClient.rpc('portal_my_appointments', { p_case_id: caseId });
+            if (String(caseId) !== String(state.activeId)) return fired;
+            if (!apptErr) {
+                const map = {};
+                (appts || []).forEach(a => { map[a.id] = a.status; });
+                if (state.apptWatch && String(state.apptWatch.caseId) === String(caseId)) {
+                    const answered = (appts || []).some(a => state.apptWatch.map[a.id] === 'pending' && (a.status === 'approved' || a.status === 'declined'));
+                    if (answered) fired = true;
+                }
+                state.apptWatch = { caseId, map };
+            }
+
+            if (fired) {
+                playPortalSound();
+                state.staleWhileHidden = true;
+            }
+            return fired;
+        }
+
+        function refreshAfterHidden() {
+            if (!state.staleWhileHidden || !state.activeId) return;
+            state.staleWhileHidden = false;
+            renderStats();
+            showTab(state.tab);
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refreshAfterHidden();
+        });
+
         function startPolling() {
             clearInterval(state.pollTimer);
+            state.msgWatch = null;
+            state.apptWatch = null;
+            checkIncomingAlerts();
             state.pollTimer = setInterval(async () => {
-                if (document.hidden || !state.activeId) return;
+                if (!state.activeId) return;
+                if (document.hidden) {
+                    await checkIncomingAlerts();
+                    const changedHidden = await loadUpdates();
+                    if (changedHidden) {
+                        playPortalSound();
+                        state.staleWhileHidden = true;
+                    }
+                    return;
+                }
+                checkIncomingAlerts();
                 if (state.tab === 'messages') {
                     loadThread(state.activeId, true);
                     return;
                 }
+                if (state.tab === 'appointments') {
+                    loadMyAppointments(true);
+                    if (apptState.date) loadApptSlots(true);
+                    return;
+                }
                 const changed = await loadUpdates();
                 if (!changed) return;
+                playPortalSound();
                 renderStats();
                 if (state.tab === 'overview') renderOverview();
                 else if (state.tab === 'history') renderHistory();
@@ -996,6 +1258,12 @@
                         <div class="o-label"><i class="fa-solid fa-file-lines"></i> Latest update</div>
                         ${latestHtml}
                     </section>
+                    ${status === 'closed' || !c.lead_lawyer ? '' : `
+                    <section class="o-card">
+                        <div class="o-label"><i class="fa-solid fa-calendar-plus"></i> Appointments</div>
+                        <div class="o-sub">Need to meet with your lawyer? Pick a time and Atty. ${escapeHtml(c.lead_lawyer)} will confirm it.</div>
+                        <button type="button" class="o-link-btn" data-goto="appointments">Request an appointment</button>
+                    </section>`}
                 </div>`;
         }
 
@@ -1111,7 +1379,7 @@
             const caseId = c.id;
             const { data, error } = await supabaseClient.rpc('portal_my_uploads', { p_case_id: caseId });
             const stillHere = document.getElementById('d-list');
-            if (!stillHere || state.activeId !== caseId || state.tab !== 'documents') return;
+            if (!stillHere || String(state.activeId) !== String(caseId) || state.tab !== 'documents') return;
             if (error) {
                 stillHere.innerHTML = `<div class="c-state error"><i class="fa-solid fa-triangle-exclamation"></i><strong>We couldn't load your documents</strong><span>Please try again later.</span></div>`;
                 return;
@@ -1170,11 +1438,388 @@
                 loadMyUploads();
             } catch (err) {
                 console.error('Upload failed:', err);
-                setUploadStatus('We could not send this file. Please try again.', 'err');
+                const reason = err && err.message ? String(err.message) : '';
+                setUploadStatus('We could not send this file. Please try again.' + (reason ? ' (' + reason + ')' : ''), 'err');
             } finally {
                 if (chooseBtn) chooseBtn.disabled = false;
             }
         }
+
+        const APPT_HOURS = [9, 10, 11, 12, 13, 14, 15, 16];
+        const APPT_TZ_OFFSET = '+08:00';
+        const APPT_MIN_LEAD_MS = 2 * 60 * 60 * 1000;
+        const APPT_MAX_DAYS = 60;
+        const APPT_ERRORS = {
+            slot_taken: 'That time was just taken. Please pick another time.',
+            invalid_slot: 'Please pick a time from Monday to Friday, 9:00 AM to 4:00 PM.',
+            too_soon: 'Please choose a time at least 2 hours from now.',
+            too_far: 'Please choose a date within the next 60 days.',
+            too_many_pending: 'You already have 3 pending requests. Please wait for your lawyer to respond or cancel one.',
+            duplicate_request: 'You already have a pending request for this time.',
+            case_closed: 'This case is closed, so new appointments cannot be requested.',
+            no_lawyer: 'No lawyer is assigned to this case yet.',
+            invalid_topic: 'Please tell us briefly what the appointment is about.',
+            invalid_notes: 'Your notes are too long.',
+            case_not_found: 'We could not find this case.',
+            not_pending: 'This request was already answered, so it cannot be cancelled.',
+            request_not_found: 'We could not find this request.'
+        };
+        const apptState = { date: '', time: null, taken: [], loadingSlots: false, slotToken: 0, listSig: '', submitting: false };
+
+        function apptMessage(err) {
+            const key = err && err.message ? String(err.message).trim() : '';
+            return APPT_ERRORS[key] || 'Something went wrong. Please try again.';
+        }
+
+        function manilaToday() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        }
+
+        function addDaysToDateStr(dateStr, n) {
+            const d = new Date(dateStr + 'T12:00:00Z');
+            d.setUTCDate(d.getUTCDate() + n);
+            return d.toISOString().slice(0, 10);
+        }
+
+        function isWeekendDateStr(dateStr) {
+            const day = new Date(dateStr + 'T12:00:00Z').getUTCDay();
+            return day === 0 || day === 6;
+        }
+
+        function apptSlotIso(dateStr, hour) {
+            return dateStr + 'T' + String(hour).padStart(2, '0') + ':00:00' + APPT_TZ_OFFSET;
+        }
+
+        function apptHourLabel(hour) {
+            const h12 = hour % 12 === 0 ? 12 : hour % 12;
+            return h12 + ':00 ' + (hour < 12 ? 'AM' : 'PM');
+        }
+
+        function fmtApptWhen(startIso) {
+            const s = new Date(startIso);
+            if (isNaN(s)) return '';
+            const day = s.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+            const time = s.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' });
+            return day + ' at ' + time + ' (PHT)';
+        }
+
+        function setApptStatus(text, kind) {
+            const el = document.getElementById('a-status');
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = 'd-status' + (kind ? ' ' + kind : '');
+        }
+
+        function updateApptSubmitState() {
+            const btn = document.getElementById('a-submit');
+            const topic = document.getElementById('a-topic');
+            if (!btn) return;
+            btn.disabled = apptState.submitting || !apptState.date || apptState.time === null || !topic || !topic.value.trim();
+            const summary = document.getElementById('a-summary');
+            if (summary) {
+                if (apptState.date && apptState.time !== null) {
+                    summary.className = 'a-summary ready';
+                    summary.innerHTML = '<b>Requested schedule</b>' + escapeHtml(fmtApptWhen(apptSlotIso(apptState.date, apptState.time)));
+                } else {
+                    summary.className = 'a-summary';
+                    summary.innerHTML = '<b>Requested schedule</b>No date and time selected yet.';
+                }
+            }
+        }
+
+        function setApptAvailability(text) {
+            const el = document.getElementById('a-avail');
+            if (el) el.textContent = text || '';
+        }
+
+        function renderApptSlots() {
+            const wrap = document.getElementById('a-slots');
+            if (!wrap) return;
+            setApptAvailability('');
+            const date = apptState.date;
+            if (!date) {
+                wrap.innerHTML = '<div class="a-hint">Please select a date to view the available times.</div>';
+                return;
+            }
+            const today = manilaToday();
+            if (date < today || date > addDaysToDateStr(today, APPT_MAX_DAYS)) {
+                wrap.innerHTML = '<div class="a-hint">Please select a date within the next 60 days.</div>';
+                return;
+            }
+            if (isWeekendDateStr(date)) {
+                wrap.innerHTML = '<div class="a-hint">Appointments are available from Monday to Friday only. Please select a weekday.</div>';
+                return;
+            }
+            if (apptState.loadingSlots) {
+                wrap.innerHTML = '<div class="a-hint">Checking availability...</div>';
+                return;
+            }
+            const earliest = Date.now() + APPT_MIN_LEAD_MS;
+            let openCount = 0;
+            const html = APPT_HOURS.map(hour => {
+                const startMs = Date.parse(apptSlotIso(date, hour));
+                const endMs = startMs + 60 * 60 * 1000;
+                const busy = apptState.taken.some(t => t.start < endMs && t.end > startMs);
+                const past = startMs < earliest;
+                const off = past || busy;
+                if (!off) openCount++;
+                const sel = apptState.time === hour;
+                const title = busy ? 'Unavailable: your attorney has another appointment or hearing at this time.' : (past ? 'This time can no longer be requested.' : 'Available');
+                return `<button type="button" class="a-slot ${sel ? 'sel' : ''} ${off ? 'off' : ''}" data-hour="${hour}" aria-pressed="${sel}" title="${title}" ${off ? 'disabled aria-disabled="true"' : ''}>${apptHourLabel(hour)}${busy ? '<small>Unavailable</small>' : ''}</button>`;
+            }).join('');
+            wrap.innerHTML = html;
+            setApptAvailability(openCount + ' of ' + APPT_HOURS.length + ' times available');
+            if (openCount === 0) {
+                wrap.insertAdjacentHTML('beforeend', '<div class="a-hint">Your attorney has no open times on this date. Please select another date.</div>');
+            }
+        }
+
+        async function loadApptSlots(silent) {
+            const c = activeCase();
+            const date = apptState.date;
+            if (!c || !date) return;
+            const today = manilaToday();
+            if (date < today || date > addDaysToDateStr(today, APPT_MAX_DAYS) || isWeekendDateStr(date)) {
+                apptState.taken = [];
+                apptState.loadingSlots = false;
+                renderApptSlots();
+                return;
+            }
+            const token = ++apptState.slotToken;
+            const hadTime = apptState.time !== null;
+            if (!silent) {
+                apptState.loadingSlots = true;
+                renderApptSlots();
+            }
+            const { data, error } = await supabaseClient.rpc('portal_taken_slots', {
+                p_case_id: c.id,
+                p_from: apptSlotIso(date, 0),
+                p_to: apptSlotIso(addDaysToDateStr(date, 1), 0)
+            });
+            if (token !== apptState.slotToken) return;
+            apptState.loadingSlots = false;
+            if (error) {
+                console.error('Slot lookup failed:', error);
+                if (silent) return;
+                apptState.taken = [];
+                setApptStatus('We could not check the available times. Please try again.', 'err');
+            } else {
+                apptState.taken = (data || []).map(r => ({ start: Date.parse(r.slot_start), end: Date.parse(r.slot_end) }));
+            }
+            if (apptState.time !== null) {
+                const startMs = Date.parse(apptSlotIso(date, apptState.time));
+                const stillFree = startMs >= Date.now() + APPT_MIN_LEAD_MS && !apptState.taken.some(t => t.start < startMs + 3600000 && t.end > startMs);
+                if (!stillFree) {
+                    apptState.time = null;
+                    if (hadTime) setApptStatus('The time you selected is no longer available. Please choose another time.', 'err');
+                }
+            }
+            renderApptSlots();
+            updateApptSubmitState();
+        }
+
+        function renderAppointmentsTab() {
+            const pane = document.getElementById('c-pane');
+            const c = activeCase();
+            if (!pane || !c) return;
+            apptState.date = '';
+            apptState.time = null;
+            apptState.taken = [];
+            apptState.loadingSlots = false;
+            apptState.slotToken++;
+            apptState.listSig = '';
+            apptState.submitting = false;
+
+            const closed = c.status === 'closed';
+            const noLawyer = !c.lead_lawyer;
+            const today = manilaToday();
+
+            let formHtml;
+            if (closed) {
+                formHtml = '<div class="a-closed">This case is closed. New appointments can no longer be requested. Your previous requests are listed below.</div>';
+            } else if (noLawyer) {
+                formHtml = '<div class="a-closed">An attorney has not yet been assigned to this case. You may submit an appointment request once an attorney has been assigned.</div>';
+            } else {
+                formHtml = `
+                    <div class="a-intro">
+                        <div class="a-intro-item"><i class="fa-solid fa-user-tie"></i><div><span>Attorney</span><strong>Atty. ${escapeHtml(c.lead_lawyer)}</strong></div></div>
+                        <div class="a-intro-item"><i class="fa-regular fa-calendar-check"></i><div><span>Office hours</span><strong>Mon to Fri, 9:00 AM to 5:00 PM (PHT)</strong></div></div>
+                    </div>
+                    <div class="a-grid">
+                        <div class="a-col">
+                            <div class="a-step"><span class="a-step-num">1</span> Select a preferred date</div>
+                            <input type="date" id="a-date" class="a-input" min="${today}" max="${addDaysToDateStr(today, APPT_MAX_DAYS)}" aria-label="Preferred date">
+                            <div class="a-step" id="a-time-label"><span class="a-step-num">2</span> Select an available time</div>
+                            <div class="a-avail" id="a-avail" aria-live="polite"></div>
+                            <div class="a-slots" id="a-slots" role="group" aria-labelledby="a-time-label"></div>
+                            <div class="a-legend" aria-hidden="true">
+                                <span><i class="a-key open"></i> Available</span>
+                                <span><i class="a-key sel"></i> Selected</span>
+                                <span><i class="a-key off"></i> Unavailable</span>
+                            </div>
+                        </div>
+                        <div class="a-col">
+                            <div class="a-step"><span class="a-step-num">3</span> Appointment details</div>
+                            <label class="a-label" for="a-topic">Subject of the appointment</label>
+                            <input type="text" id="a-topic" class="a-input" maxlength="120" placeholder="e.g. Review of the settlement offer" autocomplete="off">
+                            <label class="a-label" for="a-notes">Additional information <small>(optional)</small></label>
+                            <textarea id="a-notes" class="a-input" maxlength="1000" placeholder="Provide any details your attorney should know in advance."></textarea>
+                            <div class="a-summary" id="a-summary" aria-live="polite"></div>
+                            <div class="a-actions">
+                                <button type="button" class="d-btn" id="a-submit" disabled><i class="fa-solid fa-paper-plane"></i> Submit request</button>
+                                <span class="d-status" id="a-status" role="status" aria-live="polite"></span>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            pane.innerHTML = `
+                <div class="c-scroll">
+                    <section class="a-card">
+                        <div class="a-card-head">
+                            <h3>Request an Appointment</h3>
+                            <p>Submit your preferred schedule for review. Your attorney will confirm or propose a different time, and the outcome will appear under your requests below.</p>
+                        </div>
+                        <div class="a-card-body">${formHtml}</div>
+                    </section>
+                    <div class="d-heading">Your appointment requests</div>
+                    <div id="a-list"><div class="c-skel"></div></div>
+                </div>`;
+
+            if (!closed && !noLawyer) {
+                renderApptSlots();
+                updateApptSubmitState();
+                const dateInput = document.getElementById('a-date');
+                dateInput.addEventListener('change', () => {
+                    apptState.date = dateInput.value;
+                    apptState.time = null;
+                    apptState.taken = [];
+                    setApptStatus('');
+                    if (!apptState.date) {
+                        renderApptSlots();
+                        updateApptSubmitState();
+                        return;
+                    }
+                    loadApptSlots();
+                    updateApptSubmitState();
+                });
+                document.getElementById('a-slots').addEventListener('click', (e) => {
+                    const btn = e.target.closest('.a-slot');
+                    if (!btn || btn.disabled) return;
+                    apptState.time = Number(btn.dataset.hour);
+                    setApptStatus('');
+                    renderApptSlots();
+                    updateApptSubmitState();
+                });
+                document.getElementById('a-topic').addEventListener('input', updateApptSubmitState);
+                document.getElementById('a-submit').addEventListener('click', submitAppointmentRequest);
+            }
+
+            document.getElementById('a-list').addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-appt-cancel]');
+                if (btn) cancelAppointmentRequest(btn.getAttribute('data-appt-cancel'), btn);
+            });
+
+            loadMyAppointments(false);
+        }
+
+        async function loadMyAppointments(silent) {
+            const c = activeCase();
+            if (!c) return;
+            const caseId = c.id;
+            const { data, error } = await supabaseClient.rpc('portal_my_appointments', { p_case_id: caseId });
+            const listEl = document.getElementById('a-list');
+            if (!listEl || String(state.activeId) !== String(caseId) || state.tab !== 'appointments') return;
+            if (error) {
+                if (silent) return;
+                listEl.innerHTML = `<div class="c-state error"><i class="fa-solid fa-triangle-exclamation"></i><strong>We couldn't load your requests</strong><span>Please try again later.</span></div>`;
+                return;
+            }
+            const rows = data || [];
+            const sig = rows.map(r => [r.id, r.status, r.decided_at, r.decision_note].join('|')).join(';');
+            if (silent && sig === apptState.listSig) return;
+            apptState.listSig = sig;
+
+            if (rows.length === 0) {
+                listEl.innerHTML = `<div class="c-empty"><i class="fa-regular fa-calendar"></i><strong>No appointment requests</strong><span>Requests you submit will be listed here with their status.</span></div>`;
+                return;
+            }
+            listEl.innerHTML = rows.map(r => {
+                const status = ['pending', 'approved', 'declined', 'cancelled'].includes(r.status) ? r.status : 'pending';
+                const label = status === 'pending' ? 'Awaiting confirmation' : status;
+                const lawyer = r.lawyer_name ? 'Atty. ' + escapeHtml(r.lawyer_name) : 'Your lawyer';
+                return `
+                    <div class="a-item">
+                        <div class="a-item-top">
+                            <div>
+                                <div class="a-item-title">${escapeHtml(r.topic)}</div>
+                                <div class="a-item-when">${escapeHtml(fmtApptWhen(r.requested_start))} &bull; ${lawyer}</div>
+                            </div>
+                            <span class="a-pill ${status}">${escapeHtml(label)}</span>
+                        </div>
+                        ${r.notes ? `<div class="a-item-note"><b>Your notes:</b> ${escapeHtml(r.notes)}</div>` : ''}
+                        ${r.decision_note ? `<div class="a-item-note"><b>Message from your attorney:</b> ${escapeHtml(r.decision_note)}</div>` : ''}
+                        ${status === 'approved' ? '<div class="a-item-note">This appointment is confirmed. To change the schedule, please contact your attorney through Messages.</div>' : ''}
+                        ${status === 'pending' ? `<button type="button" class="a-cancel" data-appt-cancel="${escapeHtml(r.id)}">Withdraw request</button>` : ''}
+                    </div>`;
+            }).join('');
+        }
+
+        async function submitAppointmentRequest() {
+            const c = activeCase();
+            const topicEl = document.getElementById('a-topic');
+            const notesEl = document.getElementById('a-notes');
+            if (!c || !topicEl || apptState.submitting) return;
+            const topic = topicEl.value.trim();
+            if (!apptState.date || apptState.time === null) {
+                setApptStatus('Please select a date and time.', 'err');
+                return;
+            }
+            if (!topic) {
+                setApptStatus('Please enter the subject of the appointment.', 'err');
+                return;
+            }
+            apptState.submitting = true;
+            updateApptSubmitState();
+            setApptStatus('Submitting your request...', 'busy');
+            const { error } = await supabaseClient.rpc('portal_request_appointment', {
+                p_case_id: c.id,
+                p_start: apptSlotIso(apptState.date, apptState.time),
+                p_topic: topic,
+                p_notes: notesEl ? notesEl.value.trim() : ''
+            });
+            apptState.submitting = false;
+            if (!document.getElementById('a-submit')) return;
+            if (error) {
+                console.error('Appointment request failed:', error);
+                setApptStatus(apptMessage(error), 'err');
+                if (error.message === 'slot_taken' || error.message === 'too_soon') loadApptSlots();
+                updateApptSubmitState();
+                return;
+            }
+            topicEl.value = '';
+            if (notesEl) notesEl.value = '';
+            apptState.time = null;
+            setApptStatus('Your request has been submitted. Your attorney has been notified and will confirm the schedule.', 'ok');
+            renderApptSlots();
+            updateApptSubmitState();
+            apptState.listSig = '';
+            loadMyAppointments(false);
+        }
+
+        async function cancelAppointmentRequest(id, btn) {
+            if (!id || !confirm('Withdraw this appointment request?')) return;
+            if (btn) btn.disabled = true;
+            const { error } = await supabaseClient.rpc('portal_cancel_appointment', { p_id: id });
+            if (error) {
+                console.error('Cancel failed:', error);
+                alert(apptMessage(error));
+            }
+            apptState.listSig = '';
+            loadMyAppointments(false);
+            if (apptState.date) loadApptSlots();
+        }
+
 
         function showTab(tab) {
             const pane = document.getElementById('c-pane');
@@ -1194,7 +1839,13 @@
             if (tab === 'overview') renderOverview();
             else if (tab === 'history') renderHistory();
             else if (tab === 'documents') renderDocumentsTab();
+            else if (tab === 'appointments') renderAppointmentsTab();
             else renderMessagesTab();
+        }
+
+        if (window.JuriSyncSound) {
+            window.JuriSyncSound.bindToggle(document.getElementById('portal-sound-toggle'));
+            document.getElementById('portal-sound-test').addEventListener('click', () => window.JuriSyncSound.play(true));
         }
 
         document.getElementById('portal-logout-btn').addEventListener('click', async () => {
