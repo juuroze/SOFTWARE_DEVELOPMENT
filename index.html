@@ -19,7 +19,7 @@
     <style>
         .mobile-topbar, .sidebar-backdrop, .app-loader { display: none; }
     </style>
-    <link rel="stylesheet" href="style.css?v=ui11">
+    <link rel="stylesheet" href="style.css?v=ui12">
     <link
         rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
@@ -129,7 +129,7 @@
                         <p class="user-name">Atty. Carlos</p>
                         <p class="user-role">Administrator</p>
                     </div>
-                    <i class="fa-solid fa-pen" style="font-size: 11px; color: #94a3b8; margin-left: auto;"></i>
+                    <i class="fa-solid fa-pen" style="font-size: 12px; color: #64748b; margin-left: auto;"></i>
                 </div>
             </div>
 
@@ -254,7 +254,7 @@
                         <h1>Firm-wide Calendar</h1>
                     </div>
                     <button class="btn-primary-black btn-add-event" id="btn-add-event-header" style="display: none;">
-                        <i class="fa-solid fa-plus"></i> New Docket Entry
+                        <i class="fa-solid fa-plus"></i> New Event
                     </button>
                 </header>
 
@@ -264,10 +264,10 @@
                             <h3 id="currentMonthYear">April 2026</h3>
                             <div class="nav-btns">
                                 <button id="todayBtn" class="btn-today" type="button">Today</button>
-                                <button id="prevMonth" class="btn-nav">
+                                <button id="prevMonth" class="btn-nav" aria-label="Previous month" title="Previous month">
                                     <i class="fa-solid fa-chevron-left"></i>
                                 </button>
-                                <button id="nextMonth" class="btn-nav">
+                                <button id="nextMonth" class="btn-nav" aria-label="Next month" title="Next month">
                                     <i class="fa-solid fa-chevron-right"></i>
                                 </button>
                             </div>
@@ -276,7 +276,6 @@
                         <div class="calendar-legend">
                             <span><i class="lg-dot lg-normal"></i> Event</span>
                             <span><i class="fa-solid fa-star lg-star"></i> High priority</span>
-                            <span><i class="lg-dot lg-conflict"></i> Conflict</span>
                             <span><i class="lg-dot lg-general"></i> Firm-wide</span>
                         </div>
 
@@ -340,9 +339,14 @@
                     <div>
                         <h1>Document Repository</h1>
                     </div>
-                    <button class="btn-primary-black" id="btn-upload-doc" style="display: none;">
-                        <i class="fa-solid fa-upload"></i> Upload Document
-                    </button>
+                    <div class="view-header-actions">
+                        <button type="button" class="tpl-header-btn" id="btn-manage-templates">
+                            <i class="fa-regular fa-file-lines"></i> Document templates
+                        </button>
+                        <button class="btn-primary-black" id="btn-upload-doc" style="display: none;">
+                            <i class="fa-solid fa-upload"></i> Upload Document
+                        </button>
+                    </div>
                 </header>
 
                 <div class="doc-search-bar">
@@ -358,6 +362,9 @@
                                 <option value="source:client-new">New from clients</option>
                                 <option value="source:client">All client uploads</option>
                                 <option value="source:firm">Firm documents only</option>
+                            </optgroup>
+                            <optgroup label="Origin">
+                                <option value="generated document">Generated from templates</option>
                             </optgroup>
                             <optgroup label="For Court">
                                 <option value="pleadings">Pleadings</option>
@@ -480,7 +487,7 @@
                         <span id="notif-header-badge" class="badge-pill bg-red" style="font-size: 13px; padding: 4px 10px;">
                             Loading...
                         </span>
-                        <button type="button" id="notif-sound-toggle" class="notif-sound-btn" aria-pressed="false">
+                        <button type="button" id="notif-sound-toggle" class="notif-sound-btn" aria-pressed="false" aria-label="Notification sound" title="Notification sound">
                             <i class="fa-solid fa-volume-high"></i>
                         </button>
                         <button type="button" id="notif-sound-test" class="notif-sound-btn" title="Play a test sound" aria-label="Play a test sound">
@@ -722,7 +729,7 @@
             <div class="modal-content" style="max-width: 550px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
                 <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
                     <h2 id="day-details-title" style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 0;">Events for the Day</h2>
-                    <button id="close-day-details-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                    <button id="close-day-details-btn" class="btn-close" aria-label="Close" title="Close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div id="day-details-list" style="display: flex; flex-direction: column; gap: 15px;">
                     </div>
@@ -743,7 +750,7 @@
             <div class="modal-content" style="max-width: 450px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto;">
                 <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 15px;">
                     <h2 id="room-booking-title" style="font-size: 18px; font-weight: 700; color: #1e293b; margin: 0;">Booking Details</h2>
-                    <button id="close-room-booking-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                    <button id="close-room-booking-btn" class="btn-close" aria-label="Close" title="Close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div id="room-booking-body" style="display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #334155;">
                     </div>
@@ -942,22 +949,22 @@
             <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
                 <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
                     <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Add New User</h2>
-                    <button id="close-lawyer-modal-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                    <button id="close-lawyer-modal-btn" class="btn-close" aria-label="Close" title="Close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Create a lawyer or secretary account.</p>
 
                 <form id="add-lawyer-form">
                     <div class="form-row" style="display: flex; gap: 10px; margin-bottom: 16px;">
                         <div class="form-group" style="flex: 2; margin-bottom: 0;">
-                            <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; font-weight: 600;">First Name</label>
+                            <label style="display: block; font-size: 12px; color: #64748b; margin-bottom: 4px; font-weight: 600;">First Name</label>
                             <input type="text" id="add-lawyer-fname" required placeholder="e.g., Juan" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
                         </div>
                         <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                            <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; font-weight: 600;">M.I.</label>
+                            <label style="display: block; font-size: 12px; color: #64748b; margin-bottom: 4px; font-weight: 600;">M.I.</label>
                             <input type="text" id="add-lawyer-mi" maxlength="2" placeholder="A." style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
                         </div>
                         <div class="form-group" style="flex: 2; margin-bottom: 0;">
-                            <label style="display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; font-weight: 600;">Last Name</label>
+                            <label style="display: block; font-size: 12px; color: #64748b; margin-bottom: 4px; font-weight: 600;">Last Name</label>
                             <input type="text" id="add-lawyer-lname" required placeholder="e.g., Dela Cruz" style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc;">
                         </div>
                     </div>
@@ -979,7 +986,7 @@
                             <select id="add-lawyer-role" required style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-family: inherit; background: #f8fafc; appearance: none;">
                                 <option value="">Loading roles...</option>
                             </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #64748b; pointer-events: none; font-size: 12px;"></i>
                         </div>
                     </div>
 
@@ -998,7 +1005,7 @@
                                 <option value="Family Law">Family Law</option>
                                 <option value="Civil Litigation">Civil Litigation</option>
                             </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #64748b; pointer-events: none; font-size: 12px;"></i>
                         </div>
                     </div>
 
@@ -1011,7 +1018,7 @@
             <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
                 <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
                     <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Edit Lawyer Profile</h2>
-                    <button id="close-edit-lawyer-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                    <button id="close-edit-lawyer-btn" class="btn-close" aria-label="Close" title="Close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Update the lawyer's information below.</p>
 
@@ -1038,7 +1045,7 @@
                                 <option value="Family Law">Family Law</option>
                                 <option value="Civil Litigation">Civil Litigation</option>
                             </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #64748b; pointer-events: none; font-size: 12px;"></i>
                         </div>
                     </div>
 
@@ -1051,7 +1058,7 @@
             <div class="modal-content" style="max-width: 500px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
                 <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: none; padding-bottom: 0; margin-bottom: 5px;">
                     <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0;">Edit Profile</h2>
-                    <button id="close-my-profile-btn" class="btn-close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
+                    <button id="close-my-profile-btn" class="btn-close" aria-label="Close" title="Close" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #64748b; padding: 0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <p style="color: #64748b; font-size: 13px; margin-bottom: 20px; margin-top: 4px;">Update your name, contact number, and specialization.</p>
 
@@ -1061,7 +1068,7 @@
                         <div>
                             <button type="button" id="my-profile-photo-btn" style="padding: 8px 14px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; color: #334155;">Change Photo</button>
                             <input type="file" id="my-profile-photo-input" accept="image/*" style="display: none;">
-                            <p style="font-size: 11px; color: #94a3b8; margin-top: 6px;">JPG or PNG, up to 2MB.</p>
+                            <p style="font-size: 12px; color: #64748b; margin-top: 6px;">JPG or PNG, up to 2MB.</p>
                         </div>
                     </div>
 
@@ -1090,7 +1097,7 @@
                                 <option value="Family Law">Family Law</option>
                                 <option value="Civil Litigation">Civil Litigation</option>
                             </select>
-                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #94a3b8; pointer-events: none; font-size: 12px;"></i>
+                            <i class="fa-solid fa-chevron-down" style="position: absolute; right: 12px; top: 14px; color: #64748b; pointer-events: none; font-size: 12px;"></i>
                         </div>
                     </div>
 
@@ -1336,6 +1343,14 @@
                 <div id="case-emails-list" class="cm-thread" role="log" aria-live="polite" tabindex="0"></div>
 
                 <form id="case-email-form" class="cm-composer">
+                    <div class="cm-tpl-row">
+                        <select id="case-email-template" class="cm-input cm-tpl-select" aria-label="Email template">
+                            <option value="">Use an email template</option>
+                        </select>
+                        <button type="button" class="cm-tpl-btn" id="case-manage-templates">
+                            <i class="fa-regular fa-file-lines"></i> Manage templates
+                        </button>
+                    </div>
                     <input type="text" id="case-email-subject" class="cm-input" placeholder="Subject, for example: Update on your case" required>
                     <textarea id="case-email-body" class="cm-input cm-textarea" rows="3" placeholder="Write an update for your client" required></textarea>
                     <div class="cm-actions">
@@ -1347,6 +1362,136 @@
                     </div>
                     <p class="cm-note"><i class="fa-regular fa-envelope"></i> <span id="case-email-note"></span></p>
                 </form>
+            </div>
+        </div>
+
+        <div id="tpl-generate-modal" class="modal-overlay hidden">
+            <div class="modal-content tpl-modal tpl-modal-xl" role="dialog" aria-modal="true" aria-labelledby="tpl-gen-title">
+                <div class="tpl-head">
+                    <span class="tpl-head-icon"><i class="fa-regular fa-file-word"></i></span>
+                    <div class="tpl-head-text">
+                        <h2 id="tpl-gen-title">Generate Document</h2>
+                        <p id="tpl-gen-sub"></p>
+                    </div>
+                    <button type="button" id="tpl-gen-close" class="cm-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="tpl-gen-layout">
+                    <aside class="tpl-gen-side">
+                        <div class="tpl-section">
+                            <label class="tpl-label" for="tpl-gen-select">Template</label>
+                            <select id="tpl-gen-select" class="tpl-input"></select>
+                            <label class="tpl-label" for="tpl-gen-name">File name</label>
+                            <div class="tpl-file-row">
+                                <input type="text" id="tpl-gen-name" class="tpl-input" maxlength="120">
+                                <span class="tpl-ext">.docx</span>
+                            </div>
+                        </div>
+                        <div class="tpl-section">
+                            <div class="tpl-section-title">Case details <span>Filled in automatically</span></div>
+                            <dl class="tpl-facts" id="tpl-gen-facts"></dl>
+                        </div>
+                        <div class="tpl-section">
+                            <div class="tpl-section-title">Remaining details <span id="tpl-gen-fill-count"></span></div>
+                            <div id="tpl-gen-fills" class="tpl-fills"></div>
+                        </div>
+                    </aside>
+                    <section class="tpl-gen-main">
+                        <div class="tpl-tabs" role="tablist">
+                            <button type="button" class="tpl-tab active" role="tab" aria-selected="true" data-tab="preview"><i class="fa-regular fa-eye"></i> Preview</button>
+                            <button type="button" class="tpl-tab" role="tab" aria-selected="false" data-tab="edit"><i class="fa-regular fa-pen-to-square"></i> Edit text</button>
+                            <span class="tpl-warn" id="tpl-gen-warn" role="status"></span>
+                        </div>
+                        <div class="tpl-stage" id="tpl-gen-stage-preview">
+                            <article class="tpl-paper" id="tpl-gen-preview" aria-label="Document preview"></article>
+                        </div>
+                        <div class="tpl-stage tpl-stage-edit" id="tpl-gen-stage-edit" hidden>
+                            <textarea id="tpl-gen-text" class="tpl-editor" spellcheck="true" aria-label="Document text"></textarea>
+                            <p class="tpl-help">Line formatting: start a line with # to center it in bold, ## for bold, &gt; to indent the first line, &gt;&gt; to right-align, or &lt;&lt; to left-align.</p>
+                        </div>
+                    </section>
+                </div>
+                <div class="tpl-foot">
+                    <button type="button" id="tpl-gen-cancel" class="ev-btn ev-btn-ghost">Cancel</button>
+                    <span class="tpl-spacer"></span>
+                    <button type="button" id="tpl-gen-download" class="ev-btn ev-btn-ghost"><i class="fa-solid fa-download"></i> Download</button>
+                    <button type="button" id="tpl-gen-save" class="ev-btn ev-btn-primary"><i class="fa-regular fa-floppy-disk"></i> Save to case documents</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tpl-manage-modal" class="modal-overlay hidden">
+            <div class="modal-content tpl-modal tpl-modal-wide" role="dialog" aria-modal="true" aria-labelledby="tpl-manage-title">
+                <div class="tpl-head">
+                    <span class="tpl-head-icon"><i class="fa-regular fa-file-lines"></i></span>
+                    <div class="tpl-head-text">
+                        <h2 id="tpl-manage-title">Templates</h2>
+                        <p>Reusable emails and pleadings. Client and case details are filled in automatically.</p>
+                    </div>
+                    <button type="button" id="tpl-manage-close" class="cm-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="tpl-manage-body">
+                    <aside class="tpl-list-col">
+                        <div class="tpl-search">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="search" id="tpl-search" placeholder="Search templates" aria-label="Search templates" autocomplete="off">
+                        </div>
+                        <button type="button" id="tpl-new-btn" class="tpl-new-btn"><i class="fa-solid fa-plus"></i> New template</button>
+                        <div class="tpl-kind-filter" id="tpl-kind-filter">
+                            <button type="button" class="active" data-kind="all">All</button>
+                            <button type="button" data-kind="email">Emails</button>
+                            <button type="button" data-kind="document">Documents</button>
+                        </div>
+                        <div id="tpl-list" class="tpl-list"></div>
+                    </aside>
+                    <form id="tpl-form" class="tpl-form" autocomplete="off">
+                        <div class="tpl-form-scroll">
+                            <div class="tpl-form-top">
+                                <h3 id="tpl-form-title">Template</h3>
+                                <span class="tpl-badge" id="tpl-badge"></span>
+                            </div>
+                            <div class="tpl-grid2">
+                                <div>
+                                    <label class="tpl-label" for="tpl-name">Template name</label>
+                                    <input type="text" id="tpl-name" class="tpl-input" maxlength="120" required>
+                                </div>
+                                <div>
+                                    <span class="tpl-label" id="tpl-kind-label">Type</span>
+                                    <div class="tpl-seg" role="radiogroup" aria-labelledby="tpl-kind-label">
+                                        <label><input type="radio" name="tpl-kind" id="tpl-kind-email" value="email" checked><span><i class="fa-regular fa-envelope"></i> Email</span></label>
+                                        <label><input type="radio" name="tpl-kind" id="tpl-kind-document" value="document"><span><i class="fa-regular fa-file-lines"></i> Document</span></label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="tpl-subject-wrap">
+                                <label class="tpl-label" for="tpl-subject">Subject</label>
+                                <input type="text" id="tpl-subject" class="tpl-input" maxlength="200">
+                            </div>
+                            <label class="tpl-label" for="tpl-body">Content</label>
+                            <textarea id="tpl-body" class="tpl-editor" rows="12" required></textarea>
+                            <div id="tpl-fields-wrap">
+                                <div class="tpl-label">Insert a field <small>Click to add at the cursor</small></div>
+                                <div id="tpl-fields" class="tpl-fields"></div>
+                            </div>
+                            <div class="tpl-guide" id="tpl-format-guide">
+                                <div class="tpl-label">Document formatting</div>
+                                <ul>
+                                    <li><code># Title</code><span>Centered, bold</span></li>
+                                    <li><code>## Heading</code><span>Bold, left</span></li>
+                                    <li><code>&gt; Paragraph</code><span>Indented first line</span></li>
+                                    <li><code>&gt;&gt; Text</code><span>Right-aligned</span></li>
+                                    <li><code>&lt;&lt; Text</code><span>Left-aligned</span></li>
+                                    <li><code>[Detail]</code><span>Filled in by hand when generating</span></li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="tpl-foot">
+                            <button type="button" id="tpl-delete-btn" class="ev-btn tpl-delete"><i class="fa-regular fa-trash-can"></i> Delete</button>
+                            <div class="tpl-status" id="tpl-status" role="status"></div>
+                            <span class="tpl-spacer"></span>
+                            <button type="submit" id="tpl-save-btn" class="ev-btn ev-btn-primary">Save template</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -1364,7 +1509,9 @@
 
     </div>
 
-    <script src="main.js?v=ui19"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="main.js?v=ui21"></script>
+    <script src="a11y.js?v=1" defer></script>
 
 </body>
 </html>

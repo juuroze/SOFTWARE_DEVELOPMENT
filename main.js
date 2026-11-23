@@ -651,7 +651,7 @@ async function promptMfaEnroll() {
                     <li>Enter the 6-digit code the app shows.</li>
                 </ol>
                 <div style="text-align:center; margin-bottom:10px;"><img id="mfa-qr" alt="Authenticator QR code" style="width:180px; height:180px;"></div>
-                <p style="font-size:11px; color:#64748b; margin:0 0 4px 0; text-align:center;">Can't scan? Enter this key manually:</p>
+                <p style="font-size:12px; color:#64748b; margin:0 0 4px 0; text-align:center;">Can't scan? Enter this key manually:</p>
                 <p id="mfa-secret" style="font-size:12px; font-family:monospace; word-break:break-all; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px; margin:0 0 16px 0; text-align:center; user-select:all;"></p>
                 <form id="mfa-form" autocomplete="off">
                     <input type="text" id="mfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="${MFA_CODE_INPUT}">
@@ -1016,7 +1016,7 @@ function setupRealtimeSubscriptions() {
             renderNotificationsList();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, () => {
-            renderDocumentList();
+            refreshDocumentList();
             renderRecentDocumentsInSchedule();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'cases' }, () => {
@@ -1027,6 +1027,7 @@ function setupRealtimeSubscriptions() {
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => {
             renderAdminAttention();
+            renderPerformanceTab();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
             renderManageLawyersList();
@@ -1254,6 +1255,753 @@ window.focusAppointmentRequest = async function (id) {
     }
 };
 
+function escapeXmlText(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function docxRunsXml(text, bold) {
+    const parts = String(text).split('\t');
+    const props = '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>' + (bold ? '<w:b/>' : '') + '<w:sz w:val="24"/></w:rPr>';
+    return parts
+        .map((part, i) => {
+            const tab = i > 0 ? '<w:r>' + props + '<w:tab/></w:r>' : '';
+            const textRun = part ? '<w:r>' + props + '<w:t xml:space="preserve">' + escapeXmlText(part) + '</w:t></w:r>' : '';
+            return tab + textRun;
+        })
+        .join('');
+}
+
+function docxParagraphXml(line) {
+    let text = line;
+    let align = 'both';
+    let bold = false;
+    let indent = '';
+    if (text.startsWith('## ')) {
+        text = text.slice(3);
+        align = 'left';
+        bold = true;
+    } else if (text.startsWith('# ')) {
+        text = text.slice(2);
+        align = 'center';
+        bold = true;
+    } else if (text.startsWith('>> ')) {
+        text = text.slice(3);
+        align = 'right';
+    } else if (text.startsWith('> ')) {
+        text = text.slice(2);
+        indent = '<w:ind w:firstLine="720"/>';
+    } else if (text.startsWith('<< ')) {
+        text = text.slice(3);
+        align = 'left';
+    }
+    const pPr = '<w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/>' + indent + '<w:jc w:val="' + align + '"/></w:pPr>';
+    return '<w:p>' + pPr + docxRunsXml(text, bold) + '</w:p>';
+}
+
+function buildDocxZip(text, ZipCtor) {
+    const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+    const body = lines.map((line) => (line.trim() === '' ? '<w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p>' : docxParagraphXml(line))).join('');
+    const documentXml =
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+        body +
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>' +
+        '</w:body></w:document>';
+    const contentTypes =
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+        '</Types>';
+    const rels =
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+        '</Relationships>';
+    const zip = new ZipCtor();
+    zip.file('[Content_Types].xml', contentTypes);
+    zip.file('_rels/.rels', rels);
+    zip.file('word/document.xml', documentXml);
+    return zip;
+}
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+const TEMPLATE_FIELDS = [
+    { key: 'client_name', label: 'Client name', fallback: 'Client Name', group: 'Client' },
+    { key: 'client_email', label: 'Email', fallback: 'Client Email', group: 'Client' },
+    { key: 'client_phone', label: 'Phone', fallback: 'Client Phone', group: 'Client' },
+    { key: 'client_address', label: 'Address', fallback: 'Client Address', group: 'Client' },
+    { key: 'case_number', label: 'Case number', fallback: 'Case Number', group: 'Case' },
+    { key: 'case_title', label: 'Case title', fallback: 'Case Title', group: 'Case' },
+    { key: 'case_type', label: 'Case type', fallback: 'Case Type', group: 'Case' },
+    { key: 'case_stage', label: 'Case stage', fallback: 'Case Stage', group: 'Case' },
+    { key: 'party_type', label: 'Party type', fallback: 'Party Type', group: 'Case' },
+    { key: 'court_branch', label: 'Court branch', fallback: 'Court Branch', group: 'Court' },
+    { key: 'court_case_no', label: 'Court case no.', fallback: 'Court Case No.', group: 'Court' },
+    { key: 'lawyer_name', label: 'Lawyer name', fallback: 'Lawyer Name', group: 'Other' },
+    { key: 'date', label: "Today's date", fallback: 'Date', group: 'Other' }
+];
+
+const PLACEHOLDER_SOURCE = '\\[[^\\]\\n]{2,80}\\]';
+
+let templatesCache = null;
+let templateEditId = null;
+let templateLastField = null;
+let templateSearchTerm = '';
+let templateKindFilter = 'all';
+const genState = { caseId: null, templateId: null, base: '', fills: {}, tokens: [], dirty: false, tab: 'preview' };
+
+async function loadTemplates(force) {
+    if (templatesCache && !force) return templatesCache;
+    const { data, error } = await supabaseClient
+        .from('document_templates')
+        .select('id, name, kind, subject, body, created_by, updated_at')
+        .order('name', { ascending: true });
+    if (error) throw error;
+    templatesCache = data || [];
+    return templatesCache;
+}
+
+function buildTemplateContext(caseId) {
+    const c = (window.__casesRegistry || {})[caseId] || {};
+    const cl = c.clients || {};
+    const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const lawyer = globalUserName ? (globalRoleName === 'lawyer' ? 'Atty. ' : '') + globalUserName : '';
+    return {
+        client_name: cl.client_name || '',
+        client_email: cl.client_email || '',
+        client_phone: cl.client_phone || '',
+        client_address: cl.full_address || '',
+        case_number: c.case_number || '',
+        case_title: c.title || '',
+        case_type: c.case_type || '',
+        case_stage: c.case_stage || '',
+        party_type: c.party_type || '',
+        court_branch: c.court_branch || '',
+        court_case_no: c.court_case_no || '',
+        lawyer_name: lawyer,
+        date: today
+    };
+}
+
+function applyTemplate(text, ctx) {
+    return String(text || '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (match, key) => {
+        const field = TEMPLATE_FIELDS.find((f) => f.key === key.toLowerCase());
+        if (!field) return match;
+        const value = ctx[field.key];
+        return value ? String(value) : '[' + field.fallback + ']';
+    });
+}
+
+function placeholderTokens(text) {
+    const found = String(text || '').match(new RegExp(PLACEHOLDER_SOURCE, 'g')) || [];
+    return Array.from(new Set(found));
+}
+
+function countPlaceholders(text) {
+    const found = String(text || '').match(new RegExp(PLACEHOLDER_SOURCE, 'g'));
+    return found ? found.length : 0;
+}
+
+function safeDocumentBaseName(name) {
+    return String(name || '')
+        .replace(/[\\/:*?"<>|]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+}
+
+function canManageTemplate(tpl) {
+    if (globalRoleName === 'admin') return true;
+    return globalRoleName === 'lawyer' && !!tpl && !!currentUser && tpl.created_by === currentUser.id;
+}
+
+async function populateEmailTemplateSelect() {
+    const select = document.getElementById('case-email-template');
+    if (!select) return;
+    select.innerHTML = '<option value="">Use an email template</option>';
+    try {
+        const list = await loadTemplates(false);
+        list.filter((t) => t.kind === 'email').forEach((t) => {
+            const option = document.createElement('option');
+            option.value = t.id;
+            option.textContent = t.name;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading templates:', error);
+    }
+}
+
+function applyEmailTemplateFromSelect() {
+    const select = document.getElementById('case-email-template');
+    const modal = document.getElementById('case-detail-modal');
+    const subjectInput = document.getElementById('case-email-subject');
+    const bodyInput = document.getElementById('case-email-body');
+    if (!select || !modal || !subjectInput || !bodyInput || !select.value) return;
+    const tpl = (templatesCache || []).find((t) => t.id === select.value);
+    if (!tpl) return;
+    if (
+        (subjectInput.value.trim() || bodyInput.value.trim()) &&
+        !confirm('Replace the current subject and message with this template?')
+    ) {
+        select.value = '';
+        return;
+    }
+    const ctx = buildTemplateContext(modal.getAttribute('data-active-case-id'));
+    subjectInput.value = applyTemplate(tpl.subject || tpl.name, ctx);
+    bodyInput.value = applyTemplate(tpl.body, ctx);
+    bodyInput.rows = Math.min(12, Math.max(4, bodyInput.value.split('\n').length));
+    select.value = '';
+    const open = countPlaceholders(subjectInput.value + '\n' + bodyInput.value);
+    if (open > 0) {
+        showToast(
+            open + (open === 1 ? ' placeholder' : ' placeholders') + ' in [brackets] still need to be filled in before sending.',
+            'info'
+        );
+    }
+    bodyInput.focus();
+}
+
+function genComputeText() {
+    return genState.base.replace(new RegExp(PLACEHOLDER_SOURCE, 'g'), (token) =>
+        genState.fills[token] ? genState.fills[token] : token
+    );
+}
+
+function genPreviewHtml() {
+    const lines = genState.base.replace(/\r\n/g, '\n').split('\n');
+    const splitter = new RegExp('(' + PLACEHOLDER_SOURCE + ')');
+    return lines
+        .map((line) => {
+            if (line.trim() === '') return '<div class="pp-gap"></div>';
+            let cls = 'pp-body';
+            let text = line;
+            if (text.startsWith('## ')) {
+                cls = 'pp-bold';
+                text = text.slice(3);
+            } else if (text.startsWith('# ')) {
+                cls = 'pp-center';
+                text = text.slice(2);
+            } else if (text.startsWith('>> ')) {
+                cls = 'pp-right';
+                text = text.slice(3);
+            } else if (text.startsWith('> ')) {
+                cls = 'pp-indent';
+                text = text.slice(2);
+            } else if (text.startsWith('<< ')) {
+                cls = 'pp-left';
+                text = text.slice(3);
+            }
+            const html = text
+                .split(splitter)
+                .map((part, i) => {
+                    if (i % 2 === 1) {
+                        const filled = genState.fills[part];
+                        return filled
+                            ? `<span class="tpl-filled">${escapeHtml(filled)}</span>`
+                            : `<mark class="tpl-ph">${escapeHtml(part)}</mark>`;
+                    }
+                    return escapeHtml(part).replace(/\t/g, '<span class="pp-tab"></span>');
+                })
+                .join('');
+            return `<p class="${cls}">${html}</p>`;
+        })
+        .join('');
+}
+
+function renderGenFacts(ctx) {
+    const rows = [
+        ['Client', ctx.client_name],
+        ['Case number', ctx.case_number],
+        ['Case', ctx.case_title],
+        ['Court', ctx.court_branch],
+        ['Attorney', ctx.lawyer_name],
+        ['Date', ctx.date]
+    ];
+    document.getElementById('tpl-gen-facts').innerHTML = rows
+        .map(([label, value]) =>
+            value
+                ? `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`
+                : `<div><dt>${label}</dt><dd class="empty">Not on file</dd></div>`
+        )
+        .join('');
+}
+
+function rebuildGenFills() {
+    genState.tokens = placeholderTokens(genState.base);
+    const wrap = document.getElementById('tpl-gen-fills');
+    if (genState.tokens.length === 0) {
+        wrap.innerHTML = '<p class="tpl-fill-done"><i class="fa-solid fa-circle-check"></i> Nothing left to fill in.</p>';
+        return;
+    }
+    wrap.innerHTML = genState.tokens
+        .map((token, i) => {
+            const label = token.slice(1, -1);
+            return `<div class="tpl-fill">
+                <label for="tpl-fill-${i}">${escapeHtml(label)}</label>
+                <input type="text" id="tpl-fill-${i}" class="tpl-input" data-fill-index="${i}" maxlength="200" autocomplete="off" value="${escapeHtml(genState.fills[token] || '')}">
+            </div>`;
+        })
+        .join('');
+}
+
+function updateGenStatus() {
+    const open = genState.tokens.filter((t) => !genState.fills[t]).length;
+    const warnEl = document.getElementById('tpl-gen-warn');
+    const countEl = document.getElementById('tpl-gen-fill-count');
+    if (warnEl) {
+        warnEl.className = 'tpl-warn ' + (open > 0 ? 'open' : 'done');
+        warnEl.innerHTML =
+            open > 0
+                ? `<i class="fa-solid fa-triangle-exclamation"></i> ${open} ${open === 1 ? 'detail' : 'details'} to complete`
+                : '<i class="fa-solid fa-circle-check"></i> Ready to save';
+    }
+    if (countEl) countEl.textContent = open > 0 ? open + ' open' : 'Complete';
+}
+
+function renderGenerate(rebuildFills) {
+    document.getElementById('tpl-gen-preview').innerHTML = genPreviewHtml();
+    if (rebuildFills) rebuildGenFills();
+    updateGenStatus();
+}
+
+function setGenTab(tab) {
+    genState.tab = tab;
+    const previewStage = document.getElementById('tpl-gen-stage-preview');
+    const editStage = document.getElementById('tpl-gen-stage-edit');
+    previewStage.hidden = tab !== 'preview';
+    editStage.hidden = tab !== 'edit';
+    document.querySelectorAll('#tpl-generate-modal .tpl-tab').forEach((btn) => {
+        const active = btn.dataset.tab === tab;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    if (tab === 'edit') {
+        const textEl = document.getElementById('tpl-gen-text');
+        textEl.value = genComputeText();
+        textEl.focus();
+    } else {
+        renderGenerate(false);
+    }
+}
+
+function fillGenerateFromSelection() {
+    const select = document.getElementById('tpl-gen-select');
+    const nameEl = document.getElementById('tpl-gen-name');
+    const tpl = (templatesCache || []).find((t) => t.id === select.value);
+    if (!tpl) return;
+    const ctx = buildTemplateContext(genState.caseId);
+    genState.templateId = tpl.id;
+    genState.base = applyTemplate(tpl.body, ctx);
+    genState.fills = {};
+    genState.dirty = false;
+    nameEl.value = safeDocumentBaseName(tpl.name + ' - ' + (ctx.case_number || ctx.client_name || 'Draft'));
+    renderGenFacts(ctx);
+    setGenTab('preview');
+    renderGenerate(true);
+}
+
+async function openGenerateDocModal(caseId) {
+    const modal = document.getElementById('tpl-generate-modal');
+    const select = document.getElementById('tpl-gen-select');
+    const subEl = document.getElementById('tpl-gen-sub');
+    if (!modal || !select || !caseId) return;
+    let list = [];
+    try {
+        list = (await loadTemplates(false)).filter((t) => t.kind === 'document');
+    } catch (error) {
+        console.error('Error loading templates:', error);
+        showToast('Templates could not be loaded. Please try again.', 'error');
+        return;
+    }
+    if (list.length === 0) {
+        showToast('There are no document templates yet. Add one under Templates.', 'info');
+        return;
+    }
+    genState.caseId = caseId;
+    const info = (window.__casesRegistry || {})[caseId] || {};
+    subEl.textContent =
+        (info.title || 'Case') +
+        (info.case_number ? ' (' + info.case_number + ')' : '') +
+        (info.clients && info.clients.client_name ? ' - ' + info.clients.client_name : '');
+    select.innerHTML = list.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('');
+    fillGenerateFromSelection();
+    modal.classList.remove('hidden');
+}
+
+async function buildGeneratedDocxBlob() {
+    if (typeof JSZip === 'undefined') {
+        throw new Error('The document builder could not be loaded. Please check your connection and refresh the page.');
+    }
+    return buildDocxZip(genComputeText(), JSZip).generateAsync({ type: 'blob', mimeType: DOCX_MIME });
+}
+
+function currentGenerateFileName() {
+    const base = safeDocumentBaseName(document.getElementById('tpl-gen-name').value);
+    return base || 'Document';
+}
+
+async function downloadGeneratedDocument() {
+    const btn = document.getElementById('tpl-gen-download');
+    if (btn) btn.disabled = true;
+    try {
+        const blob = await buildGeneratedDocxBlob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = currentGenerateFileName() + '.docx';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (error) {
+        showToast(error.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function saveGeneratedDocument() {
+    const btn = document.getElementById('tpl-gen-save');
+    if (!btn || !genState.caseId) return;
+    const text = genComputeText();
+    if (!text.trim()) {
+        showToast('The document is empty.', 'warning');
+        return;
+    }
+    if (
+        countPlaceholders(text) > 0 &&
+        !confirm('This document still has details in [brackets] that need to be filled in. Save it anyway?')
+    ) {
+        return;
+    }
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    try {
+        const blob = await buildGeneratedDocxBlob();
+        const fileName = currentGenerateFileName();
+        const file = new File([blob], fileName + '.docx', { type: DOCX_MIME });
+        const info = (window.__casesRegistry || {})[genState.caseId] || {};
+        const usedTemplate = (templatesCache || []).find((t) => t.id === genState.templateId);
+        const caseTag = info.case_number ? 'Case ' + info.case_number : '';
+        await uploadCaseDocument(file, {
+            caseId: genState.caseId,
+            clientId: (info.clients && info.clients.id) || null,
+            category: 'Generated Document',
+            tag: [caseTag, usedTemplate ? 'Template: ' + usedTemplate.name : ''].filter(Boolean).join(', '),
+            title: fileName
+        });
+        showToast('The document was saved to the case documents.', 'success');
+        document.getElementById('tpl-generate-modal').classList.add('hidden');
+        if (typeof renderDocumentList === 'function') renderDocumentList();
+    } catch (error) {
+        console.error('Error saving generated document:', error);
+        showToast(error.message || 'The document could not be saved.', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+function getTemplateKind() {
+    const checked = document.querySelector('input[name="tpl-kind"]:checked');
+    return checked ? checked.value : 'email';
+}
+
+function setTemplateKind(kind) {
+    const radio = document.getElementById(kind === 'document' ? 'tpl-kind-document' : 'tpl-kind-email');
+    if (radio) radio.checked = true;
+}
+
+function setTemplateStatus(text, kind) {
+    const el = document.getElementById('tpl-status');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'tpl-status' + (kind ? ' ' + kind : '');
+}
+
+function syncTemplateKindUi() {
+    const kind = getTemplateKind();
+    document.getElementById('tpl-subject-wrap').style.display = kind === 'email' ? '' : 'none';
+    document.getElementById('tpl-format-guide').style.display = kind === 'document' ? '' : 'none';
+}
+
+function syncTemplateKindFilter() {
+    document.querySelectorAll('#tpl-kind-filter button').forEach((b) => {
+        const kind = b.dataset.kind;
+        const count = (templatesCache || []).filter((t) => kind === 'all' || t.kind === kind).length;
+        const label = kind === 'all' ? 'All' : kind === 'email' ? 'Emails' : 'Documents';
+        b.textContent = label + ' (' + count + ')';
+        b.classList.toggle('active', kind === templateKindFilter);
+    });
+}
+
+function renderTemplateList() {
+    const listEl = document.getElementById('tpl-list');
+    if (!listEl) return;
+    const term = templateSearchTerm.trim().toLowerCase();
+    const items = (templatesCache || []).filter(
+        (t) =>
+            (templateKindFilter === 'all' || t.kind === templateKindFilter) &&
+            (!term || t.name.toLowerCase().includes(term))
+    );
+    syncTemplateKindFilter();
+    if (items.length === 0) {
+        listEl.innerHTML = `<p class="tpl-empty">${term ? 'No templates match your search.' : 'No templates yet.'}</p>`;
+        return;
+    }
+    const group = (kind, title, icon) => {
+        const rows = items.filter((t) => t.kind === kind);
+        if (rows.length === 0) return '';
+        return (
+            `<div class="tpl-group">${title}<span>${rows.length}</span></div>` +
+            rows
+                .map(
+                    (t) =>
+                        `<button type="button" class="tpl-item ${t.id === templateEditId ? 'active' : ''}" data-tpl-id="${escapeHtml(t.id)}">
+                            <i class="${icon}"></i>
+                            <span class="tpl-item-name">${escapeHtml(t.name)}</span>
+                            ${canManageTemplate(t) ? '' : '<i class="fa-solid fa-lock tpl-lock" title="Read-only"></i>'}
+                        </button>`
+                )
+                .join('')
+        );
+    };
+    listEl.innerHTML =
+        group('email', 'Emails', 'fa-regular fa-envelope') + group('document', 'Documents and pleadings', 'fa-regular fa-file-lines');
+}
+
+function fillTemplateForm(tpl) {
+    const canCreate = globalRoleName === 'admin' || globalRoleName === 'lawyer';
+    const editable = tpl ? canManageTemplate(tpl) : canCreate;
+    templateEditId = tpl ? tpl.id : null;
+    document.getElementById('tpl-name').value = tpl ? tpl.name : '';
+    setTemplateKind(tpl ? tpl.kind : 'email');
+    document.getElementById('tpl-subject').value = tpl ? tpl.subject || '' : '';
+    document.getElementById('tpl-body').value = tpl ? tpl.body : '';
+    ['tpl-name', 'tpl-subject', 'tpl-body', 'tpl-kind-email', 'tpl-kind-document'].forEach((id) => {
+        document.getElementById(id).disabled = !editable;
+    });
+    document.getElementById('tpl-save-btn').style.display = editable ? '' : 'none';
+    document.getElementById('tpl-delete-btn').style.display = editable && tpl ? '' : 'none';
+    document.getElementById('tpl-fields-wrap').style.display = editable ? '' : 'none';
+    document.getElementById('tpl-form-title').textContent = !tpl ? 'New template' : editable ? 'Edit template' : 'View template';
+    const badge = document.getElementById('tpl-badge');
+    badge.style.display = tpl && !editable ? '' : 'none';
+    badge.innerHTML = '<i class="fa-solid fa-lock"></i> Read-only';
+    syncTemplateKindUi();
+    setTemplateStatus(editable ? '' : 'Only an administrator or the template author can change this template.', editable ? '' : 'info');
+    renderTemplateList();
+}
+
+async function openTemplateManager(kind) {
+    const modal = document.getElementById('tpl-manage-modal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    templateSearchTerm = '';
+    templateKindFilter = kind === 'email' || kind === 'document' ? kind : 'all';
+    document.getElementById('tpl-search').value = '';
+    try {
+        await loadTemplates(true);
+    } catch (error) {
+        console.error('Error loading templates:', error);
+        showToast('Templates could not be loaded. Please try again.', 'error');
+    }
+    const canCreate = globalRoleName === 'admin' || globalRoleName === 'lawyer';
+    document.getElementById('tpl-new-btn').style.display = canCreate ? '' : 'none';
+    const first = (templatesCache || []).find((t) => templateKindFilter === 'all' || t.kind === templateKindFilter);
+    fillTemplateForm(first || null);
+    if (!first && templateKindFilter !== 'all') {
+        setTemplateKind(templateKindFilter);
+        syncTemplateKindUi();
+    }
+}
+
+async function saveTemplateForm(e) {
+    e.preventDefault();
+    const name = document.getElementById('tpl-name').value.trim();
+    const kind = getTemplateKind();
+    const subject = document.getElementById('tpl-subject').value.trim();
+    const body = document.getElementById('tpl-body').value;
+    const btn = document.getElementById('tpl-save-btn');
+    if (!name || !body.trim()) {
+        setTemplateStatus('Please enter a name and the content.', 'err');
+        return;
+    }
+    if (kind === 'email' && !subject) {
+        setTemplateStatus('Please enter a subject for the email template.', 'err');
+        return;
+    }
+    btn.disabled = true;
+    setTemplateStatus('Saving...', 'busy');
+    const row = { name, kind, subject: kind === 'email' ? subject : null, body, updated_by: currentUser ? currentUser.id : null };
+    let result;
+    if (templateEditId) {
+        result = await supabaseClient.from('document_templates').update(row).eq('id', templateEditId).select('id').single();
+    } else {
+        row.created_by = currentUser ? currentUser.id : null;
+        result = await supabaseClient.from('document_templates').insert([row]).select('id').single();
+    }
+    btn.disabled = false;
+    if (result.error) {
+        console.error('Error saving template:', result.error);
+        const duplicate = result.error.code === '23505';
+        setTemplateStatus(
+            duplicate ? 'A template with this name and type already exists.' : 'The template could not be saved.',
+            'err'
+        );
+        return;
+    }
+    await loadTemplates(true);
+    const saved = templatesCache.find((t) => t.id === result.data.id) || null;
+    fillTemplateForm(saved);
+    setTemplateStatus('Template saved.', 'ok');
+    populateEmailTemplateSelect();
+}
+
+async function deleteTemplateForm() {
+    if (!templateEditId) return;
+    const tpl = (templatesCache || []).find((t) => t.id === templateEditId);
+    if (!tpl || !confirm('Delete the template "' + tpl.name + '"? This cannot be undone.')) return;
+    const { error } = await supabaseClient.from('document_templates').delete().eq('id', templateEditId);
+    if (error) {
+        console.error('Error deleting template:', error);
+        setTemplateStatus('The template could not be deleted.', 'err');
+        return;
+    }
+    await loadTemplates(true);
+    fillTemplateForm((templatesCache || [])[0] || null);
+    populateEmailTemplateSelect();
+    setTemplateStatus('Template deleted.', 'ok');
+}
+
+function insertTemplateField(key) {
+    const target =
+        templateLastField && !templateLastField.disabled && document.body.contains(templateLastField)
+            ? templateLastField
+            : document.getElementById('tpl-body');
+    if (target.id === 'tpl-subject' && getTemplateKind() !== 'email') return;
+    const token = '{{' + key + '}}';
+    const start = target.selectionStart === null ? target.value.length : target.selectionStart;
+    const end = target.selectionEnd === null ? start : target.selectionEnd;
+    target.value = target.value.slice(0, start) + token + target.value.slice(end);
+    const pos = start + token.length;
+    target.focus();
+    target.setSelectionRange(pos, pos);
+}
+
+function renderTemplateFieldChips() {
+    const groups = ['Client', 'Case', 'Court', 'Other'];
+    document.getElementById('tpl-fields').innerHTML = groups
+        .map((group) => {
+            const chips = TEMPLATE_FIELDS.filter((f) => f.group === group)
+                .map((f) => `<button type="button" class="tpl-chip" data-field="${f.key}">${escapeHtml(f.label)}</button>`)
+                .join('');
+            return `<div class="tpl-chip-group"><span>${group}</span><div>${chips}</div></div>`;
+        })
+        .join('');
+}
+
+function setupTemplates() {
+    const caseModal = document.getElementById('case-detail-modal');
+    const genModal = document.getElementById('tpl-generate-modal');
+    const manageModal = document.getElementById('tpl-manage-modal');
+    if (!caseModal || !genModal || !manageModal) return;
+
+    document.getElementById('case-email-template').addEventListener('change', applyEmailTemplateFromSelect);
+    document.getElementById('case-manage-templates').addEventListener('click', () => openTemplateManager('email'));
+    const docsBtn = document.getElementById('btn-manage-templates');
+    if (docsBtn) docsBtn.addEventListener('click', () => openTemplateManager('document'));
+    document.getElementById('tpl-kind-filter').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-kind]');
+        if (!btn) return;
+        templateKindFilter = btn.dataset.kind;
+        renderTemplateList();
+    });
+
+    const closeGen = () => genModal.classList.add('hidden');
+    document.getElementById('tpl-gen-close').addEventListener('click', closeGen);
+    document.getElementById('tpl-gen-cancel').addEventListener('click', closeGen);
+    genModal.addEventListener('mousedown', (e) => {
+        if (e.target === genModal) closeGen();
+    });
+    document.getElementById('tpl-gen-select').addEventListener('change', (e) => {
+        if (genState.dirty && !confirm('Discard your changes and load the selected template?')) {
+            e.target.value = genState.templateId;
+            return;
+        }
+        fillGenerateFromSelection();
+    });
+    document.querySelectorAll('#tpl-generate-modal .tpl-tab').forEach((btn) => {
+        btn.addEventListener('click', () => setGenTab(btn.dataset.tab));
+    });
+    document.getElementById('tpl-gen-fills').addEventListener('input', (e) => {
+        const input = e.target.closest('[data-fill-index]');
+        if (!input) return;
+        const token = genState.tokens[Number(input.dataset.fillIndex)];
+        if (!token) return;
+        if (input.value.trim()) genState.fills[token] = input.value;
+        else delete genState.fills[token];
+        genState.dirty = true;
+        renderGenerate(false);
+    });
+    document.getElementById('tpl-gen-text').addEventListener('input', (e) => {
+        genState.base = e.target.value;
+        genState.fills = {};
+        genState.dirty = true;
+        renderGenerate(true);
+    });
+    document.getElementById('tpl-gen-download').addEventListener('click', downloadGeneratedDocument);
+    document.getElementById('tpl-gen-save').addEventListener('click', saveGeneratedDocument);
+
+    document.getElementById('tpl-manage-close').addEventListener('click', () => manageModal.classList.add('hidden'));
+    manageModal.addEventListener('mousedown', (e) => {
+        if (e.target === manageModal) manageModal.classList.add('hidden');
+    });
+    document.getElementById('tpl-new-btn').addEventListener('click', () => {
+        fillTemplateForm(null);
+        if (templateKindFilter !== 'all') {
+            setTemplateKind(templateKindFilter);
+            syncTemplateKindUi();
+        }
+        document.getElementById('tpl-name').focus();
+    });
+    document.getElementById('tpl-search').addEventListener('input', (e) => {
+        templateSearchTerm = e.target.value;
+        renderTemplateList();
+    });
+    document.getElementById('tpl-list').addEventListener('click', (e) => {
+        const item = e.target.closest('[data-tpl-id]');
+        if (!item) return;
+        const tpl = (templatesCache || []).find((t) => t.id === item.dataset.tplId);
+        if (tpl) fillTemplateForm(tpl);
+    });
+    document.querySelectorAll('input[name="tpl-kind"]').forEach((radio) => {
+        radio.addEventListener('change', syncTemplateKindUi);
+    });
+    document.getElementById('tpl-form').addEventListener('submit', saveTemplateForm);
+    document.getElementById('tpl-delete-btn').addEventListener('click', deleteTemplateForm);
+    ['tpl-subject', 'tpl-body'].forEach((id) => {
+        document.getElementById(id).addEventListener('focus', (e) => {
+            templateLastField = e.target;
+        });
+    });
+    renderTemplateFieldChips();
+    document.getElementById('tpl-fields').addEventListener('mousedown', (e) => e.preventDefault());
+    document.getElementById('tpl-fields').addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-field]');
+        if (chip) insertTemplateField(chip.dataset.field);
+    });
+}
+
 async function pollNewNotifications() {
     if (!currentUser || !window.__notifSeen) return;
     const { data, error } = await supabaseClient
@@ -1303,6 +2051,7 @@ async function initializeApp() {
     await renderScheduleSummaryWidget();
     await renderLawyerStatusWidget();
     setupAppointmentRequests();
+    setupTemplates();
 
     setupScheduleTabs();
     setupScheduleButtons();
@@ -1510,14 +2259,14 @@ async function renderDashboardContent() {
                           : 'Unassigned';
                     const clientName = d.cases?.clients?.client_name || 'No Client';
                     const isGeneralBadge = d.is_general
-                        ? '<span style="background:#dbeafe; color:#1d4ed8; font-size:10px; padding:3px 8px; border-radius:10px; margin-left:8px;">Firm-wide</span>'
+                        ? '<span style="background:#dbeafe; color:#1d4ed8; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">Firm-wide</span>'
                         : '';
                     const priorityBadge =
                         d.priority === 'high'
-                            ? '<span style="background:#fee2e2; color:#ef4444; font-size:10px; padding:3px 8px; border-radius:10px; margin-left:8px;">High</span>'
+                            ? '<span style="background:#fee2e2; color:#ef4444; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">High</span>'
                             : '';
                     const statusInfo = getEventStatusInfo(d.start_date, d.end_date);
-                    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:10px; padding:3px 8px; border-radius:10px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:3px;"></i>${statusInfo.label}</span>`;
+                    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:3px;"></i>${statusInfo.label}</span>`;
 
                     return `
                         <div style="background:#fff; border:1px solid #e2e8f0; border-left:4px solid ${statusInfo.color}; padding:18px 20px; border-radius:12px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
@@ -1529,7 +2278,7 @@ async function renderDashboardContent() {
                                     ${statusBadge}
                                 </h4>
                                 <p style="font-size:13px; color:#64748b; margin-top:4px;"><i class="fa-solid fa-location-dot"></i> ${escapeHtml(d.location || 'No location')} • Client: ${escapeHtml(clientName)} • Atty. ${escapeHtml(assignedName)}</p>
-                                <div style="margin-top:10px; font-size:12px; color:#94a3b8;">
+                                <div style="margin-top:10px; font-size:12px; color:#64748b;">
                                     <i class="fa-regular fa-calendar"></i> ${formatDate(d.start_date)} at ${formatEventRange(d.start_date, d.end_date)}
                                 </div>
                             </div>
@@ -1664,16 +2413,8 @@ async function generateCalendarGrid() {
             const maxVisible = 2;
 
             dayEvents.slice(0, maxVisible).forEach((ev) => {
-                const styleClass = ev.is_conflict
-                    ? 'cal-event-conflict'
-                    : ev.is_general
-                      ? 'cal-event-general'
-                      : 'cal-event-normal';
-                const iconHtml = ev.is_conflict
-                    ? '<i class="fa-solid fa-triangle-exclamation"></i>'
-                    : ev.is_general
-                      ? '<i class="fa-solid fa-building"></i>'
-                      : '';
+                const styleClass = ev.is_general ? 'cal-event-general' : 'cal-event-normal';
+                const iconHtml = ev.is_general ? '<i class="fa-solid fa-building"></i>' : '';
 
                 let lawyerName = '';
                 if (ev.is_general) {
@@ -1688,7 +2429,7 @@ async function generateCalendarGrid() {
                     ? `Client: ${ev.cases.clients.client_name} | `
                     : '';
                 const priorityMark =
-                    ev.priority === 'high' ? '<i class="fa-solid fa-star" style="font-size:8px;"></i>' : '';
+                    ev.priority === 'high' ? '<i class="fa-solid fa-star" style="font-size:12px;"></i>' : '';
                 const timeRange =
                     (formatEventTime(ev.start_date) || '') + (ev.end_date ? ' – ' + formatEventTime(ev.end_date) : '');
                 eventsHtml += `<div class="cal-event-tag ${styleClass}" title="${escapeHtml(clientNameStr + ev.title + ' - Atty. ' + lawyerName)}">
@@ -1854,7 +2595,7 @@ window.openStatDetails = async function (type) {
                             <div class="upcoming-dl-item" style="cursor:pointer;" onclick="openEventDetails('${dl.id}')" title="Click to view full event details">
                                 <div style="display:flex; justify-content:space-between;">
                                     <h4>${escapeHtml(dl.title)}</h4>
-                                    <span class="badge-pill ${badgeColor}">${daysUntil}d</span>
+                                    <span class="badge-pill ${badgeColor}" title="Due in ${daysUntil} ${daysUntil === 1 ? 'day' : 'days'}">${daysUntil <= 3 ? '<i class="fa-solid fa-triangle-exclamation"></i>' : ''}${daysUntil}d</span>
                                 </div>
                                 <p>${escapeHtml(dl.location || 'Meeting')} • Client: ${escapeHtml(clientName)}</p>
                                 <small><i class="fa-regular fa-calendar"></i> ${formatDate(dl.start_date)} at ${formatEventTime(dl.start_date)}</small>
@@ -1870,27 +2611,34 @@ window.openStatDetails = async function (type) {
             const pastWindowStr = pastWindowDate.toISOString().split('T')[0];
 
             const isAdminView = globalUserRole !== 'lawyer';
-            let completedQuery = supabaseClient
-                .from('calendar_events')
-                .select('*, cases(case_number, clients(client_name))')
-                .order('start_date', { ascending: false });
-            if (isAdminView) {
-                completedQuery = completedQuery.lte('start_date', new Date().toISOString()).limit(200);
-            } else {
-                completedQuery = completedQuery
-                    .gte('start_date', pastWindowStr)
-                    .or(`assigned_to.eq.${currentUser.id},is_general.eq.true`);
-            }
-            const { data: recentEvents, error } = await completedQuery;
+            const buildCompletedQuery = () => {
+                let completedQuery = supabaseClient
+                    .from('calendar_events')
+                    .select('*, cases(case_number, clients(client_name))')
+                    .order('start_date', { ascending: false })
+                    .order('id', { ascending: true });
+                if (isAdminView) {
+                    completedQuery = completedQuery.lte('start_date', new Date().toISOString());
+                } else {
+                    completedQuery = completedQuery
+                        .gte('start_date', pastWindowStr)
+                        .or(`assigned_to.eq.${currentUser.id},is_general.eq.true`);
+                }
+                return completedQuery;
+            };
+            const { data: recentEvents, error } = await fetchAllRows(buildCompletedQuery);
             if (error) throw error;
 
             const completed = (recentEvents || []).filter(
                 (ev) => getEventStatusInfo(ev.start_date, ev.end_date).label === 'Completed'
             );
 
+            pagerGet('events-completed').page = 1;
+            const paintCompleted = () => {
+            const completedInfo = pagerSlice('events-completed', completed);
             listEl.innerHTML =
-                completed.length > 0
-                    ? completed
+                completedInfo.total > 0
+                    ? completedInfo.rows
                           .map((ev) => {
                               const clientName = ev.cases?.clients?.client_name || 'No Client';
                               return `
@@ -1913,6 +2661,13 @@ window.openStatDetails = async function (type) {
                     : '<p style="color:#64748b; text-align:center; padding:20px;">' +
                       (isAdminView ? 'No completed events found.' : 'No completed events in the last 60 days.') +
                       '</p>';
+            listEl.insertAdjacentHTML(
+                'beforeend',
+                pagerHtml('events-completed', completedInfo, completedInfo.total === 1 ? 'event' : 'events')
+            );
+            };
+            pagerBind('events-completed', paintCompleted, '');
+            paintCompleted();
         } else if (type === 'clients') {
             const { clients } = await getActiveClientsData();
             const isAdminView = globalUserRole !== 'lawyer';
@@ -2215,11 +2970,11 @@ function buildEventDetailCard(ev) {
     const borderColor = ev.is_conflict ? '#ef4444' : ev.is_general ? '#8b5cf6' : '#3b82f6';
     const bgColor = ev.is_conflict ? '#fef2f2' : ev.is_general ? '#f5f3ff' : '#f8fafc';
     const conflictStyle = `border-left: 4px solid ${borderColor}; background: ${bgColor}; ${isDone ? 'opacity: 0.65;' : ''}`;
-    const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red">High Priority</span>' : '';
+    const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red"><i class="fa-solid fa-star"></i> High Priority</span>' : '';
     const generalBadge = ev.is_general
-        ? '<span style="background:#ede9fe; color:#7c3aed; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>'
+        ? '<span style="background:#ede9fe; color:#7c3aed; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>'
         : '';
-    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:11px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
+    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
 
     let caseDetailsHtml = '';
     if (ev.cases) {
@@ -2259,9 +3014,9 @@ function buildEventDetailCard(ev) {
                     <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventRange(ev.start_date, ev.end_date)}</span>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
-                    <span><i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i> ${escapeHtml(ev.location || 'Office')}</span>
-                    <span><i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i> Client: <strong>${escapeHtml(clientName)}</strong></span>
-                    <span><i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${escapeHtml(lawyerName)}`}</span>
+                    <span><i class="fa-solid fa-location-dot" style="width:16px; color:#64748b;"></i> ${escapeHtml(ev.location || 'Office')}</span>
+                    <span><i class="fa-solid fa-user" style="width:16px; color:#64748b;"></i> Client: <strong>${escapeHtml(clientName)}</strong></span>
+                    <span><i class="fa-solid fa-gavel" style="width:16px; color:#64748b;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${escapeHtml(lawyerName)}`}</span>
                 </div>
                 ${caseDetailsHtml}
                 ${attachmentHtml}
@@ -2884,42 +3639,46 @@ async function renderScheduleSummaryWidget() {
             const rows = events
                 .map(
                     (ev) => `
-                    <div style="padding:10px 0; border-bottom:1px solid #f1f5f9;">
-                        <div style="font-size:13px; font-weight:600; color:#1e293b;">${escapeHtml(ev.title)}</div>
-                        <div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(formatDate(ev.start_date))} &middot; ${escapeHtml(timeRange(ev))}</div>
+                    <div style="padding:13px 0; border-bottom:1px solid #f1f5f9;">
+                        <div style="font-size:14.5px; font-weight:600; color:#1e293b;">${escapeHtml(ev.title)}</div>
+                        <div style="font-size:12.5px; color:#64748b; margin-top:3px;">${escapeHtml(formatDate(ev.start_date))} &middot; ${escapeHtml(timeRange(ev))}</div>
                     </div>
                 `
                 )
                 .join('');
             summaryWidget.innerHTML = `
-                    <div style="font-size:11px; color:#64748b; margin-bottom:6px;">${escapeHtml(monthLabel)} &middot; ${events.length} event${events.length === 1 ? '' : 's'}</div>
-                    <div style="max-height:360px; overflow-y:auto;">${rows}</div>
+                    <div style="font-size:12.5px; color:#64748b; margin-bottom:8px;">${escapeHtml(monthLabel)} &middot; ${events.length} event${events.length === 1 ? '' : 's'}</div>
+                    <div style="">${rows}</div>
                 `;
             return;
         }
 
         const rows = events
             .map((ev) => {
-                const lawyerName = ev.profiles?.full_name || (ev.is_general ? 'Firm-wide' : 'Unassigned');
+                const lawyerName = ev.profiles?.full_name
+                    ? 'Atty. ' + ev.profiles.full_name
+                    : ev.is_general
+                      ? 'Firm-wide'
+                      : 'Unassigned';
                 return `
                     <tr>
-                        <td style="padding:8px 6px; border-bottom:1px solid #e2e8f0; font-weight:600; color:#1e293b; vertical-align:top;">${escapeHtml(lawyerName)}</td>
-                        <td style="padding:8px 6px; border-bottom:1px solid #e2e8f0; color:#475569; white-space:nowrap; vertical-align:top;">${escapeHtml(formatDate(ev.start_date))}<br><span style="color:#64748b;">${escapeHtml(timeRange(ev))}</span></td>
-                        <td style="padding:8px 6px; border-bottom:1px solid #e2e8f0; color:#334155; vertical-align:top;">${escapeHtml(ev.title)}</td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #e2e8f0; line-height:1.45; font-weight:600; color:#1e293b; vertical-align:top;">${escapeHtml(lawyerName)}</td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #e2e8f0; line-height:1.45; color:#475569; white-space:nowrap; vertical-align:top;">${escapeHtml(formatDate(ev.start_date))}<br><span style="color:#64748b;">${escapeHtml(timeRange(ev))}</span></td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #e2e8f0; line-height:1.45; color:#334155; vertical-align:top;">${escapeHtml(ev.title)}</td>
                     </tr>
                 `;
             })
             .join('');
 
         summaryWidget.innerHTML = `
-                <div style="font-size:11px; color:#64748b; margin-bottom:8px;">${escapeHtml(monthLabel)} &middot; ${events.length} scheduled event${events.length === 1 ? '' : 's'}</div>
-                <div style="max-height:420px; overflow:auto;">
-                    <table style="width:100%; border-collapse:collapse; font-size:11.5px; text-align:left;">
+                <div style="font-size:12.5px; color:#64748b; margin-bottom:10px;">${escapeHtml(monthLabel)} &middot; ${events.length} scheduled event${events.length === 1 ? '' : 's'}</div>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:13.5px; text-align:left;">
                         <thead>
                             <tr style="background:#f8fafc;">
-                                <th style="padding:8px 6px; border-bottom:2px solid #cbd5e1; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Lawyer</th>
-                                <th style="padding:8px 6px; border-bottom:2px solid #cbd5e1; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Date &amp; Time</th>
-                                <th style="padding:8px 6px; border-bottom:2px solid #cbd5e1; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Event</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #cbd5e1; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Lawyer</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #cbd5e1; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Date &amp; Time</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #cbd5e1; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Event</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
@@ -2988,15 +3747,15 @@ async function renderLawyerStatusWidget() {
                     const displayTitle = eventTitle.length > 15 ? eventTitle.substring(0, 15) + '...' : eventTitle;
                     return `
                         <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                            <span title="${escapeHtml(eventTitle)}"><i class="fa-solid fa-circle" style="color:#ef4444; font-size:8px; margin-right:8px;"></i>${escapeHtml(l.full_name || 'Unknown')}</span>
-                            <span class="tag" style="background:#fee2e2; color:#ef4444; font-size:10px; padding:3px 8px; border-radius:4px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px;" title="${escapeHtml(eventTitle)}">${escapeHtml(displayTitle)}</span>
+                            <span title="${escapeHtml(eventTitle)}"><i class="fa-solid fa-circle" style="color:#ef4444; font-size:12px; margin-right:8px;"></i>Atty. ${escapeHtml(l.full_name || 'Unknown')}</span>
+                            <span class="tag" style="background:#fee2e2; color:#ef4444; font-size:12px; padding:3px 8px; border-radius:4px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px;" title="${escapeHtml(eventTitle)}">${escapeHtml(displayTitle)}</span>
                         </li>
                     `;
                 } else {
                     return `
                         <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                            <span><i class="fa-solid fa-circle" style="color:#22c55e; font-size:8px; margin-right:8px;"></i>${escapeHtml(l.full_name || 'Unknown')}</span>
-                            <span class="tag tag-avail" style="background:#dcfce7; color:#22c55e; font-size:10px; padding:3px 8px; border-radius:4px; font-weight:bold;">Available</span>
+                            <span><i class="fa-solid fa-circle" style="color:#22c55e; font-size:12px; margin-right:8px;"></i>Atty. ${escapeHtml(l.full_name || 'Unknown')}</span>
+                            <span class="tag tag-avail" style="background:var(--status-active-bg); color:var(--status-active-text); font-size:12px; padding:3px 8px; border-radius:4px; font-weight:bold;">Available</span>
                         </li>
                     `;
                 }
@@ -3320,7 +4079,7 @@ window.openEditDocumentModal = async function (docId) {
                 <input type="text" id="ed-title" maxlength="200" value="${escapeHtml(doc.title || '')}" style="${DOC_INPUT_STYLE}">
                 ${docFieldLabel('Category')}
                 <select id="ed-category" style="${DOC_INPUT_STYLE}">${categoryHtml}</select>
-                ${docFieldLabel('Tags <span style="font-weight:400; color:#94a3b8;">(comma-separated)</span>')}
+                ${docFieldLabel('Tags <span style="font-weight:400; color:#64748b;">(comma-separated)</span>')}
                 <input type="text" id="ed-tags" value="${escapeHtml(doc.tags || '')}" placeholder="e.g., motion, criminal, dismissal" style="${DOC_INPUT_STYLE}">
                 ${docFieldLabel('Case')}
                 <select id="ed-case" style="${DOC_INPUT_STYLE}">${caseOptionsHtml(cases, doc.case_id)}</select>
@@ -3382,7 +4141,7 @@ window.openNewVersionModal = function (docId) {
             <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">The current file (version ${doc.version_no || 1}) is kept in the version history. You can restore it at any time.</p>
             ${docFieldLabel('New file')}
             <input type="file" id="nv-file" accept=".pdf,.docx,.jpg,.jpeg,.png,.txt" style="${DOC_INPUT_STYLE}">
-            ${docFieldLabel('What changed? <span style="font-weight:400; color:#94a3b8;">(optional)</span>')}
+            ${docFieldLabel('What changed? <span style="font-weight:400; color:#64748b;">(optional)</span>')}
             <input type="text" id="nv-note" maxlength="200" placeholder="e.g., Signed copy from the client" style="${DOC_INPUT_STYLE}">
             ${modalButtonsHtml('Upload version', '#0f172a')}
         `
@@ -3493,10 +4252,10 @@ window.openDocumentHistory = async function (docId) {
                     (v) => `
                 <div style="border:1px solid ${v.current ? '#bfdbfe' : '#e2e8f0'}; background:${v.current ? '#eff6ff' : '#ffffff'}; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <strong style="font-size:13px; color:#0f172a;">Version ${v.version_no}${v.current ? ' <span style="background:#dbeafe; color:#1d4ed8; font-size:10px; padding:2px 8px; border-radius:99px; margin-left:6px;">Current</span>' : ''}</strong>
-                        <span style="font-size:11px; color:#64748b;">${escapeHtml(v.size || '')}</span>
+                        <strong style="font-size:13px; color:#0f172a;">Version ${v.version_no}${v.current ? ' <span style="background:#dbeafe; color:#1d4ed8; font-size:12px; padding:2px 8px; border-radius:99px; margin-left:6px;">Current</span>' : ''}</strong>
+                        <span style="font-size:12px; color:#64748b;">${escapeHtml(v.size || '')}</span>
                     </div>
-                    <p style="font-size:11px; color:#64748b; margin:4px 0 0 0;">${escapeHtml(formatStamp(v.uploaded_at))} by ${escapeHtml(v.by)}</p>
+                    <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">${escapeHtml(formatStamp(v.uploaded_at))} by ${escapeHtml(v.by)}</p>
                     ${v.note ? `<p style="font-size:12px; color:#334155; margin:6px 0 0 0;">${escapeHtml(v.note)}</p>` : ''}
                     <div style="display:flex; gap:8px; margin-top:10px;">
                         ${
@@ -3513,7 +4272,7 @@ window.openDocumentHistory = async function (docId) {
                 )
                 .join('') +
             ((versions || []).length === 0
-                ? '<p style="font-size:12px; color:#94a3b8; text-align:center; margin:8px 0 0 0;">No earlier versions yet.</p>'
+                ? '<p style="font-size:12px; color:#64748b; text-align:center; margin:8px 0 0 0;">No earlier versions yet.</p>'
                 : '');
 
         modal.body.addEventListener('click', async (e) => {
@@ -3674,6 +4433,7 @@ function getCategoryColor(type) {
     if (t === 'order') return { bg: '#fee2e2', text: '#dc2626' };
     if (t === 'transcript') return { bg: '#ffedd5', text: '#c2410c' };
     if (t === 'estate') return { bg: '#fae8ff', text: '#a855f7' };
+    if (t === 'generated document') return { bg: '#dbeafe', text: '#1d4ed8' };
     return { bg: '#f1f5f9', text: '#475569' };
 }
 
@@ -3686,7 +4446,7 @@ function generateTagsHtml(tagsStr) {
     return tags
         .map(
             (t) =>
-                `<span style="border: 1px solid #e2e8f0; padding: 2px 10px; border-radius: 99px; font-size: 11px; color: #475569; font-weight: 500;">${escapeHtml(t)}</span>`
+                `<span style="border: 1px solid #e2e8f0; padding: 2px 10px; border-radius: 99px; font-size: 12px; color: #475569; font-weight: 500;">${escapeHtml(t)}</span>`
         )
         .join('');
 }
@@ -3785,25 +4545,30 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
     showSkeletonIfEmpty(container, skeletonGrid(4));
 
     try {
-        let query = supabaseClient
-            .from('documents')
-            .select(
-                'id, title, type, size, uploaded_by, uploaded_by_client_id, ' + (window.__docsNoReviewCol ? '' : 'reviewed_at, ') + 'created_at, file_url, file_path, tags, case_id, client_id, ocr_status, ocr_pages, version_no, version_uploaded_by, version_uploaded_at, version_note, profiles(full_name), cases(case_number, title)'
-            )
-            .order('created_at', { ascending: false });
+        const buildDocsQuery = () => {
+            let query = supabaseClient
+                .from('documents')
+                .select(
+                    'id, title, type, size, uploaded_by, uploaded_by_client_id, ' + (window.__docsNoReviewCol ? '' : 'reviewed_at, ') + 'created_at, file_url, file_path, tags, case_id, client_id, ocr_status, ocr_pages, version_no, version_uploaded_by, version_uploaded_at, version_note, profiles(full_name), cases(case_number, title)'
+                )
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: true });
 
-        if (filterType && filterType.startsWith('source:')) {
-            if (filterType === 'source:firm') {
-                query = query.is('uploaded_by_client_id', null);
-            } else {
-                query = query.not('uploaded_by_client_id', 'is', null);
-                if (filterType === 'source:client-new' && !window.__docsNoReviewCol) query = query.is('reviewed_at', null);
+            if (filterType && filterType.startsWith('source:')) {
+                if (filterType === 'source:firm') {
+                    query = query.is('uploaded_by_client_id', null);
+                } else {
+                    query = query.not('uploaded_by_client_id', 'is', null);
+                    if (filterType === 'source:client-new' && !window.__docsNoReviewCol) query = query.is('reviewed_at', null);
+                }
+            } else if (filterType && filterType !== 'all') {
+                query = query.eq('type', filterType.toLowerCase());
             }
-        } else if (filterType && filterType !== 'all') {
-            query = query.eq('type', filterType.toLowerCase());
-        }
 
-        const { data: documents, error } = await query;
+            return query;
+        };
+
+        const { data: documents, error } = await fetchAllRows(buildDocsQuery);
         if (error) {
             if (!window.__docsNoReviewCol && /reviewed_at/i.test(error.message || '')) {
                 window.__docsNoReviewCol = true;
@@ -3846,12 +4611,22 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             container.innerHTML =
                 '<p style="color:#64748b; grid-column: 1 / -1; text-align:center; padding: 40px;">No documents match your search/filter.</p>';
             if (countEl) countEl.textContent = 'Found 0 documents';
+            pagerClear('documents-pager');
             return;
         }
 
         const staff = isStaffUser();
 
-        container.innerHTML = filteredDocs
+        pagerBind('documents', refreshDocumentList, 'documents-grid-inject');
+        const docInfo = pagerSlice('documents', filteredDocs, JSON.stringify([filterType, term]));
+        let pagerEl = document.getElementById('documents-pager');
+        if (!pagerEl) {
+            pagerEl = document.createElement('div');
+            pagerEl.id = 'documents-pager';
+            container.insertAdjacentElement('afterend', pagerEl);
+        }
+
+        container.innerHTML = docInfo.rows
             .map((doc) => {
                 const hasFile = !!doc.file_path;
                 const idArg = jsArg(doc.id);
@@ -3877,27 +4652,27 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 let chip = '';
                 if (doc.ocr_status === 'done') {
                     chip =
-                        '<span style="background:#dcfce7; color:#16a34a; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;"><i class="fa-solid fa-magnifying-glass"></i> Searchable</span>';
+                        '<span style="background:#dcfce7; color:#16a34a; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-magnifying-glass"></i> Searchable</span>';
                 } else if (doc.ocr_status === 'processing' && !staleProcessing) {
                     chip =
-                        '<span style="background:#dbeafe; color:#1d4ed8; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;"><i class="fa-solid fa-spinner fa-spin"></i> Indexing</span>';
+                        '<span style="background:#dbeafe; color:#1d4ed8; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-spinner fa-spin"></i> Indexing</span>';
                 } else if (doc.ocr_status === 'failed') {
                     chip =
-                        '<span style="background:#fee2e2; color:#dc2626; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;">Index failed</span>';
+                        '<span style="background:#fee2e2; color:#dc2626; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Index failed</span>';
                 } else if (supported) {
                     chip =
-                        '<span style="background:#f1f5f9; color:#64748b; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;">Not indexed</span>';
+                        '<span style="background:#f1f5f9; color:#64748b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Not indexed</span>';
                 }
 
                 const versionBadge =
                     (doc.version_no || 1) > 1
-                        ? `<span style="background:#ede9fe; color:#6d28d9; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:700;">v${doc.version_no}</span>`
+                        ? `<span style="background:#ede9fe; color:#6d28d9; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:700;">v${doc.version_no}</span>`
                         : '';
 
                 const hit = contentHits[doc.id];
                 const snippetHtml =
                     hit && hit.includes('<<')
-                        ? `<div style="font-size:11px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 10px; margin-bottom:14px; line-height:1.5;"><i class="fa-solid fa-magnifying-glass" style="color:#f59e0b; margin-right:6px;"></i>…${escapeHtml(
+                        ? `<div style="font-size:12px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 10px; margin-bottom:14px; line-height:1.5;"><i class="fa-solid fa-magnifying-glass" style="color:#f59e0b; margin-right:6px;"></i>…${escapeHtml(
                               hit
                           )
                               .replace(
@@ -3944,8 +4719,8 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     <div>
                         <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
                         <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                            ${isClientDoc ? '' : `<span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>`}
-                            <span style="font-size: 11px; color: #64748b;">${escapeHtml(doc.size || '0 KB')}</span>
+                            ${isClientDoc ? '' : `<span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size:12px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>`}
+                            <span style="font-size: 12px; color: #64748b;">${escapeHtml(doc.size || '0 KB')}</span>
                             ${versionBadge}
                             ${chip}
                             ${clientBadge}
@@ -3957,15 +4732,15 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 <div style="font-size: 12px; color: #475569; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <i class="fa-solid fa-tag" style="color: #94a3b8; width: 14px; text-align: center;"></i>
+                        <i class="fa-solid fa-tag" style="color: #64748b; width: 14px; text-align: center;"></i>
                         ${escapeHtml(doc.cases?.case_number || 'No Case Number')}
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <i class="fa-regular fa-user" style="color: #94a3b8; width: 14px; text-align: center;"></i>
+                        <i class="fa-regular fa-user" style="color: #64748b; width: 14px; text-align: center;"></i>
                         ${escapeHtml(doc.profiles?.full_name || (doc.uploaded_by_client_id ? 'Client (portal upload)' : 'System'))}
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <i class="fa-regular fa-calendar" style="color: #94a3b8; width: 14px; text-align: center;"></i>
+                        <i class="fa-regular fa-calendar" style="color: #64748b; width: 14px; text-align: center;"></i>
                         ${formatDate(doc.created_at)}
                     </div>
                 </div>
@@ -3989,10 +4764,12 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
             .join('');
 
         if (countEl) countEl.textContent = `Found ${filteredDocs.length} document${filteredDocs.length > 1 ? 's' : ''}`;
+        pagerEl.innerHTML = pagerHtml('documents', docInfo, filteredDocs.length === 1 ? 'document' : 'documents');
         updateClientDocsBanner(filterType);
     } catch (error) {
         console.error('Error rendering documents:', error);
         container.innerHTML = errorStateHtml('Could not load documents.', 'refreshDocumentList');
+        pagerClear('documents-pager');
     }
 }
 async function forceDownload(url, filename) {
@@ -4259,17 +5036,21 @@ async function renderTimelineInSchedule() {
                 .map((ev) => {
                     const colorClass = ev.is_conflict ? 'bar-red' : ev.is_general ? 'bar-purple' : 'bar-blue';
                     const priorityBadge =
-                        ev.priority === 'high' ? '<span class="badge-pill bg-red">High Priority</span>' : '';
+                        ev.priority === 'high' ? '<span class="badge-pill bg-red"><i class="fa-solid fa-star"></i> High Priority</span>' : '';
                     const generalBadge = ev.is_general ? '<span class="badge-pill bg-purple">Firm-wide</span>' : '';
+                    const conflictBadge = ev.is_conflict
+                        ? '<span class="badge-pill bg-red"><i class="fa-solid fa-triangle-exclamation"></i> Conflict</span>'
+                        : '';
                     const statusInfo = getEventStatusInfo(ev.start_date, ev.end_date);
                     const isDone = statusInfo.label === 'Completed';
-                    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:10px; padding:2px 9px; border-radius:99px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:3px;"></i>${statusInfo.label}</span>`;
+                    const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:12px; padding:2px 9px; border-radius:99px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:3px;"></i>${statusInfo.label}</span>`;
 
                     return `
                         <div class="timeline-item ${colorClass}" style="${isDone ? 'opacity:0.65;' : ''}">
                             <div class="time-row">
                                 <strong>${formatEventTime(ev.start_date) || 'All Day'}</strong> 
                                 ${priorityBadge}
+                                ${conflictBadge}
                                 ${generalBadge}
                                 ${statusBadge}
                             </div>
@@ -4314,7 +5095,7 @@ async function renderRecentDocumentsInSchedule() {
                         </div>
                         <div>
                             <h4 style="font-size:13px; color:#1e293b; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
-                            <p style="font-size:11px; color:#64748b; text-transform:capitalize;">${escapeHtml(doc.type || 'Doc')}</p>
+                            <p style="font-size:12px; color:#64748b; text-transform:capitalize;">${escapeHtml(doc.type || 'Doc')}</p>
                         </div>
                     </div>
                 `
@@ -4356,9 +5137,9 @@ async function renderMyCasesTab() {
                         <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #fafbfc;">
                             <div>
                                 <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
-                                <p style="color: #64748b; font-size: 11px;"><i class="fa-regular fa-clock"></i> Filed: ${formatDate(c.date_filed || c.created_at)}</p>
+                                <p style="color: #64748b; font-size: 12px;"><i class="fa-regular fa-clock"></i> Filed: ${formatDate(c.date_filed || c.created_at)}</p>
                             </div>
-                            <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 99px; font-size: 10px; font-weight: bold; text-transform: uppercase;">
+                            <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 99px; font-size:12px; font-weight: bold; text-transform: uppercase;">
                                 ${c.status}
                             </span>
                         </div>
@@ -4393,7 +5174,7 @@ function perfKpi(label, value, color) {
     return `
             <div style="flex:1; min-width:140px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:12px; padding:14px 16px;">
                 <div style="font-size:24px; font-weight:800; color:${color};">${value}</div>
-                <div style="font-size:11px; color:#64748b; margin-top:2px;">${escapeHtml(label)}</div>
+                <div style="font-size:12px; color:#64748b; margin-top:2px;">${escapeHtml(label)}</div>
             </div>`;
 }
 
@@ -4420,10 +5201,11 @@ function lastSixMonths() {
 
 function perfMonthlyChart(months, opened, closed) {
     const max = Math.max(1, ...months.map((m) => Math.max(opened[m.key] || 0, closed ? closed[m.key] || 0 : 0)));
+    const dense = months.length > 12;
     const bar = (v, color) => `
             <div style="display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
-                <span style="font-size:10px; color:#475569; margin-bottom:2px;">${v}</span>
-                <div style="width:16px; height:${Math.max(2, Math.round((v / max) * 100))}px; background:${color}; border-radius:4px 4px 0 0;"></div>
+                ${dense ? '' : `<span style="font-size:12px; color:#475569; margin-bottom:2px;">${v}</span>`}
+                <div title="${v}" style="width:${dense ? 6 : 16}px; height:${Math.max(2, Math.round((v / max) * 100))}px; background:${color}; border-radius:3px 3px 0 0;"></div>
             </div>`;
     const columns = months
         .map(
@@ -4433,12 +5215,12 @@ function perfMonthlyChart(months, opened, closed) {
                     ${bar(opened[m.key] || 0, '#3b82f6')}
                     ${closed ? bar(closed[m.key] || 0, '#22c55e') : ''}
                 </div>
-                <span style="font-size:10px; color:#64748b; margin-top:6px;">${escapeHtml(m.label)}</span>
+                <span style="font-size:12px; color:#64748b; margin-top:6px; white-space:nowrap;">${escapeHtml(m.label)}</span>
             </div>`
         )
         .join('');
     const legend = `
-            <div style="display:flex; gap:14px; margin-top:12px; font-size:11px; color:#64748b;">
+            <div style="display:flex; gap:14px; margin-top:12px; font-size:12px; color:#64748b;">
                 <span><span style="display:inline-block; width:8px; height:8px; background:#3b82f6; border-radius:2px; margin-right:5px;"></span>Opened</span>
                 ${closed ? '<span><span style="display:inline-block; width:8px; height:8px; background:#22c55e; border-radius:2px; margin-right:5px;"></span>Closed</span>' : ''}
             </div>`;
@@ -4477,6 +5259,79 @@ function computeWorkload(cases, events) {
     return map;
 }
 
+let perfRange = '6';
+
+const PERF_RANGES = [
+    { value: '3', option: 'Last 3 months', title: 'last 3 months' },
+    { value: '6', option: 'Last 6 months', title: 'last 6 months' },
+    { value: '12', option: 'Last 12 months', title: 'last 12 months' },
+    { value: '24', option: 'Last 24 months', title: 'last 24 months' },
+    { value: 'ytd', option: 'This year so far', title: 'this year' }
+];
+
+function perfMonthCount() {
+    return perfRange === 'ytd' ? new Date().getMonth() + 1 : Number(perfRange) || 6;
+}
+
+function perfRangeTitle() {
+    const found = PERF_RANGES.find((r) => r.value === perfRange);
+    return found ? found.title : 'last 6 months';
+}
+
+function lastNMonths(n) {
+    const out = [];
+    const now = new Date();
+    for (let i = n - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const month = d.toLocaleDateString('en-US', { month: 'short' });
+        const showYear = n > 6 && (d.getMonth() === 0 || i === n - 1);
+        const hidden = n > 12 && i % 2 === 1;
+        out.push({
+            key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+            label: hidden ? '' : showYear ? `${month} '${String(d.getFullYear()).slice(2)}` : month,
+            full: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        });
+    }
+    return out;
+}
+
+function perfDaysBetween(fromLike, toLike) {
+    const ms = new Date(toLike).getTime() - new Date(fromLike).getTime();
+    return Math.max(0, ms / 86400000);
+}
+
+function perfAvg(list) {
+    return list.length ? list.reduce((sum, v) => sum + v, 0) / list.length : null;
+}
+
+function perfFmtDays(value) {
+    return value === null || value === undefined ? '–' : value.toFixed(1);
+}
+
+function perfValueChart(months, values, color, legendText) {
+    const present = months.map((m) => values[m.key]).filter((v) => v !== undefined && v !== null);
+    const max = Math.max(1, ...present);
+    const columns = months
+        .map((m) => {
+            const v = values[m.key];
+            const has = v !== undefined && v !== null;
+            const shown = has ? (months.length > 12 ? Math.round(v) : Number.isInteger(v) ? v : v.toFixed(1)) : '–';
+            const h = has ? Math.max(2, Math.round((v / max) * 100)) : 2;
+            return `
+            <div style="flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
+                <span style="font-size:12px; color:#475569; margin-bottom:2px;">${shown}</span>
+                <div style="width:70%; max-width:22px; height:${h}px; background:${has ? color : '#e2e8f0'}; border-radius:4px 4px 0 0;"></div>
+                <span style="font-size:12px; color:#64748b; margin-top:6px; white-space:nowrap;">${escapeHtml(m.label)}</span>
+            </div>`;
+        })
+        .join('');
+    return `
+            <div style="display:flex; align-items:flex-end; gap:6px; height:150px;">${columns}</div>
+            <div style="display:flex; gap:14px; margin-top:12px; font-size:12px; color:#64748b;">
+                <span><span style="display:inline-block; width:8px; height:8px; background:${color}; border-radius:2px; margin-right:5px;"></span>${escapeHtml(legendText)}</span>
+            </div>`;
+}
+
 async function renderPerformanceTab() {
     const container = document.querySelector('#sched-perf .content-card');
     if (!container || !currentUser) return;
@@ -4499,11 +5354,21 @@ async function renderPerformanceTab() {
             .lte('start_date', weekIso);
         if (isLawyerView) eventsQuery = eventsQuery.eq('assigned_to', currentUser.id);
 
-        const [casesRes, eventsRes] = await Promise.all([casesQuery, eventsQuery]);
+        const clientsQuery = isLawyerView
+            ? supabaseClient.from('client_lawyers').select('client_id, clients(created_at)').eq('lawyer_id', currentUser.id)
+            : supabaseClient.from('clients').select('id, created_at');
+
+        const [casesRes, eventsRes, clientsRes] = await Promise.all([casesQuery, eventsQuery, clientsQuery]);
         if (casesRes.error) throw casesRes.error;
 
         const cases = casesRes.data || [];
         const events = eventsRes.data || [];
+        const clientDates = clientsRes.error
+            ? null
+            : (clientsRes.data || [])
+                  .map((r) => (isLawyerView ? r.clients && r.clients.created_at : r.created_at))
+                  .filter(Boolean);
+
         const active = cases.filter((c) => c.status !== 'closed');
         const closed = cases.filter((c) => c.status === 'closed');
         const closureRate = cases.length > 0 ? Math.round((closed.length / cases.length) * 100) : 0;
@@ -4526,22 +5391,50 @@ async function renderPerformanceTab() {
         });
         const typeMax = Math.max(0, ...Object.values(typeCounts));
 
-        const months = lastSixMonths();
+        const months = lastNMonths(perfMonthCount());
+        const currentMonthKey = months[months.length - 1].key;
+
         const openedByMonth = {};
         cases.forEach((c) => {
             const key = toLocalDateKey(c.date_filed || c.created_at).slice(0, 7);
             openedByMonth[key] = (openedByMonth[key] || 0) + 1;
         });
-        const tracksClosing = cases.length > 0 && 'closed_at' in cases[0];
+
+        const tracksClosing = cases.length === 0 || 'closed_at' in cases[0];
         let closedByMonth = null;
+        const closeDaysByMonthList = {};
+        const closeDaysAll = [];
+        const closeStats = {};
         if (tracksClosing) {
             closedByMonth = {};
             closed.forEach((c) => {
-                if (!c.closed_at) return;
-                const key = toLocalDateKey(c.closed_at).slice(0, 7);
-                closedByMonth[key] = (closedByMonth[key] || 0) + 1;
+                const hasDate = !!c.closed_at;
+                const days = hasDate ? perfDaysBetween(c.date_filed || c.created_at, c.closed_at) : null;
+                if (hasDate) {
+                    const key = toLocalDateKey(c.closed_at).slice(0, 7);
+                    closedByMonth[key] = (closedByMonth[key] || 0) + 1;
+                    (closeDaysByMonthList[key] = closeDaysByMonthList[key] || []).push(days);
+                    closeDaysAll.push(days);
+                }
+                (c.case_lawyers || []).forEach((r) => {
+                    const s = closeStats[r.lawyer_id] || (closeStats[r.lawyer_id] = { closed: 0, days: [] });
+                    s.closed++;
+                    if (hasDate) s.days.push(days);
+                });
             });
         }
+        const closeDaysByMonth = {};
+        Object.keys(closeDaysByMonthList).forEach((key) => {
+            closeDaysByMonth[key] = perfAvg(closeDaysByMonthList[key]);
+        });
+        const avgCloseDays = perfAvg(closeDaysAll);
+
+        const newClientsByMonth = {};
+        (clientDates || []).forEach((iso) => {
+            const key = toLocalDateKey(iso).slice(0, 7);
+            newClientsByMonth[key] = (newClientsByMonth[key] || 0) + 1;
+        });
+        const newClientsThisMonth = clientDates ? newClientsByMonth[currentMonthKey] || 0 : '–';
 
         const workload = computeWorkload(cases, events);
         let kpis = '';
@@ -4551,7 +5444,8 @@ async function renderPerformanceTab() {
             kpis = [
                 perfKpi('My active cases', active.length, '#3b82f6'),
                 perfKpi('My closed cases', closed.length, '#22c55e'),
-                perfKpi('Closure rate', closureRate + '%', '#a855f7'),
+                perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#a855f7'),
+                perfKpi('My new clients this month', newClientsThisMonth, '#0ea5e9'),
                 perfKpi('Events in the next 7 days', events.length, '#f97316')
             ].join('');
         } else {
@@ -4565,24 +5459,30 @@ async function renderPerformanceTab() {
                 perfKpi('Active cases', active.length, '#3b82f6'),
                 perfKpi('Closed cases', closed.length, '#22c55e'),
                 perfKpi('Closure rate', closureRate + '%', '#a855f7'),
+                perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#8b5cf6'),
+                perfKpi('New clients this month', newClientsThisMonth, '#0ea5e9'),
                 perfKpi('Avg. active cases per lawyer', avgLoad.toFixed(1), '#f97316'),
                 perfKpi('Active cases without a lawyer', unassigned, unassigned > 0 ? '#ef4444' : '#22c55e')
             ].join('');
 
             const rows = lawyers
-                .map((l) => ({ l, w: workload[l.id] || { active: 0, lead: 0, events: 0 } }))
+                .map((l) => ({
+                    l,
+                    w: workload[l.id] || { active: 0, lead: 0, events: 0 },
+                    c: closeStats[l.id] || { closed: 0, days: [] }
+                }))
                 .sort((a, b) => b.w.active - a.w.active)
-                .map(({ l, w }) => {
+                .map(({ l, w, c }) => {
                     const high = w.active >= 4 && w.active > avgLoad * 1.5;
                     const flag = high
-                        ? '<span style="background:#fee2e2; color:#ef4444; font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px;">High load</span>'
+                        ? '<span class="ct-badge tag-busy" style="background:var(--status-danger-bg); color:var(--status-danger-text);">High load</span>'
                         : w.active === 0
-                          ? '<span style="background:#dcfce7; color:#16a34a; font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px;">Available</span>'
+                          ? '<span class="ct-badge ct-badge-active">Available</span>'
                           : '';
                     return `
                             <tr>
                                 <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; font-weight:600; color:#0f172a;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; width:34%;">
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; width:30%;">
                                     <div style="display:flex; align-items:center; gap:10px;">
                                         <div style="flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
                                             <div style="background:${high ? '#ef4444' : '#3b82f6'}; width:${Math.round((w.active / maxLoad) * 100)}%; height:100%;"></div>
@@ -4591,6 +5491,8 @@ async function renderPerformanceTab() {
                                     </div>
                                 </td>
                                 <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${w.lead}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${c.closed}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${perfFmtDays(perfAvg(c.days))}</td>
                                 <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${w.events}</td>
                                 <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9;">${flag}</td>
                             </tr>`;
@@ -4598,17 +5500,19 @@ async function renderPerformanceTab() {
                 .join('');
 
             workloadPanel = perfPanel(
-                'Lawyer workload',
+                'Active cases and time to close, per lawyer',
                 lawyers.length === 0
                     ? '<p style="color:#64748b; font-size:13px; margin:0;">No active lawyers yet.</p>'
                     : `
                         <div style="overflow-x:auto;">
                             <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">
                                 <thead>
-                                    <tr style="color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:0.04em;">
+                                    <tr style="color:#64748b; font-size:12px; text-transform:uppercase; letter-spacing:0.04em;">
                                         <th style="padding:8px;">Lawyer</th>
                                         <th style="padding:8px;">Active cases</th>
                                         <th style="padding:8px;">As lead</th>
+                                        <th style="padding:8px;">Closed</th>
+                                        <th style="padding:8px;">Avg. days to close</th>
                                         <th style="padding:8px;">Events (7 days)</th>
                                         <th style="padding:8px;"></th>
                                     </tr>
@@ -4628,21 +5532,50 @@ async function renderPerformanceTab() {
             CASE_TYPES.map((t) => perfBarRow(t, typeCounts[t], typeMax, '#8b5cf6')).join('')
         );
         const monthPanel = perfPanel(
-            'Cases opened and closed (last 6 months)',
+            `Cases opened and closed (${perfRangeTitle()})`,
             perfMonthlyChart(months, openedByMonth, closedByMonth)
+        );
+        const closeTimePanel = perfPanel(
+            'Average days to close a case, by month closed',
+            tracksClosing
+                ? perfValueChart(months, closeDaysByMonth, '#8b5cf6', 'Average days from filing to closing')
+                : '<p style="color:#64748b; font-size:13px; margin:0;">Closing dates are not available yet.</p>'
+        );
+        const clientsPanel = perfPanel(
+            isLawyerView ? 'My new clients per month' : 'New clients per month',
+            clientDates
+                ? perfValueChart(months, newClientsByMonth, '#0ea5e9', 'New clients')
+                : '<p style="color:#64748b; font-size:13px; margin:0;">Client data could not be loaded.</p>'
         );
 
         container.innerHTML = `
-                <h3 style="margin-bottom:18px; font-size:16px;">${isLawyerView ? 'My Performance' : 'Firm Performance'}</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:18px;">
+                    <h3 style="margin:0; font-size:16px;">${isLawyerView ? 'My Performance' : 'Firm Performance'}</h3>
+                    <label style="font-size:12px; color:#64748b; display:flex; align-items:center; gap:8px;">Chart range
+                        <select id="perf-range" style="padding:6px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:12px; font-family:inherit; background:#ffffff; color:#0f172a;">
+                            ${PERF_RANGES.map((r) => `<option value="${r.value}" ${perfRange === r.value ? 'selected' : ''}>${r.option}</option>`).join('')}
+                        </select>
+                    </label>
+                </div>
                 <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:20px;">${kpis}</div>
                 ${workloadPanel ? `<div style="margin-bottom:20px;">${workloadPanel}</div>` : ''}
                 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:20px;">
                     ${monthPanel}
+                    ${closeTimePanel}
+                    ${clientsPanel}
                     ${stagePanel}
                     ${typePanel}
                 </div>
-                ${tracksClosing ? '' : '<p style="font-size:11px; color:#94a3b8; margin:14px 0 0 0;">Closed-per-month needs the closed_at column. Run dashboard_support.sql to enable it.</p>'}
+                ${tracksClosing ? '' : '<p style="font-size:12px; color:#64748b; margin:14px 0 0 0;">Closed-per-month needs the closed_at column. Run dashboard_support.sql to enable it.</p>'}
             `;
+
+        const rangeSelect = document.getElementById('perf-range');
+        if (rangeSelect) {
+            rangeSelect.addEventListener('change', () => {
+                perfRange = PERF_RANGES.some((r) => r.value === rangeSelect.value) ? rangeSelect.value : '6';
+                renderPerformanceTab();
+            });
+        }
     } catch (error) {
         console.error('Error rendering performance tab:', error);
         container.innerHTML = errorStateHtml('Could not load performance data.', 'renderPerformanceTab');
@@ -4661,7 +5594,7 @@ function setNavBadge(target, count) {
         badge = document.createElement('span');
         badge.className = 'nav-badge';
         badge.style.cssText =
-            'margin-left:auto; background:#ef4444; color:#ffffff; font-size:10px; font-weight:700; padding:2px 7px; border-radius:99px;';
+            'margin-left:auto; background:#ef4444; color:#ffffff; font-size:12px; font-weight:700; padding:2px 7px; border-radius:99px;';
         nav.appendChild(badge);
     }
     badge.textContent = count;
@@ -4839,7 +5772,7 @@ const EMAIL_STATUS = {
 
 function emailStatusBadge(status) {
     const st = EMAIL_STATUS[status] || EMAIL_STATUS.pending;
-    return `<span style="background:${st.bg}; color:${st.color}; font-size:10px; padding:2px 8px; border-radius:99px; font-weight:700; white-space:nowrap;">${st.label}</span>`;
+    return `<span style="background:${st.bg}; color:${st.color}; font-size:12px; padding:2px 8px; border-radius:99px; font-weight:700; white-space:nowrap;">${st.label}</span>`;
 }
 
 function emailTimeText(m) {
@@ -4920,9 +5853,9 @@ async function renderNotificationsList() {
                         <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
                             <i class="${style.icon}" style="color:${style.color}; font-size:16px;"></i>
                             <h4 style="font-size:15px; color:#0f172a; margin:0; font-weight:${n.is_read ? '500' : '600'};">${escapeHtml(n.title)}</h4>
-                            ${n.is_read ? '' : '<div class="notif-dot" style="width:8px; height:8px; background:#3b82f6; border-radius:50%;"></div>'}
+                            ${n.is_read ? '' : '<div class="notif-dot" role="img" aria-label="Unread" title="Unread" style="width:8px; height:8px; background:#3b82f6; border-radius:50%;"></div>'}
                         </div>
-                        <span style="background:${priorityBg}; color:white; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:600; display:inline-block; margin-bottom:10px;">${priorityLabel}</span>
+                        <span style="background:${priorityBg}; color:white; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600; display:inline-block; margin-bottom:10px;">${priorityLabel}</span>
                         <p style="font-size:13px; color:#475569; margin:0 0 12px 0;">${escapeHtml(n.message || '')}</p>
                         <div style="font-size:12px; color:#64748b;">${escapeHtml(formatTimeAgo(n.created_at))}</div>
                     </div>`;
@@ -4993,7 +5926,7 @@ async function renderEmailQueueList() {
                 (m) => `
                 <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:20px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
                     <div style="display:flex; gap:15px; min-width:0;">
-                        <i class="fa-regular fa-envelope" style="color:#94a3b8; font-size:16px; margin-top:2px;"></i>
+                        <i class="fa-regular fa-envelope" style="color:#64748b; font-size:16px; margin-top:2px;"></i>
                         <div style="min-width:0;">
                             <h4 style="font-size:14px; color:#0f172a; margin:0 0 5px 0; font-weight:600; word-break:break-word;">${escapeHtml(m.secure_subject != null ? m.secure_subject : m.subject)}</h4>
                             <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">${m.category === 'reminder' ? 'Reminder' : 'Case update'} • To: ${escapeHtml(m.recipient_email)}</p>
@@ -5003,7 +5936,7 @@ async function renderEmailQueueList() {
                     </div>
                     <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0;">
                         ${emailStatusBadge(m.status)}
-                        ${m.status === 'failed' ? `<button type="button" onclick="retryEmail(${jsArg(m.id)})" style="padding:5px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer; font-size:11px; font-weight:600; color:#334155;"><i class="fa-solid fa-rotate-right"></i> Retry</button>` : ''}
+                        ${m.status === 'failed' ? `<button type="button" onclick="retryEmail(${jsArg(m.id)})" style="padding:5px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;"><i class="fa-solid fa-rotate-right"></i> Retry</button>` : ''}
                     </div>
                 </div>
             `
@@ -5484,7 +6417,7 @@ function setupAddEventModal() {
         clearBtn.id = 'add-event-attach-clear';
         clearBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Remove attachment';
         clearBtn.style.cssText =
-            'display:none; margin-top:8px; font-size:11px; padding:6px 10px; background:#fee2e2; color:#dc2626; border:none; border-radius:4px; cursor:pointer; font-weight:600;';
+            'display:none; margin-top:8px; font-size:12px; padding:6px 10px; background:#fee2e2; color:#dc2626; border:none; border-radius:4px; cursor:pointer; font-weight:600;';
         attachNameInput.parentElement.appendChild(clearBtn);
 
         attachInput.addEventListener('change', () => {
@@ -5549,7 +6482,7 @@ function setupAddEventModal() {
         const note = document.createElement('div');
         note.className = 'event-field-error';
         note.textContent = message;
-        note.style.cssText = 'color:#ef4444; font-size:11px; margin-top:4px;';
+        note.style.cssText = 'color:#ef4444; font-size:12px; margin-top:4px;';
 
         const wrapper = el.parentElement;
         const anchor = el.tagName === 'SELECT' && wrapper && !wrapper.classList.contains('form-group') ? wrapper : el;
@@ -5939,7 +6872,7 @@ async function renderResourcesWidget() {
                 const isBusy = !!currentBooking;
                 const tagClass = isBusy ? 'tag-busy' : 'tag-avail';
                 const tagText = isBusy ? 'Busy Now' : 'Available';
-                const tagStyle = isBusy ? 'background:#fee2e2; color:#ef4444;' : 'background:#dcfce7; color:#22c55e;';
+                const tagStyle = '';
 
                 let subText = '';
                 let linkedEvent = null;
@@ -5975,11 +6908,11 @@ async function renderResourcesWidget() {
                     <div class="resource-item" ${clickAttrs}>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <span style="color:#1e293b; font-weight:500;">${room}</span>
-                            <span class="tag ${tagClass}" style="font-size:10px; padding:3px 8px; border-radius:4px; font-weight:bold; ${tagStyle}">
+                            <span class="tag ${tagClass}" style="font-size:12px; padding:3px 8px; border-radius:4px; font-weight:bold; ${tagStyle}">
                                 ${tagText}
                             </span>
                         </div>
-                        ${subText ? `<span style="color:#94a3b8; font-size:11px; margin-top:3px;">${escapeHtml(subText)}${linkedEvent ? ' <i class="fa-solid fa-circle-info" style="margin-left:4px;"></i>' : ''}</span>` : ''}
+                        ${subText ? `<span style="color:#64748b; font-size:12px; margin-top:3px;">${escapeHtml(subText)}${linkedEvent ? ' <i class="fa-solid fa-circle-info" style="margin-left:4px;"></i>' : ''}</span>` : ''}
                     </div>
                 `;
             })
@@ -6087,19 +7020,19 @@ window.openRoomBookingDetails = function (eventId) {
     titleEl.textContent = ev.title || 'Booking Details';
     bodyEl.innerHTML = `
             <div style="display:flex; align-items:center; gap:10px;">
-                <i class="fa-solid fa-location-dot" style="width:16px; color:#94a3b8;"></i>
+                <i class="fa-solid fa-location-dot" style="width:16px; color:#64748b;"></i>
                 <span><strong>${ev.roomName}</strong></span>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
-                <i class="fa-regular fa-calendar" style="width:16px; color:#94a3b8;"></i>
+                <i class="fa-regular fa-calendar" style="width:16px; color:#64748b;"></i>
                 <span>${formatDate(ev.start_date)} at ${formatEventTime(ev.start_date)}</span>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
-                <i class="fa-solid fa-gavel" style="width:16px; color:#94a3b8;"></i>
+                <i class="fa-solid fa-gavel" style="width:16px; color:#64748b;"></i>
                 <span>Booked by: <strong>${escapeHtml(bookedBy)}</strong></span>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
-                <i class="fa-solid fa-user" style="width:16px; color:#94a3b8;"></i>
+                <i class="fa-solid fa-user" style="width:16px; color:#64748b;"></i>
                 <span>Client: <strong>${escapeHtml(clientName)}</strong></span>
             </div>
         `;
@@ -6117,6 +7050,113 @@ function setupRoomBookingModal() {
     });
 }
 
+const PAGER_SIZES = [10, 25, 50, 100];
+const pagerState = {};
+
+function pagerGet(key) {
+    if (!pagerState[key]) pagerState[key] = { page: 1, size: 25, sig: '', redraw: null, anchor: '' };
+    return pagerState[key];
+}
+
+function pagerBind(key, redraw, anchorId) {
+    const st = pagerGet(key);
+    st.redraw = redraw;
+    st.anchor = anchorId || '';
+    return st;
+}
+
+function pagerSlice(key, items, signature) {
+    const st = pagerGet(key);
+    if (signature !== undefined && st.sig !== signature) {
+        st.sig = signature;
+        st.page = 1;
+    }
+    const pages = Math.max(1, Math.ceil(items.length / st.size));
+    if (st.page > pages) st.page = pages;
+    const start = (st.page - 1) * st.size;
+    return {
+        rows: items.slice(start, start + st.size),
+        page: st.page,
+        pages: pages,
+        total: items.length,
+        start: start,
+        size: st.size
+    };
+}
+
+function pagerHtml(key, info, noun) {
+    if (!info || info.total <= PAGER_SIZES[0]) return '';
+    const end = Math.min(info.start + info.size, info.total);
+    const sizeOptions = PAGER_SIZES.map(
+        (n) => `<option value="${n}" ${n === info.size ? 'selected' : ''}>${n}</option>`
+    ).join('');
+    const btn = (nav, label, disabled, aria) =>
+        `<button type="button" class="pg-btn" data-pg-nav="${nav}" aria-label="${aria}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+    return `
+        <div class="pg-bar" data-pager="${escapeHtml(key)}" data-pages="${info.pages}">
+            <span class="pg-info">Showing ${info.start + 1}-${end} of ${info.total} ${escapeHtml(noun)}</span>
+            <div class="pg-controls">
+                <label class="pg-size">Rows per page
+                    <select data-pg-size aria-label="Rows per page">${sizeOptions}</select>
+                </label>
+                ${btn('first', '<i class="fa-solid fa-angles-left"></i>', info.page <= 1, 'First page')}
+                ${btn('prev', '<i class="fa-solid fa-angle-left"></i> Previous', info.page <= 1, 'Previous page')}
+                <span class="pg-page">Page ${info.page} of ${info.pages}</span>
+                ${btn('next', 'Next <i class="fa-solid fa-angle-right"></i>', info.page >= info.pages, 'Next page')}
+                ${btn('last', '<i class="fa-solid fa-angles-right"></i>', info.page >= info.pages, 'Last page')}
+            </div>
+        </div>`;
+}
+
+function pagerClear(containerId) {
+    const el = document.getElementById(containerId);
+    if (el) el.innerHTML = '';
+}
+
+function pagerRedraw(st) {
+    if (typeof st.redraw === 'function') st.redraw();
+    const anchor = st.anchor ? document.getElementById(st.anchor) : null;
+    if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-pg-nav]');
+    if (!btn || btn.disabled) return;
+    const bar = btn.closest('[data-pager]');
+    if (!bar) return;
+    const st = pagerGet(bar.dataset.pager);
+    const pages = Number(bar.dataset.pages) || 1;
+    const nav = btn.dataset.pgNav;
+    if (nav === 'first') st.page = 1;
+    else if (nav === 'prev') st.page = Math.max(1, st.page - 1);
+    else if (nav === 'next') st.page = Math.min(pages, st.page + 1);
+    else if (nav === 'last') st.page = pages;
+    pagerRedraw(st);
+});
+
+document.addEventListener('change', (e) => {
+    const select = e.target.closest('[data-pg-size]');
+    if (!select) return;
+    const bar = select.closest('[data-pager]');
+    if (!bar) return;
+    const st = pagerGet(bar.dataset.pager);
+    const size = Number(select.value);
+    st.size = PAGER_SIZES.includes(size) ? size : 25;
+    st.page = 1;
+    pagerRedraw(st);
+});
+
+async function fetchAllRows(buildQuery, batchSize = 1000, maxRows = 20000) {
+    const all = [];
+    for (let from = 0; from < maxRows; from += batchSize) {
+        const { data, error } = await buildQuery().range(from, from + batchSize - 1);
+        if (error) return { data: null, error: error };
+        all.push(...(data || []));
+        if (!data || data.length < batchSize) break;
+    }
+    return { data: all, error: null };
+}
+
 async function renderCasesTabView() {
     const casesList = document.getElementById('cases-list-inject');
     if (!casesList) return;
@@ -6126,14 +7166,17 @@ async function renderCasesTabView() {
     try {
         const isLawyer = globalUserRole === 'lawyer' && currentUser;
 
-        let casesQuery = supabaseClient
-            .from('cases')
-            .select(casesSelect('*, clients(id, client_name, client_email, client_phone)', !!isLawyer))
-            .order('created_at', { ascending: false });
+        const buildCasesQuery = () => {
+            let casesQuery = supabaseClient
+                .from('cases')
+                .select(casesSelect('*, clients(id, client_name, client_email, client_phone, full_address)', !!isLawyer))
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: true });
+            if (isLawyer) casesQuery = filterMyCases(casesQuery);
+            return casesQuery;
+        };
 
-        if (isLawyer) casesQuery = filterMyCases(casesQuery);
-
-        const { data: cases, error } = await casesQuery;
+        const { data: cases, error } = await fetchAllRows(buildCasesQuery);
         if (error) throw error;
 
         window.__casesRegistry = {};
@@ -6222,7 +7265,14 @@ function paintCasesList() {
 
     const canEditCase = globalRoleName === 'admin' || globalRoleName === 'lawyer';
 
-    const rows = cases
+    pagerBind('cases', paintCasesList, 'cases-list-inject');
+    const pageInfo = pagerSlice(
+        'cases',
+        cases,
+        JSON.stringify([from, to, term, fStatus, fType, fParty, fStage, sort.key, sort.dir])
+    );
+
+    const rows = pageInfo.rows
         .map((c) => {
             const isClosed = c.status === 'closed';
             const clientName = escapeHtml(c.clients?.client_name || (c.client_id ? 'Linked client' : 'No Client'));
@@ -6302,7 +7352,8 @@ function paintCasesList() {
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
-            </div>`;
+            </div>
+            ${pagerHtml('cases', pageInfo, cases.length === 1 ? 'case' : 'cases')}`;
 }
 
 function setupCasesTabControls() {
@@ -6541,7 +7592,7 @@ function approvalBadge(status) {
         rejected: 'background:#fee2e2; color:#dc2626;'
     };
     const labels = { pending: 'Pending approval', approved: 'Approved', rejected: 'Rejected' };
-    return `<span style="font-size:10px; padding:3px 10px; border-radius:99px; font-weight:700; margin-left:8px; vertical-align:middle; ${styles[status] || ''}">${labels[status] || escapeHtml(status || '')}</span>`;
+    return `<span style="font-size:12px; padding:3px 10px; border-radius:99px; font-weight:700; margin-left:8px; vertical-align:middle; ${styles[status] || ''}">${labels[status] || escapeHtml(status || '')}</span>`;
 }
 
 async function renderClientsView() {
@@ -6564,10 +7615,13 @@ async function renderClientsView() {
             'id, client_name, client_email, client_phone, full_address, auth_user_id, created_at, registered_by, approval_status, rejection_reason, archived_at, ' +
             'client_lawyers(lawyer_id, lawyer_role, lawyer:profiles!client_lawyers_lawyer_id_fkey(full_name)), ' +
             'cases(id, title, case_number, status, created_at)';
-        const { data: clients, error } = await supabaseClient
-            .from('clients')
-            .select(select)
-            .order('created_at', { ascending: false });
+        const { data: clients, error } = await fetchAllRows(() =>
+            supabaseClient
+                .from('clients')
+                .select(select)
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: true })
+        );
         if (error) throw error;
 
         window.__clientsDirectory = clients || [];
@@ -6659,7 +7713,10 @@ function paintClientsDirectory() {
     const hasInviteSlot = clients.some((c) => !c.archived_at && canInviteClients() && clientNeedsPortalInvite(c));
     const hasMainSlot = isAdminUser();
 
-    const rows = clients
+    pagerBind('clients', paintClientsDirectory, 'clients-list-inject');
+    const pageInfo = pagerSlice('clients', clients, JSON.stringify([term, statusFilter, sort.key, sort.dir]));
+
+    const rows = pageInfo.rows
         .map((c) => {
             const cases = c.cases || [];
             const openCases = cases.filter((cs) => cs.status !== 'closed').length;
@@ -6766,7 +7823,8 @@ function paintClientsDirectory() {
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
-            </div>`;
+            </div>
+            ${pagerHtml('clients', pageInfo, clients.length === 1 ? 'client' : 'clients')}`;
 }
 
 function openClientViewModal(client) {
@@ -8259,7 +9317,7 @@ window.openCasesDashboard = async function () {
     async function load() {
         let query = supabaseClient
             .from('cases')
-            .select(casesSelect('*, clients(id, client_name, client_email, client_phone)', isLawyer))
+            .select(casesSelect('*, clients(id, client_name, client_email, client_phone, full_address)', isLawyer))
             .order('created_at', { ascending: false });
         if (isLawyer) query = filterMyCases(query);
         const { data, error } = await query;
@@ -8845,6 +9903,7 @@ window.openCaseDetail = async function (caseId) {
     }
     delete listEl.dataset.loadedFor;
     modal.classList.remove('hidden');
+    populateEmailTemplateSelect();
     listEl.innerHTML = skeletonRows(3);
 
     await loadCaseEmails(caseId);
@@ -9044,6 +10103,13 @@ function setupCaseDetailModal() {
 
             if (!recipientEmail) {
                 showToast('This case has no client email on file, so an update email cannot be sent.', 'warning');
+                return;
+            }
+
+            if (
+                countPlaceholders(subject + '\n' + body) > 0 &&
+                !confirm('This message still has text in [brackets] that looks like a placeholder. Send it anyway?')
+            ) {
                 return;
             }
 
@@ -9795,7 +10861,7 @@ function openUserModal(title, subtitleHtml, bodyHtml) {
                         <h2 style="font-size:18px; font-weight:700; color:#1e293b; margin:0;">${escapeHtml(title)}</h2>
                         <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">${subtitleHtml}</p>
                     </div>
-                    <button type="button" data-um-close style="background:transparent; border:none; font-size:20px; cursor:pointer; color:#64748b; padding:0;"><i class="fa-solid fa-xmark"></i></button>
+                    <button type="button" data-um-close aria-label="Close" title="Close" style="background:transparent; border:none; font-size:20px; cursor:pointer; color:#64748b; padding:0;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div data-um-body>${bodyHtml}</div>
             </div>`;
@@ -9849,9 +10915,9 @@ function replacementSelectHtml(lawyers) {
                     <option value="">Select a lawyer</option>
                     ${lawyers.map((l) => `<option value="${escapeHtml(l.id)}">Atty. ${escapeHtml(l.full_name || 'Unnamed')}${l.specialization ? ' — ' + escapeHtml(l.specialization) : ''}</option>`).join('')}
                 </select>
-                <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#94a3b8; pointer-events:none; font-size:12px;"></i>
+                <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#64748b; pointer-events:none; font-size:12px;"></i>
             </div>
-            <p style="font-size:11px; color:#94a3b8; margin:0 0 16px 0;">Lead roles carry over. Closed cases keep their original lawyers. Upcoming events move too, so check the calendar for overlaps afterwards.</p>`;
+            <p style="font-size:12px; color:#64748b; margin:0 0 16px 0;">Lead roles carry over. Closed cases keep their original lawyers. Upcoming events move too, so check the calendar for overlaps afterwards.</p>`;
 }
 
 function modalButtonsHtml(confirmLabel, confirmColor) {
@@ -9959,12 +11025,12 @@ window.openChangeRoleModal = async function (id, name, currentRole) {
                         <select id="um-spec" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; appearance:none;">
                             ${SPECIALIZATIONS.map((sp) => `<option value="${escapeHtml(sp)}">${escapeHtml(sp)}</option>`).join('')}
                         </select>
-                        <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#94a3b8; pointer-events:none; font-size:12px;"></i>
+                        <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#64748b; pointer-events:none; font-size:12px;"></i>
                     </div>`;
         }
 
         middle +=
-            '<p style="font-size:11px; color:#94a3b8; margin:0 0 12px 0;">The change applies immediately. If they are signed in, they should sign in again to see the right menus.</p>';
+            '<p style="font-size:12px; color:#64748b; margin:0 0 12px 0;">The change applies immediately. If they are signed in, they should sign in again to see the right menus.</p>';
 
         modal.body.innerHTML = middle + modalButtonsHtml('Change role', '#0ea5e9');
         const confirmBtn = modal.body.querySelector('#um-confirm');
@@ -10030,7 +11096,7 @@ window.openResetPasswordModal = function (id, name) {
                 <button type="button" id="um-pw-generate" style="padding:10px 12px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Generate</button>
                 <button type="button" id="um-pw-copy" style="padding:10px 12px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Copy</button>
             </div>
-            <p style="font-size:11px; color:#94a3b8; margin:0 0 16px 0;">At least 8 characters with a letter and a number. Share it with them privately.</p>
+            <p style="font-size:12px; color:#64748b; margin:0 0 16px 0;">At least 8 characters with a letter and a number. Share it with them privately.</p>
             ${modalButtonsHtml('Reset password', '#8b5cf6')}
         `
     );
@@ -10501,7 +11567,6 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAuthAndInit();
 });
 
-const AUDIT_LOG_LIMIT = 200;
 let auditRequestCounter = 0;
 let auditFiltersReady = false;
 
@@ -10571,7 +11636,13 @@ function initAuditFilters() {
     if (!actionEl || !periodEl || !entityEl) return;
     auditFiltersReady = true;
     const searchEl = document.getElementById('audit-search');
-    if (searchEl) searchEl.addEventListener('input', paintAudits);
+    let auditSearchTimer = null;
+    if (searchEl) {
+        searchEl.addEventListener('input', () => {
+            clearTimeout(auditSearchTimer);
+            auditSearchTimer = setTimeout(renderAuditsView, 350);
+        });
+    }
 
     const sync = () => {
         const isCustom = periodEl.value === 'custom';
@@ -10703,7 +11774,7 @@ function paintAudits() {
     const data = window.__auditData;
     if (!listEl || !data) return;
 
-    const term = (document.getElementById('audit-search')?.value || '').trim().toLowerCase();
+    const term = '';
 
     const rows = data.logs
         .map((log) => {
@@ -10776,7 +11847,27 @@ function paintAudits() {
                 </thead>
                 <tbody>${body}</tbody>
             </table>
-        </div>`;
+        </div>
+        ${pagerHtml('audits', data.pager, 'activities')}`;
+}
+
+async function auditSearchClause(rawTerm) {
+    const clean = rawTerm.replace(/[,()*%\\"']/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!clean) return '';
+    const lower = clean.toLowerCase();
+    const parts = [`new_data->>summary.ilike.*${clean}*`, `table_name.ilike.*${clean}*`, `action.ilike.*${clean}*`];
+    const actionKeys = Object.keys(AUDIT_ACTIONS).filter((k) => AUDIT_ACTIONS[k].label.toLowerCase().includes(lower));
+    if (actionKeys.length) parts.push(`action.in.(${actionKeys.join(',')})`);
+    const entityKeys = Object.keys(AUDIT_ENTITIES).filter((k) => AUDIT_ENTITIES[k].toLowerCase().includes(lower));
+    if (entityKeys.length) parts.push(`table_name.in.(${entityKeys.join(',')})`);
+    const { data: people } = await supabaseClient
+        .from('profiles')
+        .select('id')
+        .ilike('full_name', `%${clean}%`)
+        .limit(100);
+    const ids = (people || []).map((p) => p.id);
+    if (ids.length) parts.push(`changed_by.in.(${ids.join(',')})`);
+    return parts.join(',');
 }
 
 async function renderAuditsView() {
@@ -10797,30 +11888,48 @@ async function renderAuditsView() {
         const range = getAuditDateRange(filters);
         const hasFilters = auditFiltersActive(filters);
         const requestId = ++auditRequestCounter;
+        const term = (document.getElementById('audit-search')?.value || '').trim();
+        const st = pagerBind('audits', renderAuditsView, 'audits-list-inject');
+        const signature = JSON.stringify([filters, term]);
+        if (st.sig !== signature) {
+            st.sig = signature;
+            st.page = 1;
+        }
+        const searchClause = term ? await auditSearchClause(term) : '';
+        if (requestId !== auditRequestCounter) return;
 
+        const fromRow = (st.page - 1) * st.size;
         let query = supabaseClient
             .from('audit_logs')
-            .select('*')
+            .select('*', { count: 'exact' })
             .order('changed_at', { ascending: false })
-            .limit(AUDIT_LOG_LIMIT);
+            .order('id', { ascending: false })
+            .range(fromRow, fromRow + st.size - 1);
 
         if (filters.action !== 'all') query = query.eq('action', filters.action);
         if (filters.entity !== 'all') query = query.ilike('table_name', filters.entity);
         if (range.from) query = query.gte('changed_at', range.from.toISOString());
         if (range.to) query = query.lt('changed_at', range.to.toISOString());
+        if (searchClause) query = query.or(searchClause);
 
-        const { data: logs, error: logsError } = await query;
+        const { data: logs, count, error: logsError } = await query;
 
         if (requestId !== auditRequestCounter) return;
         if (logsError) throw logsError;
 
-        if (countEl) {
-            const n = logs ? logs.length : 0;
-            const capped = n >= AUDIT_LOG_LIMIT ? ` (latest ${AUDIT_LOG_LIMIT} shown)` : '';
-            countEl.textContent = hasFilters
-                ? `${n} matching ${n === 1 ? 'activity' : 'activities'}${capped}`
-                : `Showing last ${n} activities`;
+        const total = count || 0;
+        const pages = Math.max(1, Math.ceil(total / st.size));
+        if (st.page > pages) {
+            st.page = pages;
+            return renderAuditsView();
         }
+        const pagerInfo = { total: total, page: st.page, pages: pages, start: fromRow, size: st.size };
+        const narrowed = hasFilters || !!searchClause;
+        const countText = narrowed
+            ? `${total} matching ${total === 1 ? 'activity' : 'activities'}`
+            : `${total} ${total === 1 ? 'activity' : 'activities'} in total`;
+
+        if (countEl) countEl.textContent = countText;
 
         if (!logs || logs.length === 0) {
             listEl.innerHTML = hasFilters
@@ -10846,7 +11955,7 @@ async function renderAuditsView() {
                 });
             }
         }
-        window.__auditData = { logs: logs, profileMap: profileMap, avatarMap: avatarMap, countText: countEl ? countEl.textContent : '' };
+        window.__auditData = { logs: logs, profileMap: profileMap, avatarMap: avatarMap, countText: countText, pager: pagerInfo };
         paintAudits();
     } catch (err) {
         console.error('Error loading audit logs:', err);

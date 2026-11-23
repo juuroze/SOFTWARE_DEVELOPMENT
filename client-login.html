@@ -77,8 +77,8 @@
         .cl-meter { height: 6px; border-radius: 99px; background: #e2e8f0; overflow: hidden; margin: 4px 0 10px 0; }
         .cl-meter-fill { height: 100%; width: 0; border-radius: 99px; background: #ef4444; transition: width 0.2s ease, background-color 0.2s ease; }
         .cl-rules { list-style: none; margin: 0 0 14px 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
-        .cl-rules li { font-size: 12px; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
-        .cl-rules li i { font-size: 11px; }
+        .cl-rules li { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; }
+        .cl-rules li i { font-size: 12px; }
         .cl-rules li.ok { color: #16a34a; }
         .btn-login:disabled { opacity: 0.55; cursor: not-allowed; }
         @media (max-width: 420px) { .cl-rules { grid-template-columns: 1fr; } }
@@ -177,7 +177,7 @@
                     <li>Enter the 6-digit code the app shows.</li>
                 </ol>
                 <div class="cl-qr"><img id="mfa-qr" alt="Authenticator QR code"></div>
-                <p style="font-size: 11px; color: #64748b; margin: 0 0 4px 0; text-align: center;">Can't scan? Enter this key manually:</p>
+                <p style="font-size: 12px; color: #64748b; margin: 0 0 4px 0; text-align: center;">Can't scan? Enter this key manually:</p>
                 <p class="cl-secret" id="mfa-secret"></p>
             </div>
 
@@ -652,5 +652,6 @@
             await startMfa();
         })();
     </script>
+    <script src="a11y.js?v=1" defer></script>
 </body>
 </html>
