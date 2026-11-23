@@ -27,7 +27,9 @@
         'fa-floppy-disk': 'Save',
         'fa-clock-rotate-left': 'History',
         'fa-check': 'Confirm',
-        'fa-calendar-days': 'Calendar'
+        'fa-calendar-days': 'Calendar',
+        'fa-ellipsis': 'More actions',
+        'fa-ellipsis-vertical': 'More actions'
     };
 
     var ID_LABELS = [

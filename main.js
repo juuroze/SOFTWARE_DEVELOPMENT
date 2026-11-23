@@ -7229,6 +7229,7 @@ function paintCasesList() {
     });
 
     if (countEl) countEl.textContent = filtersOn ? `${cases.length} of ${all.length} cases` : `Total: ${all.length}`;
+    window.__casesFiltered = cases;
 
     if (all.length === 0) {
         casesList.innerHTML = '<p style="color:#64748b; text-align:center; padding:30px;">No cases yet.</p>';
@@ -7292,8 +7293,6 @@ function paintCasesList() {
                       .join('')
                 : '<span class="ct-muted">Not assigned</span>';
 
-            const iconBtn = (onclick, icon, label, tone = '') =>
-                `<button type="button" class="ct-icon-btn ${tone}" onclick="${onclick}" title="${label}" aria-label="${label}"><i class="fa-solid ${icon}"></i></button>`;
             const textBtn = (onclick, icon, label, tone) =>
                 `<button type="button" class="ct-text-btn ${tone}" onclick="${onclick}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
 
@@ -7310,13 +7309,9 @@ function paintCasesList() {
                           )
                 );
             }
-            actions.push(iconBtn(`openCaseReports('${c.id}')`, 'fa-file-lines', 'Reports and history'));
-            actions.push(iconBtn(`openCaseDetail('${c.id}')`, 'fa-envelope', 'Case emails'));
-            if (globalRoleName === 'admin')
-                actions.push(iconBtn(`openCaseTeam('${c.id}')`, 'fa-gavel', 'Assign lawyers'));
-            if (canEditCase) actions.push(iconBtn(`openCaseForm('${c.id}')`, 'fa-pen', 'Edit case'));
-            if (globalRoleName === 'admin')
-                actions.push(iconBtn(`deleteCase('${c.id}')`, 'fa-trash', 'Delete case', 'ct-red'));
+            actions.push(
+                `<button type="button" class="ct-icon-btn ct-menu-btn" data-row-menu="${c.id}" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for ${escapeHtml(c.title)}" title="More actions"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>`
+            );
 
             return `
                 <tr>
