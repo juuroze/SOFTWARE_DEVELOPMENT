@@ -40,13 +40,41 @@
         if (focusBack && state.btn.isConnected) state.btn.focus();
     }
 
+    function sourceMenuItems(btn) {
+        var src = btn.previousElementSibling;
+        var items = [];
+        if (!src || !src.classList.contains('row-actions-src')) return items;
+        var buttons = src.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+            var b = buttons[i];
+            var icon = b.querySelector('i[class*="fa-"]');
+            var iconClass = 'fa-ellipsis';
+            if (icon) {
+                var parts = icon.className.split(/\s+/);
+                for (var k = 0; k < parts.length; k++) {
+                    if (parts[k].indexOf('fa-') === 0 && parts[k] !== 'fa-solid' && parts[k] !== 'fa-regular') iconClass = parts[k];
+                }
+            }
+            var danger = b.classList.contains('ct-red');
+            items.push({
+                source: b,
+                icon: iconClass,
+                label: b.getAttribute('title') || b.textContent.trim(),
+                danger: danger,
+                separator: danger && items.length > 0
+            });
+        }
+        return items;
+    }
+
     function openRowMenu(btn) {
         closeRowMenu(false);
-        var items = caseMenuItems(btn.getAttribute('data-row-menu'));
+        var items = btn.hasAttribute('data-menu-src') ? sourceMenuItems(btn) : caseMenuItems(btn.getAttribute('data-row-menu'));
+        if (!items.length) return;
         var menu = document.createElement('div');
         menu.className = 'row-menu';
         menu.setAttribute('role', 'menu');
-        menu.setAttribute('aria-label', 'Case actions');
+        menu.setAttribute('aria-label', btn.getAttribute('data-menu-label') || 'Case actions');
         menu.innerHTML = items
             .map(function (it, i) {
                 return (
@@ -58,7 +86,7 @@
                     '"><i class="fa-solid ' +
                     it.icon +
                     '" aria-hidden="true"></i><span>' +
-                    it.label +
+                    escapeHtml(it.label) +
                     '</span></button>'
                 );
             })
@@ -89,7 +117,12 @@
         var item = state.items[index];
         closeRowMenu(true);
         window.setTimeout(function () {
-            if (item && typeof window[item.fn] === 'function') window[item.fn](item.id);
+            if (!item) return;
+            if (item.source) {
+                if (item.source.isConnected) item.source.click();
+            } else if (typeof window[item.fn] === 'function') {
+                window[item.fn](item.id);
+            }
         }, 0);
     }
 

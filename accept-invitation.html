@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://qksgqkmctjzmzhzmrbhj.supabase.co; form-action 'self'; base-uri 'none'">
+    <title>JuriSync - Accept Invitation</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .ai-hidden { display: none !important; }
+        .ai-help { font-size: 13px; color: #475569; line-height: 1.6; margin: 0 0 14px 0; }
+        .ai-rules { font-size: 12px; color: #64748b; margin: 0 0 14px 18px; padding: 0; line-height: 1.7; text-align: left; }
+        .ai-rules li.ok { color: #16a34a; }
+        .ai-pw { position: relative; }
+        .ai-pw input { width: 100%; padding-right: 64px; box-sizing: border-box; }
+        .ai-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #475569; font-size: 12px; font-weight: 600; padding: 4px 6px; }
+        .ai-msg { font-size: 13px; min-height: 18px; margin: 10px 0 0 0; text-align: center; }
+        .ai-msg.error { color: #ef4444; }
+        .ai-msg.success { color: #16a34a; }
+        .btn-login:disabled { opacity: 0.55; cursor: not-allowed; }
+    </style>
+</head>
+<body class="login-body">
+    <div class="login-card">
+        <div class="brand-wrapper">
+            <img src="logo11.png" alt="JuriSync Logo" class="brand-logo-login">
+        </div>
+        <span class="login-eyebrow">Account invitation</span>
+        <h2 id="ai-title">JuriSync</h2>
+
+        <p class="ai-help" id="ai-status">Checking your invitation...</p>
+
+        <form id="ai-form" class="ai-hidden" autocomplete="off" novalidate>
+            <p class="ai-help">Your account has been created by the JuriSync administration team. Complete your account setup to access the platform.</p>
+
+            <div class="form-group">
+                <label for="ai-pw1">New Password</label>
+                <div class="ai-pw">
+                    <input type="password" id="ai-pw1" autocomplete="new-password" maxlength="128">
+                    <button type="button" class="ai-toggle" data-target="ai-pw1" aria-label="Show password">Show</button>
+                </div>
+            </div>
+
+            <ul class="ai-rules" id="ai-rules">
+                <li data-rule="length">At least 10 characters</li>
+                <li data-rule="lower">A lowercase letter</li>
+                <li data-rule="upper">An uppercase letter</li>
+                <li data-rule="number">A number</li>
+                <li data-rule="symbol">A symbol, like ! or #</li>
+            </ul>
+
+            <div class="form-group">
+                <label for="ai-pw2">Confirm Password</label>
+                <div class="ai-pw">
+                    <input type="password" id="ai-pw2" autocomplete="new-password" maxlength="128">
+                    <button type="button" class="ai-toggle" data-target="ai-pw2" aria-label="Show password">Show</button>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-login" id="ai-submit" disabled>Activate My Account</button>
+            <p class="ai-msg" id="ai-msg" role="alert"></p>
+        </form>
+
+        <div class="login-secure">Secure sign-in</div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://qksgqkmctjzmzhzmrbhj.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_Hx1bN74JlwOKBW6wv0wRgQ_fkP9N-b5';
+        const ENDPOINT = SUPABASE_URL + '/functions/v1/lawyer-invitation';
+
+        const $ = (id) => document.getElementById(id);
+        const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const token = params.get('token') || '';
+        if (window.location.hash) history.replaceState(null, '', window.location.pathname);
+
+        const STATE_TEXT = {
+            invalid: 'This invitation link is not valid. Please contact your system administrator for a new invitation.',
+            expired: 'This invitation has expired. Please contact your system administrator to receive a new invitation.',
+            used: 'This invitation has already been used. If you have already set your password, go to the login page.'
+        };
+
+        async function call(body) {
+            const res = await fetch(ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+                body: JSON.stringify(body),
+                referrerPolicy: 'no-referrer'
+            });
+            let data = {};
+            try { data = await res.json(); } catch (e) {}
+            return { ok: res.ok, data: data };
+        }
+
+        function showProblem(state) {
+            $('ai-form').classList.add('ai-hidden');
+            $('ai-status').classList.remove('ai-hidden');
+            $('ai-status').textContent = STATE_TEXT[state] || STATE_TEXT.invalid;
+        }
+
+        function evaluate(pw) {
+            return {
+                length: pw.length >= 10,
+                lower: /[a-z]/.test(pw),
+                upper: /[A-Z]/.test(pw),
+                number: /\d/.test(pw),
+                symbol: /[^A-Za-z0-9]/.test(pw)
+            };
+        }
+
+        function refresh() {
+            const pw = $('ai-pw1').value;
+            const result = evaluate(pw);
+            let passed = 0;
+            Object.keys(result).forEach((key) => {
+                const li = document.querySelector('#ai-rules li[data-rule="' + key + '"]');
+                li.classList.toggle('ok', result[key]);
+                if (result[key]) passed += 1;
+            });
+            const ready = passed === 5 && pw === $('ai-pw2').value;
+            $('ai-submit').disabled = !ready;
+            return ready;
+        }
+
+        document.querySelectorAll('.ai-toggle').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const input = $(btn.dataset.target);
+                const show = input.type === 'password';
+                input.type = show ? 'text' : 'password';
+                btn.textContent = show ? 'Hide' : 'Show';
+                btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+            });
+        });
+        $('ai-pw1').addEventListener('input', refresh);
+        $('ai-pw2').addEventListener('input', refresh);
+
+        $('ai-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!refresh()) return;
+            const msg = $('ai-msg');
+            msg.className = 'ai-msg';
+            msg.textContent = '';
+            const btn = $('ai-submit');
+            btn.disabled = true;
+            btn.textContent = 'Activating...';
+
+            const { ok, data } = await call({ action: 'accept', token: token, password: $('ai-pw1').value });
+            if (!ok) {
+                if (data.state && data.state !== 'valid') {
+                    showProblem(data.state);
+                    return;
+                }
+                msg.className = 'ai-msg error';
+                msg.textContent = data.error || 'Something went wrong. Please try again.';
+                btn.textContent = 'Activate My Account';
+                refresh();
+                return;
+            }
+
+            $('ai-pw1').value = '';
+            $('ai-pw2').value = '';
+            msg.className = 'ai-msg success';
+            msg.textContent = 'Your account is active. Redirecting you to the login page...';
+            try { localStorage.setItem('jurisync-login-notice', 'Your account is ready. Sign in with your email and new password.'); } catch (err) {}
+            setTimeout(() => { window.location.href = 'login.html'; }, 1800);
+        });
+
+        (async () => {
+            if (!token) {
+                showProblem('invalid');
+                return;
+            }
+            try {
+                const { ok, data } = await call({ action: 'validate', token: token });
+                if (!ok || data.state !== 'valid') {
+                    showProblem(ok ? data.state : 'invalid');
+                    return;
+                }
+                $('ai-title').textContent = 'Welcome to JuriSync';
+                $('ai-status').classList.add('ai-hidden');
+                $('ai-form').classList.remove('ai-hidden');
+                $('ai-pw1').focus();
+            } catch (err) {
+                $('ai-status').textContent = 'We could not check your invitation. Please check your connection and reload this page.';
+            }
+        })();
+    </script>
+</body>
+</html>

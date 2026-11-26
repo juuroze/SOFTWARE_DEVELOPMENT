@@ -132,6 +132,14 @@
                 return;
             }
 
+            if (profileData.status === 'pending') {
+                await supabaseClient.auth.signOut();
+                showLoginMessage('This account cannot sign in yet. Please contact your administrator.', 'error');
+                loginBtn.disabled = false;
+                loginBtn.innerText = 'Sign In';
+                return;
+            }
+
             try {
                 await supabaseClient.from('audit_logs').insert([
                     {

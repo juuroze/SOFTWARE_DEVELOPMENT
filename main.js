@@ -1255,83 +1255,6 @@ window.focusAppointmentRequest = async function (id) {
     }
 };
 
-function escapeXmlText(value) {
-    return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
-function docxRunsXml(text, bold) {
-    const parts = String(text).split('\t');
-    const props = '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>' + (bold ? '<w:b/>' : '') + '<w:sz w:val="24"/></w:rPr>';
-    return parts
-        .map((part, i) => {
-            const tab = i > 0 ? '<w:r>' + props + '<w:tab/></w:r>' : '';
-            const textRun = part ? '<w:r>' + props + '<w:t xml:space="preserve">' + escapeXmlText(part) + '</w:t></w:r>' : '';
-            return tab + textRun;
-        })
-        .join('');
-}
-
-function docxParagraphXml(line) {
-    let text = line;
-    let align = 'both';
-    let bold = false;
-    let indent = '';
-    if (text.startsWith('## ')) {
-        text = text.slice(3);
-        align = 'left';
-        bold = true;
-    } else if (text.startsWith('# ')) {
-        text = text.slice(2);
-        align = 'center';
-        bold = true;
-    } else if (text.startsWith('>> ')) {
-        text = text.slice(3);
-        align = 'right';
-    } else if (text.startsWith('> ')) {
-        text = text.slice(2);
-        indent = '<w:ind w:firstLine="720"/>';
-    } else if (text.startsWith('<< ')) {
-        text = text.slice(3);
-        align = 'left';
-    }
-    const pPr = '<w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/>' + indent + '<w:jc w:val="' + align + '"/></w:pPr>';
-    return '<w:p>' + pPr + docxRunsXml(text, bold) + '</w:p>';
-}
-
-function buildDocxZip(text, ZipCtor) {
-    const lines = String(text).replace(/\r\n/g, '\n').split('\n');
-    const body = lines.map((line) => (line.trim() === '' ? '<w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p>' : docxParagraphXml(line))).join('');
-    const documentXml =
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
-        body +
-        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>' +
-        '</w:body></w:document>';
-    const contentTypes =
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-        '<Default Extension="xml" ContentType="application/xml"/>' +
-        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
-        '</Types>';
-    const rels =
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
-        '</Relationships>';
-    const zip = new ZipCtor();
-    zip.file('[Content_Types].xml', contentTypes);
-    zip.file('_rels/.rels', rels);
-    zip.file('word/document.xml', documentXml);
-    return zip;
-}
-
-const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
 const TEMPLATE_FIELDS = [
     { key: 'client_name', label: 'Client name', fallback: 'Client Name', group: 'Client' },
     { key: 'client_email', label: 'Email', fallback: 'Client Email', group: 'Client' },
@@ -1354,14 +1277,13 @@ let templatesCache = null;
 let templateEditId = null;
 let templateLastField = null;
 let templateSearchTerm = '';
-let templateKindFilter = 'all';
-const genState = { caseId: null, templateId: null, base: '', fills: {}, tokens: [], dirty: false, tab: 'preview' };
 
 async function loadTemplates(force) {
     if (templatesCache && !force) return templatesCache;
     const { data, error } = await supabaseClient
         .from('document_templates')
         .select('id, name, kind, subject, body, created_by, updated_at')
+        .eq('kind', 'email')
         .order('name', { ascending: true });
     if (error) throw error;
     templatesCache = data || [];
@@ -1409,17 +1331,8 @@ function countPlaceholders(text) {
     return found ? found.length : 0;
 }
 
-function safeDocumentBaseName(name) {
-    return String(name || '')
-        .replace(/[\\/:*?"<>|]+/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 120);
-}
-
-function canManageTemplate(tpl) {
-    if (globalRoleName === 'admin') return true;
-    return globalRoleName === 'lawyer' && !!tpl && !!currentUser && tpl.created_by === currentUser.id;
+function canManageTemplate() {
+    return globalRoleName === 'admin' || globalRoleName === 'lawyer';
 }
 
 async function populateEmailTemplateSelect() {
@@ -1469,258 +1382,6 @@ function applyEmailTemplateFromSelect() {
     bodyInput.focus();
 }
 
-function genComputeText() {
-    return genState.base.replace(new RegExp(PLACEHOLDER_SOURCE, 'g'), (token) =>
-        genState.fills[token] ? genState.fills[token] : token
-    );
-}
-
-function genPreviewHtml() {
-    const lines = genState.base.replace(/\r\n/g, '\n').split('\n');
-    const splitter = new RegExp('(' + PLACEHOLDER_SOURCE + ')');
-    return lines
-        .map((line) => {
-            if (line.trim() === '') return '<div class="pp-gap"></div>';
-            let cls = 'pp-body';
-            let text = line;
-            if (text.startsWith('## ')) {
-                cls = 'pp-bold';
-                text = text.slice(3);
-            } else if (text.startsWith('# ')) {
-                cls = 'pp-center';
-                text = text.slice(2);
-            } else if (text.startsWith('>> ')) {
-                cls = 'pp-right';
-                text = text.slice(3);
-            } else if (text.startsWith('> ')) {
-                cls = 'pp-indent';
-                text = text.slice(2);
-            } else if (text.startsWith('<< ')) {
-                cls = 'pp-left';
-                text = text.slice(3);
-            }
-            const html = text
-                .split(splitter)
-                .map((part, i) => {
-                    if (i % 2 === 1) {
-                        const filled = genState.fills[part];
-                        return filled
-                            ? `<span class="tpl-filled">${escapeHtml(filled)}</span>`
-                            : `<mark class="tpl-ph">${escapeHtml(part)}</mark>`;
-                    }
-                    return escapeHtml(part).replace(/\t/g, '<span class="pp-tab"></span>');
-                })
-                .join('');
-            return `<p class="${cls}">${html}</p>`;
-        })
-        .join('');
-}
-
-function renderGenFacts(ctx) {
-    const rows = [
-        ['Client', ctx.client_name],
-        ['Case number', ctx.case_number],
-        ['Case', ctx.case_title],
-        ['Court', ctx.court_branch],
-        ['Attorney', ctx.lawyer_name],
-        ['Date', ctx.date]
-    ];
-    document.getElementById('tpl-gen-facts').innerHTML = rows
-        .map(([label, value]) =>
-            value
-                ? `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`
-                : `<div><dt>${label}</dt><dd class="empty">Not on file</dd></div>`
-        )
-        .join('');
-}
-
-function rebuildGenFills() {
-    genState.tokens = placeholderTokens(genState.base);
-    const wrap = document.getElementById('tpl-gen-fills');
-    if (genState.tokens.length === 0) {
-        wrap.innerHTML = '<p class="tpl-fill-done"><i class="fa-solid fa-circle-check"></i> Nothing left to fill in.</p>';
-        return;
-    }
-    wrap.innerHTML = genState.tokens
-        .map((token, i) => {
-            const label = token.slice(1, -1);
-            return `<div class="tpl-fill">
-                <label for="tpl-fill-${i}">${escapeHtml(label)}</label>
-                <input type="text" id="tpl-fill-${i}" class="tpl-input" data-fill-index="${i}" maxlength="200" autocomplete="off" value="${escapeHtml(genState.fills[token] || '')}">
-            </div>`;
-        })
-        .join('');
-}
-
-function updateGenStatus() {
-    const open = genState.tokens.filter((t) => !genState.fills[t]).length;
-    const warnEl = document.getElementById('tpl-gen-warn');
-    const countEl = document.getElementById('tpl-gen-fill-count');
-    if (warnEl) {
-        warnEl.className = 'tpl-warn ' + (open > 0 ? 'open' : 'done');
-        warnEl.innerHTML =
-            open > 0
-                ? `<i class="fa-solid fa-triangle-exclamation"></i> ${open} ${open === 1 ? 'detail' : 'details'} to complete`
-                : '<i class="fa-solid fa-circle-check"></i> Ready to save';
-    }
-    if (countEl) countEl.textContent = open > 0 ? open + ' open' : 'Complete';
-}
-
-function renderGenerate(rebuildFills) {
-    document.getElementById('tpl-gen-preview').innerHTML = genPreviewHtml();
-    if (rebuildFills) rebuildGenFills();
-    updateGenStatus();
-}
-
-function setGenTab(tab) {
-    genState.tab = tab;
-    const previewStage = document.getElementById('tpl-gen-stage-preview');
-    const editStage = document.getElementById('tpl-gen-stage-edit');
-    previewStage.hidden = tab !== 'preview';
-    editStage.hidden = tab !== 'edit';
-    document.querySelectorAll('#tpl-generate-modal .tpl-tab').forEach((btn) => {
-        const active = btn.dataset.tab === tab;
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    if (tab === 'edit') {
-        const textEl = document.getElementById('tpl-gen-text');
-        textEl.value = genComputeText();
-        textEl.focus();
-    } else {
-        renderGenerate(false);
-    }
-}
-
-function fillGenerateFromSelection() {
-    const select = document.getElementById('tpl-gen-select');
-    const nameEl = document.getElementById('tpl-gen-name');
-    const tpl = (templatesCache || []).find((t) => t.id === select.value);
-    if (!tpl) return;
-    const ctx = buildTemplateContext(genState.caseId);
-    genState.templateId = tpl.id;
-    genState.base = applyTemplate(tpl.body, ctx);
-    genState.fills = {};
-    genState.dirty = false;
-    nameEl.value = safeDocumentBaseName(tpl.name + ' - ' + (ctx.case_number || ctx.client_name || 'Draft'));
-    renderGenFacts(ctx);
-    setGenTab('preview');
-    renderGenerate(true);
-}
-
-async function openGenerateDocModal(caseId) {
-    const modal = document.getElementById('tpl-generate-modal');
-    const select = document.getElementById('tpl-gen-select');
-    const subEl = document.getElementById('tpl-gen-sub');
-    if (!modal || !select || !caseId) return;
-    let list = [];
-    try {
-        list = (await loadTemplates(false)).filter((t) => t.kind === 'document');
-    } catch (error) {
-        console.error('Error loading templates:', error);
-        showToast('Templates could not be loaded. Please try again.', 'error');
-        return;
-    }
-    if (list.length === 0) {
-        showToast('There are no document templates yet. Add one under Templates.', 'info');
-        return;
-    }
-    genState.caseId = caseId;
-    const info = (window.__casesRegistry || {})[caseId] || {};
-    subEl.textContent =
-        (info.title || 'Case') +
-        (info.case_number ? ' (' + info.case_number + ')' : '') +
-        (info.clients && info.clients.client_name ? ' - ' + info.clients.client_name : '');
-    select.innerHTML = list.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`).join('');
-    fillGenerateFromSelection();
-    modal.classList.remove('hidden');
-}
-
-async function buildGeneratedDocxBlob() {
-    if (typeof JSZip === 'undefined') {
-        throw new Error('The document builder could not be loaded. Please check your connection and refresh the page.');
-    }
-    return buildDocxZip(genComputeText(), JSZip).generateAsync({ type: 'blob', mimeType: DOCX_MIME });
-}
-
-function currentGenerateFileName() {
-    const base = safeDocumentBaseName(document.getElementById('tpl-gen-name').value);
-    return base || 'Document';
-}
-
-async function downloadGeneratedDocument() {
-    const btn = document.getElementById('tpl-gen-download');
-    if (btn) btn.disabled = true;
-    try {
-        const blob = await buildGeneratedDocxBlob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = currentGenerateFileName() + '.docx';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-    } catch (error) {
-        showToast(error.message, 'error');
-    } finally {
-        if (btn) btn.disabled = false;
-    }
-}
-
-async function saveGeneratedDocument() {
-    const btn = document.getElementById('tpl-gen-save');
-    if (!btn || !genState.caseId) return;
-    const text = genComputeText();
-    if (!text.trim()) {
-        showToast('The document is empty.', 'warning');
-        return;
-    }
-    if (
-        countPlaceholders(text) > 0 &&
-        !confirm('This document still has details in [brackets] that need to be filled in. Save it anyway?')
-    ) {
-        return;
-    }
-    const original = btn.innerHTML;
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-    try {
-        const blob = await buildGeneratedDocxBlob();
-        const fileName = currentGenerateFileName();
-        const file = new File([blob], fileName + '.docx', { type: DOCX_MIME });
-        const info = (window.__casesRegistry || {})[genState.caseId] || {};
-        const usedTemplate = (templatesCache || []).find((t) => t.id === genState.templateId);
-        const caseTag = info.case_number ? 'Case ' + info.case_number : '';
-        await uploadCaseDocument(file, {
-            caseId: genState.caseId,
-            clientId: (info.clients && info.clients.id) || null,
-            category: 'Generated Document',
-            tag: [caseTag, usedTemplate ? 'Template: ' + usedTemplate.name : ''].filter(Boolean).join(', '),
-            title: fileName
-        });
-        showToast('The document was saved to the case documents.', 'success');
-        document.getElementById('tpl-generate-modal').classList.add('hidden');
-        if (typeof renderDocumentList === 'function') renderDocumentList();
-    } catch (error) {
-        console.error('Error saving generated document:', error);
-        showToast(error.message || 'The document could not be saved.', 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = original;
-    }
-}
-
-function getTemplateKind() {
-    const checked = document.querySelector('input[name="tpl-kind"]:checked');
-    return checked ? checked.value : 'email';
-}
-
-function setTemplateKind(kind) {
-    const radio = document.getElementById(kind === 'document' ? 'tpl-kind-document' : 'tpl-kind-email');
-    if (radio) radio.checked = true;
-}
-
 function setTemplateStatus(text, kind) {
     const el = document.getElementById('tpl-status');
     if (!el) return;
@@ -1728,66 +1389,36 @@ function setTemplateStatus(text, kind) {
     el.className = 'tpl-status' + (kind ? ' ' + kind : '');
 }
 
-function syncTemplateKindUi() {
-    const kind = getTemplateKind();
-    document.getElementById('tpl-subject-wrap').style.display = kind === 'email' ? '' : 'none';
-    document.getElementById('tpl-format-guide').style.display = kind === 'document' ? '' : 'none';
-}
-
-function syncTemplateKindFilter() {
-    document.querySelectorAll('#tpl-kind-filter button').forEach((b) => {
-        const kind = b.dataset.kind;
-        const count = (templatesCache || []).filter((t) => kind === 'all' || t.kind === kind).length;
-        const label = kind === 'all' ? 'All' : kind === 'email' ? 'Emails' : 'Documents';
-        b.textContent = label + ' (' + count + ')';
-        b.classList.toggle('active', kind === templateKindFilter);
-    });
-}
-
 function renderTemplateList() {
     const listEl = document.getElementById('tpl-list');
     if (!listEl) return;
     const term = templateSearchTerm.trim().toLowerCase();
-    const items = (templatesCache || []).filter(
-        (t) =>
-            (templateKindFilter === 'all' || t.kind === templateKindFilter) &&
-            (!term || t.name.toLowerCase().includes(term))
-    );
-    syncTemplateKindFilter();
+    const items = (templatesCache || []).filter((t) => !term || t.name.toLowerCase().includes(term));
     if (items.length === 0) {
         listEl.innerHTML = `<p class="tpl-empty">${term ? 'No templates match your search.' : 'No templates yet.'}</p>`;
         return;
     }
-    const group = (kind, title, icon) => {
-        const rows = items.filter((t) => t.kind === kind);
-        if (rows.length === 0) return '';
-        return (
-            `<div class="tpl-group">${title}<span>${rows.length}</span></div>` +
-            rows
-                .map(
-                    (t) =>
-                        `<button type="button" class="tpl-item ${t.id === templateEditId ? 'active' : ''}" data-tpl-id="${escapeHtml(t.id)}">
-                            <i class="${icon}"></i>
-                            <span class="tpl-item-name">${escapeHtml(t.name)}</span>
-                            ${canManageTemplate(t) ? '' : '<i class="fa-solid fa-lock tpl-lock" title="Read-only"></i>'}
-                        </button>`
-                )
-                .join('')
-        );
-    };
     listEl.innerHTML =
-        group('email', 'Emails', 'fa-regular fa-envelope') + group('document', 'Documents and pleadings', 'fa-regular fa-file-lines');
+        `<div class="tpl-group">Emails<span>${items.length}</span></div>` +
+        items
+            .map(
+                (t) =>
+                    `<button type="button" class="tpl-item ${t.id === templateEditId ? 'active' : ''}" data-tpl-id="${escapeHtml(t.id)}">
+                        <i class="fa-regular fa-envelope"></i>
+                        <span class="tpl-item-name">${escapeHtml(t.name)}</span>
+                        ${canManageTemplate(t) ? '' : '<i class="fa-solid fa-lock tpl-lock" title="Read-only"></i>'}
+                    </button>`
+            )
+            .join('');
 }
 
 function fillTemplateForm(tpl) {
-    const canCreate = globalRoleName === 'admin' || globalRoleName === 'lawyer';
-    const editable = tpl ? canManageTemplate(tpl) : canCreate;
+    const editable = canManageTemplate(tpl);
     templateEditId = tpl ? tpl.id : null;
     document.getElementById('tpl-name').value = tpl ? tpl.name : '';
-    setTemplateKind(tpl ? tpl.kind : 'email');
     document.getElementById('tpl-subject').value = tpl ? tpl.subject || '' : '';
     document.getElementById('tpl-body').value = tpl ? tpl.body : '';
-    ['tpl-name', 'tpl-subject', 'tpl-body', 'tpl-kind-email', 'tpl-kind-document'].forEach((id) => {
+    ['tpl-name', 'tpl-subject', 'tpl-body'].forEach((id) => {
         document.getElementById(id).disabled = !editable;
     });
     document.getElementById('tpl-save-btn').style.display = editable ? '' : 'none';
@@ -1797,17 +1428,15 @@ function fillTemplateForm(tpl) {
     const badge = document.getElementById('tpl-badge');
     badge.style.display = tpl && !editable ? '' : 'none';
     badge.innerHTML = '<i class="fa-solid fa-lock"></i> Read-only';
-    syncTemplateKindUi();
-    setTemplateStatus(editable ? '' : 'Only an administrator or the template author can change this template.', editable ? '' : 'info');
+    setTemplateStatus(editable ? '' : 'Only lawyers and administrators can change templates.', editable ? '' : 'info');
     renderTemplateList();
 }
 
-async function openTemplateManager(kind) {
+async function openTemplateManager() {
     const modal = document.getElementById('tpl-manage-modal');
     if (!modal) return;
     modal.classList.remove('hidden');
     templateSearchTerm = '';
-    templateKindFilter = kind === 'email' || kind === 'document' ? kind : 'all';
     document.getElementById('tpl-search').value = '';
     try {
         await loadTemplates(true);
@@ -1815,20 +1444,13 @@ async function openTemplateManager(kind) {
         console.error('Error loading templates:', error);
         showToast('Templates could not be loaded. Please try again.', 'error');
     }
-    const canCreate = globalRoleName === 'admin' || globalRoleName === 'lawyer';
-    document.getElementById('tpl-new-btn').style.display = canCreate ? '' : 'none';
-    const first = (templatesCache || []).find((t) => templateKindFilter === 'all' || t.kind === templateKindFilter);
-    fillTemplateForm(first || null);
-    if (!first && templateKindFilter !== 'all') {
-        setTemplateKind(templateKindFilter);
-        syncTemplateKindUi();
-    }
+    document.getElementById('tpl-new-btn').style.display = canManageTemplate() ? '' : 'none';
+    fillTemplateForm((templatesCache || [])[0] || null);
 }
 
 async function saveTemplateForm(e) {
     e.preventDefault();
     const name = document.getElementById('tpl-name').value.trim();
-    const kind = getTemplateKind();
     const subject = document.getElementById('tpl-subject').value.trim();
     const body = document.getElementById('tpl-body').value;
     const btn = document.getElementById('tpl-save-btn');
@@ -1836,13 +1458,13 @@ async function saveTemplateForm(e) {
         setTemplateStatus('Please enter a name and the content.', 'err');
         return;
     }
-    if (kind === 'email' && !subject) {
+    if (!subject) {
         setTemplateStatus('Please enter a subject for the email template.', 'err');
         return;
     }
     btn.disabled = true;
     setTemplateStatus('Saving...', 'busy');
-    const row = { name, kind, subject: kind === 'email' ? subject : null, body, updated_by: currentUser ? currentUser.id : null };
+    const row = { name, kind: 'email', subject, body, updated_by: currentUser ? currentUser.id : null };
     let result;
     if (templateEditId) {
         result = await supabaseClient.from('document_templates').update(row).eq('id', templateEditId).select('id').single();
@@ -1855,7 +1477,7 @@ async function saveTemplateForm(e) {
         console.error('Error saving template:', result.error);
         const duplicate = result.error.code === '23505';
         setTemplateStatus(
-            duplicate ? 'A template with this name and type already exists.' : 'The template could not be saved.',
+            duplicate ? 'A template with this name already exists.' : 'The template could not be saved.',
             'err'
         );
         return;
@@ -1888,7 +1510,6 @@ function insertTemplateField(key) {
         templateLastField && !templateLastField.disabled && document.body.contains(templateLastField)
             ? templateLastField
             : document.getElementById('tpl-body');
-    if (target.id === 'tpl-subject' && getTemplateKind() !== 'email') return;
     const token = '{{' + key + '}}';
     const start = target.selectionStart === null ? target.value.length : target.selectionStart;
     const end = target.selectionEnd === null ? start : target.selectionEnd;
@@ -1912,55 +1533,11 @@ function renderTemplateFieldChips() {
 
 function setupTemplates() {
     const caseModal = document.getElementById('case-detail-modal');
-    const genModal = document.getElementById('tpl-generate-modal');
     const manageModal = document.getElementById('tpl-manage-modal');
-    if (!caseModal || !genModal || !manageModal) return;
+    if (!caseModal || !manageModal) return;
 
     document.getElementById('case-email-template').addEventListener('change', applyEmailTemplateFromSelect);
-    document.getElementById('case-manage-templates').addEventListener('click', () => openTemplateManager('email'));
-    const docsBtn = document.getElementById('btn-manage-templates');
-    if (docsBtn) docsBtn.addEventListener('click', () => openTemplateManager('document'));
-    document.getElementById('tpl-kind-filter').addEventListener('click', (e) => {
-        const btn = e.target.closest('button[data-kind]');
-        if (!btn) return;
-        templateKindFilter = btn.dataset.kind;
-        renderTemplateList();
-    });
-
-    const closeGen = () => genModal.classList.add('hidden');
-    document.getElementById('tpl-gen-close').addEventListener('click', closeGen);
-    document.getElementById('tpl-gen-cancel').addEventListener('click', closeGen);
-    genModal.addEventListener('mousedown', (e) => {
-        if (e.target === genModal) closeGen();
-    });
-    document.getElementById('tpl-gen-select').addEventListener('change', (e) => {
-        if (genState.dirty && !confirm('Discard your changes and load the selected template?')) {
-            e.target.value = genState.templateId;
-            return;
-        }
-        fillGenerateFromSelection();
-    });
-    document.querySelectorAll('#tpl-generate-modal .tpl-tab').forEach((btn) => {
-        btn.addEventListener('click', () => setGenTab(btn.dataset.tab));
-    });
-    document.getElementById('tpl-gen-fills').addEventListener('input', (e) => {
-        const input = e.target.closest('[data-fill-index]');
-        if (!input) return;
-        const token = genState.tokens[Number(input.dataset.fillIndex)];
-        if (!token) return;
-        if (input.value.trim()) genState.fills[token] = input.value;
-        else delete genState.fills[token];
-        genState.dirty = true;
-        renderGenerate(false);
-    });
-    document.getElementById('tpl-gen-text').addEventListener('input', (e) => {
-        genState.base = e.target.value;
-        genState.fills = {};
-        genState.dirty = true;
-        renderGenerate(true);
-    });
-    document.getElementById('tpl-gen-download').addEventListener('click', downloadGeneratedDocument);
-    document.getElementById('tpl-gen-save').addEventListener('click', saveGeneratedDocument);
+    document.getElementById('case-manage-templates').addEventListener('click', openTemplateManager);
 
     document.getElementById('tpl-manage-close').addEventListener('click', () => manageModal.classList.add('hidden'));
     manageModal.addEventListener('mousedown', (e) => {
@@ -1968,10 +1545,6 @@ function setupTemplates() {
     });
     document.getElementById('tpl-new-btn').addEventListener('click', () => {
         fillTemplateForm(null);
-        if (templateKindFilter !== 'all') {
-            setTemplateKind(templateKindFilter);
-            syncTemplateKindUi();
-        }
         document.getElementById('tpl-name').focus();
     });
     document.getElementById('tpl-search').addEventListener('input', (e) => {
@@ -1983,9 +1556,6 @@ function setupTemplates() {
         if (!item) return;
         const tpl = (templatesCache || []).find((t) => t.id === item.dataset.tplId);
         if (tpl) fillTemplateForm(tpl);
-    });
-    document.querySelectorAll('input[name="tpl-kind"]').forEach((radio) => {
-        radio.addEventListener('change', syncTemplateKindUi);
     });
     document.getElementById('tpl-form').addEventListener('submit', saveTemplateForm);
     document.getElementById('tpl-delete-btn').addEventListener('click', deleteTemplateForm);
@@ -3705,7 +3275,7 @@ async function renderLawyerStatusWidget() {
             .eq('roles.name', 'lawyer')
             .eq('status', 'active');
 
-        if (!lawyers || lawyers.length === 0) return;
+        if (!lawyers) return;
 
         const localDate = new Date();
         const year = localDate.getFullYear();
@@ -3714,10 +3284,11 @@ async function renderLawyerStatusWidget() {
         const todayStr = `${year}-${month}-${day}`;
         const { startISO: todayStart, endISO: todayEnd } = getDayRange(todayStr);
 
+        const earliestStart = new Date(new Date(todayStart).getTime() - 24 * 60 * 60 * 1000).toISOString();
         const { data: todaysEvents } = await supabaseClient
             .from('calendar_events')
             .select('assigned_to, title, is_general, start_date, end_date')
-            .gte('start_date', todayStart)
+            .gte('start_date', earliestStart)
             .lte('start_date', todayEnd);
 
         const lawyerEventMap = {};
@@ -3739,27 +3310,22 @@ async function renderLawyerStatusWidget() {
                 });
         }
 
-        lawyerList.innerHTML = lawyers
-            .map((l) => {
-                const eventTitle = lawyerEventMap[l.id];
+        const availableLawyers = lawyers.filter((l) => !lawyerEventMap[l.id]);
 
-                if (eventTitle) {
-                    const displayTitle = eventTitle.length > 15 ? eventTitle.substring(0, 15) + '...' : eventTitle;
-                    return `
-                        <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                            <span title="${escapeHtml(eventTitle)}"><i class="fa-solid fa-circle" style="color:#ef4444; font-size:12px; margin-right:8px;"></i>Atty. ${escapeHtml(l.full_name || 'Unknown')}</span>
-                            <span class="tag" style="background:#fee2e2; color:#ef4444; font-size:12px; padding:3px 8px; border-radius:4px; font-weight:bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px;" title="${escapeHtml(eventTitle)}">${escapeHtml(displayTitle)}</span>
-                        </li>
-                    `;
-                } else {
-                    return `
-                        <li style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
-                            <span><i class="fa-solid fa-circle" style="color:#22c55e; font-size:12px; margin-right:8px;"></i>Atty. ${escapeHtml(l.full_name || 'Unknown')}</span>
-                            <span class="tag tag-avail" style="background:var(--status-active-bg); color:var(--status-active-text); font-size:12px; padding:3px 8px; border-radius:4px; font-weight:bold;">Available</span>
-                        </li>
-                    `;
-                }
-            })
+        if (availableLawyers.length === 0) {
+            lawyerList.innerHTML =
+                '<li style="padding:10px 0; font-size:13px; color:#64748b;">No lawyers are available right now.</li>';
+            return;
+        }
+
+        lawyerList.innerHTML = availableLawyers
+            .map(
+                (l) => `
+                    <li style="padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                        <span>Atty. ${escapeHtml(l.full_name || 'Unknown')}</span>
+                    </li>
+                `
+            )
             .join('');
     } catch (error) {
         console.error('Error rendering lawyer status:', error);
@@ -4100,6 +3666,13 @@ window.openEditDocumentModal = async function (docId) {
                 type: (catSel.value || doc.type || 'document').toLowerCase(),
                 tags: modal.body.querySelector('#ed-tags').value.trim()
             };
+            if (patch.title !== doc.title) {
+                const nameProblem = fileNameProblem(patch.title);
+                if (nameProblem) {
+                    errEl.textContent = nameProblem;
+                    return;
+                }
+            }
             if (caseId !== (doc.case_id || null)) {
                 const opt = caseSel.selectedOptions[0];
                 patch.case_id = caseId;
@@ -4160,6 +3733,11 @@ window.openNewVersionModal = function (docId) {
         }
         if (file.size > 20 * 1024 * 1024) {
             errEl.textContent = 'The file is larger than 20 MB.';
+            return;
+        }
+        const blockedReason = await validateUploadFile(file);
+        if (blockedReason) {
+            errEl.textContent = blockedReason;
             return;
         }
 
@@ -4419,6 +3997,96 @@ function resolveDocumentTitle(customName, file) {
     return typed;
 }
 
+const BLOCKED_UPLOAD_EXTENSIONS = new Set([
+    'exe', 'msi', 'bat', 'cmd', 'com', 'scr', 'dll', 'jar', 'vbs', 'vbe', 'ps1', 'sh', 'apk', 'app', 'pif', 'cpl', 'msc', 'reg', 'lnk', 'hta', 'wsf', 'bin',
+    'zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'tbz2', 'xz', 'lz', 'lzma', 'z', 'cab', 'iso', 'dmg', 'zst'
+]);
+
+const ZIP_BASED_OK = /\.(docx|xlsx|pptx|odt|ods)$/i;
+const FILE_NAME_ALLOWED = /^[A-Za-z0-9._-]+$/;
+
+async function hasBlockedSignature(file) {
+    try {
+        const buf = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+        const starts = (...bytes) => bytes.every((b, i) => buf[i] === b);
+        if (starts(0x4d, 0x5a)) return true;
+        if (starts(0x7f, 0x45, 0x4c, 0x46)) return true;
+        if (starts(0x52, 0x61, 0x72, 0x21)) return true;
+        if (starts(0x37, 0x7a, 0xbc, 0xaf)) return true;
+        if (starts(0x1f, 0x8b)) return true;
+        if (starts(0x42, 0x5a, 0x68)) return true;
+        if (starts(0xfd, 0x37, 0x7a, 0x58, 0x5a)) return true;
+        if (starts(0x50, 0x4b, 0x03, 0x04) && !ZIP_BASED_OK.test(file.name || '')) return true;
+    } catch (e) {
+        console.warn('Could not inspect file signature:', e);
+    }
+    return false;
+}
+
+async function validateUploadFile(file) {
+    if (!file) return '';
+    const name = String(file.name || '');
+    const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+    const refusal = `"${name}" can't be uploaded. Executable files (.exe, .msi, .bat and similar) and compressed files (.zip, .rar, .7z and similar) are not allowed.`;
+    if (BLOCKED_UPLOAD_EXTENSIONS.has(ext)) return refusal;
+    if (await hasBlockedSignature(file)) return refusal;
+    return '';
+}
+
+function fileNameProblem(name) {
+    const value = String(name || '').trim();
+    if (!value) return 'Enter a file name.';
+    if (!FILE_NAME_ALLOWED.test(value)) {
+        return 'File names can only contain letters, numbers, periods (.), underscores (_) and hyphens (-). Spaces and other special characters are not allowed.';
+    }
+    if (!/[A-Za-z0-9]/.test(value)) return 'The file name must contain at least one letter or number.';
+    return '';
+}
+
+function sanitizeFileName(name) {
+    return String(name || '')
+        .trim()
+        .replace(/[^A-Za-z0-9._-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/_+\./g, '.')
+        .replace(/^_+|_+$/g, '');
+}
+
+async function findDuplicateDocuments(title) {
+    const pattern = String(title || '').replace(/[\\%_]/g, '\\$&');
+    const { data, error } = await supabaseClient
+        .from('documents')
+        .select('id, title, size, created_at, case_id, cases(case_number), profiles(full_name)')
+        .ilike('title', pattern)
+        .order('created_at', { ascending: false })
+        .limit(5);
+    if (error) {
+        console.error('Duplicate check failed:', error.message);
+        return [];
+    }
+    return data || [];
+}
+
+async function confirmDuplicateUpload(file, title) {
+    const matches = await findDuplicateDocuments(title);
+    if (!matches.length) return true;
+    const sizeText = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+    const sameSize = matches.some((m) => m.size === sizeText);
+    const first = matches[0];
+    const where = first.cases && first.cases.case_number ? 'Case ' + first.cases.case_number : 'general documents';
+    const by = first.profiles && first.profiles.full_name ? ' by ' + first.profiles.full_name : '';
+    const when = new Date(first.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    const lead = sameSize
+        ? 'A document with the same name and file size is already in the system.'
+        : 'A document with the same name is already in the system, but the file size is different.';
+    return confirmDialog({
+        title: 'Possible duplicate document',
+        message: `${lead} "${first.title}" was uploaded${by} on ${when} (${where}). If this is an updated copy, cancel and use "New version" on the existing document instead. Upload this file anyway?`,
+        confirmLabel: 'Upload anyway',
+        cancelLabel: 'Cancel'
+    });
+}
+
 function getCategoryColor(type) {
     const t = (type || '').toLowerCase();
     if (t === 'motion' || t === 'motions') return { bg: '#e0e7ff', text: '#2563eb' };
@@ -4433,7 +4101,6 @@ function getCategoryColor(type) {
     if (t === 'order') return { bg: '#fee2e2', text: '#dc2626' };
     if (t === 'transcript') return { bg: '#ffedd5', text: '#c2410c' };
     if (t === 'estate') return { bg: '#fae8ff', text: '#a855f7' };
-    if (t === 'generated document') return { bg: '#dbeafe', text: '#1d4ed8' };
     return { bg: '#f1f5f9', text: '#475569' };
 }
 
@@ -6274,6 +5941,7 @@ function handleEventCaseSelectChange() {
     info.innerHTML = `
             <div><strong>Client:</strong> ${escapeHtml(c.clients?.client_name || 'No client')}</div>
             ${c.court_case_no || c.court_branch ? `<div><strong>Court:</strong> ${escapeHtml([c.court_case_no, c.court_branch].filter(Boolean).join(' • '))}</div>` : ''}
+            ${c.defendant_name || c.defendant_counsel ? `<div><strong>Defendant:</strong> ${escapeHtml([c.defendant_name, c.defendant_counsel ? 'Lawyer: ' + c.defendant_counsel : ''].filter(Boolean).join(' • '))}</div>` : ''}
             ${c.case_stage ? `<div><strong>Stage:</strong> ${escapeHtml(c.case_stage)}</div>` : ''}
             <div><strong>Type:</strong> ${escapeHtml(c.case_type || 'General')} • <strong>Filed:</strong> ${formatDate(c.date_filed || new Date().toISOString())}</div>
             ${c.case_description ? `<div><strong>Details:</strong> ${escapeHtml(c.case_description)}</div>` : ''}
@@ -6353,6 +6021,9 @@ async function uploadCaseDocument(
     { caseId = null, clientId = null, category = 'Attachment', tag = '', title = null } = {}
 ) {
     if (!file) return null;
+
+    const blockedReason = await validateUploadFile(file);
+    if (blockedReason) throw new Error(blockedReason);
 
     const uniqueFileName = `${Date.now()}_${safeStorageName(file.name)}`;
     const { error: uploadError } = await supabaseClient.storage.from('documents').upload(uniqueFileName, file);
@@ -7219,7 +6890,7 @@ function paintCasesList() {
         if (fStage !== 'all' && c.case_stage !== fStage) return false;
         if (term) {
             const lawyers = (c.case_lawyers || []).map((r) => r.profiles && r.profiles.full_name);
-            const haystack = [c.title, c.case_number, c.court_branch, c.clients && c.clients.client_name, ...lawyers]
+            const haystack = [c.title, c.case_number, c.court_branch, c.defendant_name, c.defendant_counsel, c.clients && c.clients.client_name, ...lawyers]
                 .filter(Boolean)
                 .join(' ')
                 .toLowerCase();
@@ -7294,7 +6965,7 @@ function paintCasesList() {
                 : '<span class="ct-muted">Not assigned</span>';
 
             const textBtn = (onclick, icon, label, tone) =>
-                `<button type="button" class="ct-text-btn ${tone}" onclick="${onclick}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
+                `<button type="button" class="ct-text-btn ${tone}" style="width:132px;justify-content:center;white-space:nowrap;" onclick="${onclick}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
 
             const actions = [];
             if (canEditCase) {
@@ -7749,6 +7420,7 @@ function paintClientsDirectory() {
                 `<button type="button" class="ct-text-btn ${tone}" data-client-action="${action}" data-client-id="${c.id}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
 
             const actions = [];
+            const menuButtons = [];
             if (hasInviteSlot) {
                 actions.push(
                     `<span class="ct-slot ct-slot-invite">${
@@ -7763,9 +7435,8 @@ function paintClientsDirectory() {
                 if (isArchived) {
                     mainHtml = textBtn('restore', 'fa-rotate-left', 'Restore', 'ct-green');
                 } else if (c.approval_status === 'pending') {
-                    mainHtml =
-                        textBtn('approve', 'fa-check', 'Approve', 'ct-green') +
-                        iconBtn('reject', 'fa-xmark', 'Reject', 'ct-red');
+                    mainHtml = textBtn('approve', 'fa-check', 'Approve', 'ct-green');
+                    menuButtons.push(iconBtn('reject', 'fa-xmark', 'Reject', 'ct-red'));
                 } else if (c.approval_status === 'rejected') {
                     mainHtml = textBtn('approve', 'fa-check', 'Approve', 'ct-green');
                 } else {
@@ -7773,15 +7444,16 @@ function paintClientsDirectory() {
                 }
                 actions.push(`<span class="ct-slot ct-slot-main">${mainHtml}</span>`);
             }
-            actions.push(iconBtn('view', 'fa-eye', 'View details'));
+            menuButtons.unshift(iconBtn('view', 'fa-eye', 'View details'));
             if (isAdminUser()) {
-                actions.push(iconBtn('edit', 'fa-pen', 'Edit client'));
-                actions.push(
+                menuButtons.push(iconBtn('edit', 'fa-pen', 'Edit client'));
+                menuButtons.push(
                     isArchived
                         ? iconBtn('delete', 'fa-trash', 'Delete permanently', 'ct-red')
                         : iconBtn('archive', 'fa-box-archive', 'Archive client', 'ct-amber')
                 );
             }
+            actions.push(rowMenuHtml(menuButtons.join(''), 'Client actions'));
 
             return `
                 <tr>
@@ -8347,6 +8019,8 @@ async function openCaseForm(caseId = null) {
         document.getElementById('cf-type').value = record.case_type || '';
         document.getElementById('cf-party').value = record.party_type || '';
         document.getElementById('cf-court').value = record.court_branch || '';
+        document.getElementById('cf-def-name').value = record.defendant_name || '';
+        document.getElementById('cf-def-counsel').value = record.defendant_counsel || '';
         document.getElementById('cf-stage').value = record.case_stage || 'For Filing';
         document.getElementById('cf-desc').value = record.case_description || '';
         document.getElementById('cf-title').readOnly = true;
@@ -8378,6 +8052,29 @@ function setupCaseForm() {
 
     form.setAttribute('novalidate', '');
 
+    const clientPick = document.getElementById('cf-client');
+    if (clientPick)
+        clientPick.addEventListener('change', async () => {
+            const leadSel = document.getElementById('cf-lead');
+            const leadWrap = document.getElementById('cf-lead-wrap');
+            const clientId = clientPick.value;
+            if (!leadSel || !leadWrap || leadWrap.style.display === 'none' || document.getElementById('cf-id').value) return;
+            leadSel.value = '';
+            if (!clientId) return;
+            try {
+                const { data, error } = await supabaseClient.from('client_lawyers').select('*').eq('client_id', clientId);
+                if (error) throw error;
+                if (clientPick.value !== clientId) return;
+                const lead = (data || []).find((r) => (r.lawyer_role ? r.lawyer_role === 'lead' : !!r.is_lead));
+                if (lead && Array.from(leadSel.options).some((o) => o.value === String(lead.lawyer_id))) {
+                    leadSel.value = String(lead.lawyer_id);
+                    leadSel.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            } catch (err) {
+                console.error('Error loading client lead lawyer:', err);
+            }
+        });
+
     if (newBtn)
         newBtn.addEventListener('click', () => {
             if (globalRoleName !== 'secretary') openCaseForm(null);
@@ -8402,6 +8099,8 @@ function setupCaseForm() {
         const lead = val('cf-lead');
         const partyType = val('cf-party');
         const courtBranch = val('cf-court');
+        const defName = val('cf-def-name');
+        const defCounsel = val('cf-def-counsel');
         const caseStage = val('cf-stage');
         const dateIso = dateVal ? new Date(dateVal + 'T00:00:00').toISOString() : null;
 
@@ -8416,6 +8115,8 @@ function setupCaseForm() {
                     case_type: type || null,
                     party_type: partyType || null,
                     court_branch: courtBranch || null,
+                    defendant_name: defName || null,
+                    defendant_counsel: defCounsel || null,
                     case_stage: caseStage || null,
                     case_description: desc || null
                 };
@@ -8446,6 +8147,19 @@ function setupCaseForm() {
                     partyType: partyType
                 });
                 if (error) throw error;
+                if (data && data.id && (defName || defCounsel)) {
+                    const { error: defError } = await supabaseClient
+                        .from('cases')
+                        .update({
+                            defendant_name: defName || null,
+                            defendant_counsel: defCounsel || null
+                        })
+                        .eq('id', data.id);
+                    if (defError) {
+                        console.error('Error saving defendant details:', defError);
+                        showToast('The case was saved, but the defendant details were not. Please edit the case to add them.', 'error');
+                    }
+                }
                 showToast(
                     'Case saved.' + (data && data.case_number ? `\n\nCase Number: ${data.case_number}` : ''),
                     'success'
@@ -9469,7 +9183,7 @@ window.openCasesDashboard = async function () {
                 if (state.filter === 'active' && isClosed(c)) return false;
                 if (state.filter === 'closed' && !isClosed(c)) return false;
                 if (!term) return true;
-                return [c.title, c.case_number, c.court_case_no, c.court_branch, clientOf(c)].some((v) =>
+                return [c.title, c.case_number, c.court_case_no, c.court_branch, c.defendant_name, c.defendant_counsel, clientOf(c)].some((v) =>
                     String(v || '')
                         .toLowerCase()
                         .includes(term)
@@ -10176,6 +9890,40 @@ function setupUploadModal() {
 
     if (!modal) return;
 
+    const nameError = document.createElement('p');
+    nameError.id = 'doc-file-name-error';
+    nameError.setAttribute('role', 'alert');
+    nameError.style.cssText = 'color:#dc2626; font-size:12px; margin:6px 0 0 0; display:none;';
+    if (fileNameInput) {
+        fileNameInput.insertAdjacentElement('afterend', nameError);
+        fileNameInput.setAttribute('aria-describedby', 'doc-file-name-error');
+        fileNameInput.addEventListener('input', () => {
+            const typed = fileNameInput.value.trim();
+            showNameError(typed ? fileNameProblem(typed) : '');
+        });
+    }
+
+    function showNameError(message) {
+        nameError.textContent = message || '';
+        nameError.style.display = message ? 'block' : 'none';
+        if (fileNameInput) fileNameInput.setAttribute('aria-invalid', message ? 'true' : 'false');
+    }
+
+    async function acceptFile(file) {
+        const problem = await validateUploadFile(file);
+        if (problem) {
+            showToast(problem, 'error');
+            resetUploadForm();
+            return;
+        }
+        selectedFile = file;
+        dropText.innerText = file.name;
+        if (fileNameInput) fileNameInput.value = sanitizeFileName(file.name);
+        showNameError('');
+        dropArea.style.borderColor = '#3b82f6';
+        dropArea.style.backgroundColor = 'var(--accent-soft)';
+    }
+
     async function populateDocCaseSelect() {
         const sel = document.getElementById('doc-case-select');
         if (!sel || !currentUser) return;
@@ -10211,6 +9959,7 @@ function setupUploadModal() {
         }
         selectedFile = null;
         if (fileNameInput) fileNameInput.value = '';
+        showNameError('');
     }
 
     if (openBtn) {
@@ -10234,13 +9983,7 @@ function setupUploadModal() {
         });
 
         fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                selectedFile = e.target.files[0];
-                dropText.innerText = selectedFile.name;
-                if (fileNameInput) fileNameInput.value = selectedFile.name;
-                dropArea.style.borderColor = '#3b82f6';
-                dropArea.style.backgroundColor = 'var(--accent-soft)';
-            }
+            if (e.target.files.length > 0) acceptFile(e.target.files[0]);
         });
 
         dropArea.addEventListener('dragover', (e) => {
@@ -10258,15 +10001,7 @@ function setupUploadModal() {
 
         dropArea.addEventListener('drop', (e) => {
             e.preventDefault();
-            if (e.dataTransfer.files.length > 0) {
-                selectedFile = e.dataTransfer.files[0];
-                fileInput.files = e.dataTransfer.files;
-
-                dropText.innerText = selectedFile.name;
-                if (fileNameInput) fileNameInput.value = selectedFile.name;
-                dropArea.style.borderColor = '#3b82f6';
-                dropArea.style.backgroundColor = 'var(--accent-soft)';
-            }
+            if (e.dataTransfer.files.length > 0) acceptFile(e.dataTransfer.files[0]);
         });
     }
 
@@ -10279,11 +10014,42 @@ function setupUploadModal() {
                 return;
             }
 
+            const blockedReason = await validateUploadFile(selectedFile);
+            if (blockedReason) {
+                showToast(blockedReason, 'error');
+                resetUploadForm();
+                return;
+            }
+
+            const finalTitle = resolveDocumentTitle(fileNameInput ? fileNameInput.value : '', selectedFile);
+            const nameProblem = fileNameProblem(finalTitle);
+            if (nameProblem) {
+                showNameError(nameProblem);
+                if (fileNameInput) fileNameInput.focus();
+                return;
+            }
+            showNameError('');
+
             const submitBtn = form.querySelector('button[type="submit"]');
             if (submitBtn) {
                 submitBtn.disabled = true;
-                submitBtn.innerText = 'Uploading & Processing...';
+                submitBtn.innerText = 'Checking...';
             }
+
+            let proceed = true;
+            try {
+                proceed = await confirmDuplicateUpload(selectedFile, finalTitle);
+            } catch (dupError) {
+                console.error('Duplicate check error:', dupError);
+            }
+            if (!proceed) {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = 'Upload & Process';
+                }
+                return;
+            }
+            if (submitBtn) submitBtn.innerText = 'Uploading & Processing...';
 
             const caseSel = document.getElementById('doc-case-select');
             const selectedCaseOpt = caseSel && caseSel.value ? caseSel.selectedOptions[0] : null;
@@ -10294,7 +10060,6 @@ function setupUploadModal() {
             const category = document.getElementById('doc-category').value || 'Document';
             const tagsInput = document.getElementById('doc-tags').value || '';
 
-            const finalTitle = resolveDocumentTitle(fileNameInput ? fileNameInput.value : '', selectedFile);
             const fileSizeMb = (selectedFile.size / (1024 * 1024)).toFixed(2) + ' MB';
 
             try {
@@ -10397,6 +10162,13 @@ function setupAddLawyerModal() {
             const syncSpec = () => {
                 const name = roleSel.options[roleSel.selectedIndex]?.dataset.name;
                 if (specGroup) specGroup.style.display = name === 'secretary' ? 'none' : '';
+                const pwInput = document.getElementById('add-lawyer-password');
+                const pwGroup = pwInput ? pwInput.closest('.form-group') : null;
+                const invite = name === 'lawyer';
+                if (pwGroup) pwGroup.style.display = invite ? 'none' : '';
+                if (pwInput) pwInput.required = !invite;
+                const submit = form ? form.querySelector('button[type="submit"]') : null;
+                if (submit) submit.textContent = invite ? 'Send Invitation' : 'Register User';
             };
             roleSel.onchange = syncSpec;
             syncSpec();
@@ -10441,34 +10213,46 @@ function setupAddLawyerModal() {
             const formattedName = `${fname} ${mi ? mi + '. ' : ''}${lname}`.trim();
 
             try {
-                if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-                    throw new Error('The password must be at least 8 characters and include a letter and a number.');
-                }
-
-                const { error } = await supabaseClient.functions.invoke('create-user', {
-                    body: {
-                        email: email,
-                        password: password,
-                        full_name: formattedName,
-                        phone: phone,
-                        specialization: spec,
-                        role_id: roleId
+                if (isLawyerRole) {
+                    const { data, error } = await supabaseClient.functions.invoke('invite-lawyer', {
+                        body: {
+                            action: 'create',
+                            email: email,
+                            full_name: formattedName,
+                            phone: phone,
+                            specialization: spec
+                        }
+                    });
+                    if (error) throw new Error(await readFunctionError(error));
+                    if (data && data.invitation_sent === false) {
+                        showToast(
+                            `Atty. ${formattedName} was created as Pending, but the invitation email could not be sent. Use Resend Invitation.`,
+                            'warning'
+                        );
+                    } else {
+                        showToast(
+                            `Invitation sent to ${email}. Atty. ${formattedName} is Pending until they accept.`,
+                            'success'
+                        );
                     }
-                });
-
-                if (error) {
-                    let message = error.message;
-                    try {
-                        const body = await error.context.json();
-                        if (body && body.error) message = body.error;
-                    } catch (e) {}
-                    throw new Error('Failed to register user: ' + message);
+                } else {
+                    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+                        throw new Error('The password must be at least 8 characters and include a letter and a number.');
+                    }
+                    const { error } = await supabaseClient.functions.invoke('create-user', {
+                        body: {
+                            email: email,
+                            password: password,
+                            full_name: formattedName,
+                            phone: phone,
+                            specialization: spec,
+                            role_id: roleId
+                        }
+                    });
+                    if (error) throw new Error('Failed to register user: ' + (await readFunctionError(error)));
+                    showToast(`Secretary ${formattedName} successfully registered!`, 'success');
                 }
 
-                showToast(
-                    `${isLawyerRole ? 'Lawyer Atty.' : 'Secretary'} ${formattedName} successfully registered!`,
-                    'success'
-                );
                 form.reset();
                 modal.classList.add('hidden');
 
@@ -10815,6 +10599,40 @@ function setupArchiveLawyerModal() {
 }
 
 const SPECIALIZATIONS = ['General Practice', 'Criminal Law', 'Corporate Law', 'Family Law', 'Civil Litigation'];
+
+async function readFunctionError(error) {
+    let message = error.message;
+    try {
+        const body = await error.context.json();
+        if (body && body.error) message = body.error;
+    } catch (e) {}
+    return message;
+}
+
+function invitationState(invites, id) {
+    const inv = (invites || {})[id];
+    if (!inv || inv.used_at || inv.invalidated_at || new Date(inv.expires_at) <= new Date()) return 'expired';
+    return 'pending';
+}
+
+window.resendLawyerInvitation = async function (id, name) {
+    if (globalRoleName !== 'admin') return;
+    const ok = await confirmDialog({
+        title: 'Resend invitation',
+        confirmLabel: 'Resend',
+        message: `Send a new invitation to Atty. ${name}? The previous link will stop working.`
+    });
+    if (!ok) return;
+    const { error } = await supabaseClient.functions.invoke('invite-lawyer', {
+        body: { action: 'resend', user_id: id }
+    });
+    if (error) {
+        showToast('Could not resend the invitation: ' + (await readFunctionError(error)), 'error');
+        return;
+    }
+    showToast(`A new invitation was emailed to Atty. ${name}.`, 'success');
+    renderManageLawyersList();
+};
 
 function jsArg(value) {
     return escapeHtml(JSON.stringify(value));
@@ -11176,8 +10994,16 @@ const PEOPLE_UI = {
     archived: { prefix: 'manage-archived', countLabel: (n) => `Total Archived: ${n}` }
 };
 
+function rowMenuHtml(buttonsHtml, label) {
+    return `<span class="row-actions-src" hidden>${buttonsHtml}</span><button type="button" class="ct-icon-btn ct-menu-btn" data-row-menu="" data-menu-src="1" data-menu-label="${escapeHtml(label)}" aria-haspopup="menu" aria-expanded="false" aria-label="More actions" title="More actions"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>`;
+}
+
 function personIconBtn(onclick, icon, title, tone = '') {
     return `<button type="button" class="ct-icon-btn ${tone}" onclick="${onclick}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><i class="fa-solid ${icon}"></i></button>`;
+}
+
+function personTextBtn(onclick, icon, label, tone = '') {
+    return `<button type="button" class="ct-text-btn ${tone}" onclick="${onclick}"><i class="fa-solid ${icon}"></i> ${label}</button>`;
 }
 
 function personActionsHtml(p, kind) {
@@ -11188,10 +11014,10 @@ function personActionsHtml(p, kind) {
     const spec = jsArg(p.specialization || '');
 
     if (kind === 'archived') {
-        return personIconBtn(`restoreArchivedLawyer(${id}, ${name})`, 'fa-rotate-left', 'Restore lawyer', 'ct-green');
+        return personTextBtn(`restoreArchivedLawyer(${id}, ${name})`, 'fa-rotate-left', 'Restore', 'ct-green');
     }
     if (kind === 'secretaries' && p.status === 'inactive') {
-        return personIconBtn(`toggleSecretaryStatus(${id})`, 'fa-rotate-left', 'Restore secretary', 'ct-green');
+        return personTextBtn(`toggleSecretaryStatus(${id})`, 'fa-rotate-left', 'Restore', 'ct-green');
     }
 
     const role = kind === 'secretaries' ? 'secretary' : 'lawyer';
@@ -11201,7 +11027,12 @@ function personActionsHtml(p, kind) {
             ? personIconBtn(`toggleSecretaryStatus(${id})`, 'fa-box-archive', 'Archive secretary', 'ct-amber')
             : personIconBtn(`openArchiveLawyerModal(${id}, ${name})`, 'fa-box-archive', 'Archive lawyer', 'ct-amber');
 
-    return (
+    const resend =
+        kind === 'lawyers' && p.status === 'pending'
+            ? personIconBtn(`resendLawyerInvitation(${id}, ${name})`, 'fa-paper-plane', 'Resend invitation', 'ct-blue')
+            : '';
+    const buttons =
+        resend +
         personIconBtn(
             `openEditLawyerModal(${id}, ${name}, ${phone}, ${spec}, ${r})`,
             'fa-pen',
@@ -11210,8 +11041,8 @@ function personActionsHtml(p, kind) {
         personIconBtn(`openResetPasswordModal(${id}, ${name})`, 'fa-key', 'Reset password', 'ct-purple') +
         personIconBtn(`resetStaffMfa(${id}, ${name})`, 'fa-user-shield', 'Reset two-factor sign-in', 'ct-sky') +
         personIconBtn(`openChangeRoleModal(${id}, ${name}, ${r}, ${spec})`, 'fa-user-gear', 'Change role', 'ct-sky') +
-        archive
-    );
+        archive;
+    return rowMenuHtml(buttons, role === 'lawyer' ? 'Lawyer actions' : 'Secretary actions');
 }
 
 function workloadChipsHtml(w) {
@@ -11293,7 +11124,12 @@ function paintPeople(kind) {
                 </td>`;
             const specCell = `<td>${escapeHtml(p.specialization || 'General Practice')}</td>`;
             const phoneCell = `<td>${p.phone ? escapeHtml(p.phone) : '<span class="ct-muted">N/A</span>'}</td>`;
-            const statusCell = `<td><span class="ct-badge ${inactive ? 'ct-badge-closed' : 'ct-badge-active'}">${inactive ? 'Archived' : 'Active'}</span></td>`;
+            let statusCell = `<td><span class="ct-badge ${inactive ? 'ct-badge-closed' : 'ct-badge-active'}">${inactive ? 'Archived' : 'Active'}</span></td>`;
+            if (kind === 'lawyers' && p.status === 'pending') {
+                const st = invitationState(store.invites, p.id);
+                const tone = st === 'expired' ? 'danger' : 'pending';
+                statusCell = `<td><span class="ct-badge" style="background:var(--status-${tone}-bg); color:var(--status-${tone}-text);">${st === 'expired' ? 'Expired' : 'Pending'}</span></td>`;
+            }
             const actionsCell = `<td class="ct-actions"><div>${personActionsHtml(p, kind)}</div></td>`;
 
             if (kind === 'lawyers') {
@@ -11372,12 +11208,17 @@ async function renderManageLawyersList() {
             .from('profiles')
             .select('*, roles!inner(name)')
             .eq('roles.name', 'lawyer')
-            .eq('status', 'active')
+            .in('status', ['active', 'pending'])
             .order('full_name', { ascending: true });
 
         if (error) throw error;
 
         const list = lawyers || [];
+        const invites = {};
+        const { data: inviteRows } = await supabaseClient.rpc('lawyer_invitation_status');
+        (inviteRows || []).forEach((r) => {
+            invites[r.user_id] = r;
+        });
         let workloadMap = {};
         let names = {};
         if (list.length > 0) {
@@ -11390,6 +11231,7 @@ async function renderManageLawyersList() {
             rows: list,
             workload: workloadMap,
             names: names,
+            invites: invites,
             empty: 'No active lawyers found in the directory.'
         };
         ensurePeopleControls('lawyers');
