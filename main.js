@@ -623,11 +623,11 @@ function showMfaOverlay(innerHtml) {
 }
 
 const MFA_CODE_INPUT =
-    'width:100%; box-sizing:border-box; padding:12px; border:1px solid #d5cfc2; border-radius:6px; font-family:inherit; font-size:20px; letter-spacing:6px; text-align:center; margin-bottom:10px;';
+    'width:100%; box-sizing:border-box; padding:12px; border:1px solid #d8d2c4; border-radius:6px; font-family:inherit; font-size:20px; letter-spacing:6px; text-align:center; margin-bottom:10px;';
 const MFA_PRIMARY_BTN =
     'width:100%; padding:12px; background:#101b2d; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;';
 const MFA_SECONDARY_BTN =
-    'width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e5e1d8; border-radius:6px; font-weight:600; cursor:pointer; color:#4f5b6d;';
+    'width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #d8d2c4; border-radius:6px; font-weight:600; cursor:pointer; color:#4f5b6d;';
 
 async function promptMfaEnroll() {
     try {
@@ -645,7 +645,7 @@ async function promptMfaEnroll() {
 
     return new Promise((resolve) => {
         const overlay = showMfaOverlay(`
-                <h2 style="font-size: 20px; font-weight: 700; color: #252d3a; margin: 0 0 6px 0;">Set up two-factor authentication</h2>
+                <h2 style="font-size: 20px; font-weight: 700; color: #101b2d; margin: 0 0 6px 0;">Set up two-factor authentication</h2>
                 <p style="color: #64748b; font-size: 13px; margin: 0 0 16px 0;">Staff accounts require an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password).</p>
                 <ol style="color:#3b4656; font-size:13px; margin:0 0 14px 18px; line-height:1.6;">
                     <li>Scan this QR code with your authenticator app.</li>
@@ -653,7 +653,7 @@ async function promptMfaEnroll() {
                 </ol>
                 <div style="text-align:center; margin-bottom:10px;"><img id="mfa-qr" alt="Authenticator QR code" style="width:180px; height:180px;"></div>
                 <p style="font-size:12px; color:#64748b; margin:0 0 4px 0; text-align:center;">Can't scan? Enter this key manually:</p>
-                <p id="mfa-secret" style="font-size:12px; font-family:monospace; word-break:break-all; background:#f7f5f0; border:1px solid #e5e1d8; border-radius:6px; padding:8px; margin:0 0 16px 0; text-align:center; user-select:all;"></p>
+                <p id="mfa-secret" style="font-size:12px; font-family:monospace; word-break:break-all; background:#f7f5f0; border:1px solid #d8d2c4; border-radius:6px; padding:8px; margin:0 0 16px 0; text-align:center; user-select:all;"></p>
                 <form id="mfa-form" autocomplete="off">
                     <input type="text" id="mfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="${MFA_CODE_INPUT}">
                     <div id="mfa-error" style="color:#d64545; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
@@ -705,7 +705,7 @@ async function promptMfaVerify() {
 
     return new Promise((resolve) => {
         const overlay = showMfaOverlay(`
-                <h2 style="font-size: 20px; font-weight: 700; color: #252d3a; margin: 0 0 6px 0;">Two-factor verification</h2>
+                <h2 style="font-size: 20px; font-weight: 700; color: #101b2d; margin: 0 0 6px 0;">Two-factor verification</h2>
                 <p style="color: #64748b; font-size: 13px; margin: 0 0 18px 0;">Enter the 6-digit code from your authenticator app to continue.</p>
                 <form id="mfa-form" autocomplete="off">
                     <input type="text" id="mfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="${MFA_CODE_INPUT}">
@@ -772,17 +772,17 @@ function promptForcedPasswordChange() {
         overlay.style.zIndex = '10000';
         overlay.innerHTML = `
                 <div style="width: 90%; max-width: 420px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
-                    <h2 style="font-size: 20px; font-weight: 700; color: #252d3a; margin: 0 0 6px 0;">Set a new password</h2>
+                    <h2 style="font-size: 20px; font-weight: 700; color: #101b2d; margin: 0 0 6px 0;">Set a new password</h2>
                     <p style="color: #64748b; font-size: 13px; margin: 0 0 18px 0;">Your account was created with a temporary password. Choose your own to continue.</p>
                     <form id="force-pw-form" autocomplete="off">
                         <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">New password</label>
-                        <input type="password" id="force-pw-1" autocomplete="new-password" placeholder="Min. 8 characters, with a letter and a number" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; margin-bottom:14px; font-family:inherit;">
+                        <input type="password" id="force-pw-1" autocomplete="new-password" placeholder="Min. 8 characters, with a letter and a number" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d8d2c4; border-radius:6px; margin-bottom:14px; font-family:inherit;">
                         <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Confirm password</label>
-                        <input type="password" id="force-pw-2" autocomplete="new-password" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; margin-bottom:10px; font-family:inherit;">
+                        <input type="password" id="force-pw-2" autocomplete="new-password" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d8d2c4; border-radius:6px; margin-bottom:10px; font-family:inherit;">
                         <div id="force-pw-error" style="color:#d64545; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
                         <button type="submit" id="force-pw-submit" style="width:100%; padding:12px; background:#101b2d; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Save password</button>
                     </form>
-                    <button type="button" id="force-pw-logout" style="width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e5e1d8; border-radius:6px; font-weight:600; cursor:pointer; color:#4f5b6d;">Log out</button>
+                    <button type="button" id="force-pw-logout" style="width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #d8d2c4; border-radius:6px; font-weight:600; cursor:pointer; color:#4f5b6d;">Log out</button>
                 </div>`;
         document.body.appendChild(overlay);
 
@@ -1441,6 +1441,10 @@ async function openTemplateManager() {
     document.getElementById('tpl-search').value = '';
     try {
         await loadTemplates(true);
+        if ((templatesCache || []).length === 0 && canManageTemplate() && !localStorage.getItem('jurisync_default_templates_added')) {
+            localStorage.setItem('jurisync_default_templates_added', '1');
+            await seedDefaultEmailTemplates();
+        }
     } catch (error) {
         console.error('Error loading templates:', error);
         showToast('Templates could not be loaded. Please try again.', 'error');
@@ -1830,7 +1834,7 @@ async function renderDashboardContent() {
                           : 'Unassigned';
                     const clientName = d.cases?.clients?.client_name || 'No Client';
                     const isGeneralBadge = d.is_general
-                        ? '<span style="background:#d7e5f6; color:#285791; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">Firm-wide</span>'
+                        ? '<span style="background:#efe4cc; color:#8f6f33; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">Firm-wide</span>'
                         : '';
                     const priorityBadge =
                         d.priority === 'high'
@@ -1840,7 +1844,7 @@ async function renderDashboardContent() {
                     const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:3px;"></i>${statusInfo.label}</span>`;
 
                     return `
-                        <div style="background:#fff; border:1px solid #e5e1d8; border-left:4px solid ${statusInfo.color}; padding:18px 20px; border-radius:12px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
+                        <div style="background:#fff; border:1px solid #d8d2c4; border-left:4px solid ${statusInfo.color}; padding:18px 20px; border-radius:12px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
                             <div>
                                 <h4 style="font-size:15px;">
                                     ${escapeHtml(d.title || 'Untitled Event')} 
@@ -1853,7 +1857,7 @@ async function renderDashboardContent() {
                                     <i class="fa-regular fa-calendar"></i> ${formatDate(d.start_date)} at ${formatEventRange(d.start_date, d.end_date)}
                                 </div>
                             </div>
-                            <button style="padding:10px 18px; border:1px solid #e5e1d8; background:white; border-radius:10px; cursor:pointer; font-weight:600;" onclick="document.querySelector('.nav-links li[data-target=\\'calendar-view\\']').click()">
+                            <button style="padding:10px 18px; border:1px solid #d8d2c4; background:white; border-radius:10px; cursor:pointer; font-weight:600;" onclick="document.querySelector('.nav-links li[data-target=\\'calendar-view\\']').click()">
                                 View
                             </button>
                         </div>
@@ -2095,7 +2099,7 @@ function setupStatDetailsModal() {
     });
 }
 
-const SD_COLORS = ['#2f65ad', '#3d5a80', '#16835d', '#b9811f', '#a83030', '#3d5a80'];
+const SD_COLORS = ['#8f6f33', '#3d5a80', '#16835d', '#b9811f', '#a83030', '#3d5a80'];
 
 function sdAvatar(name, url) {
     const clean = String(name || '').replace(/^Atty\.?\s*/i, '').trim();
@@ -2358,7 +2362,7 @@ function getEventStatusInfo(startDateISO, endDateISO) {
     if (now >= end) return { label: 'Completed', color: '#16835d', bg: '#dff1e9', icon: 'fa-circle-check' };
     if (now >= start && now < end)
         return { label: 'Ongoing', color: '#b9811f', bg: '#f8edd2', icon: 'fa-hourglass-half' };
-    return { label: 'Upcoming', color: '#2f65ad', bg: '#d7e5f6', icon: 'fa-clock' };
+    return { label: 'Upcoming', color: '#8f6f33', bg: '#efe4cc', icon: 'fa-clock' };
 }
 
 window.__eventResponses = window.__eventResponses || {};
@@ -2566,19 +2570,19 @@ function buildEventDetailCard(ev) {
     const clientName = ev.cases?.clients?.client_name || 'No Client';
     const statusInfo = getEventStatusInfo(ev.start_date, ev.end_date);
     const isDone = statusInfo.label === 'Completed';
-    const borderColor = ev.is_conflict ? '#d64545' : ev.is_general ? '#3d5a80' : '#3976c5';
+    const borderColor = ev.is_conflict ? '#d64545' : ev.is_general ? '#3d5a80' : '#c5a15d';
     const bgColor = ev.is_conflict ? '#fbeeee' : ev.is_general ? '#f5f3ff' : '#f7f5f0';
     const conflictStyle = `border-left: 4px solid ${borderColor}; background: ${bgColor}; ${isDone ? 'opacity: 0.65;' : ''}`;
     const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red"><i class="fa-solid fa-star"></i> High Priority</span>' : '';
     const generalBadge = ev.is_general
-        ? '<span style="background:#e6ecf4; color:#3d5a80; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>'
+        ? '<span style="background:#e5e1d8; color:#3d5a80; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>'
         : '';
     const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
 
     let caseDetailsHtml = '';
     if (ev.cases) {
         caseDetailsHtml = `
-                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e1d8; font-size: 12px;">
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #d8d2c4; font-size: 12px;">
                     <div style="display:flex; gap: 15px; margin-bottom: 6px;">
                         <span style="color:#4f5b6d;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
                         <span style="color:#4f5b6d;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
@@ -2592,7 +2596,7 @@ function buildEventDetailCard(ev) {
     if (ev.documents) {
         attachmentHtml = `
                 <div style="margin-top: 10px;">
-                    <a href="#" data-doc-path="${escapeHtml(ev.documents.file_path || '')}" data-doc-title="${escapeHtml(ev.documents.title || '')}" style="font-size:12px; color:#3976c5; text-decoration:none;">
+                    <a href="#" data-doc-path="${escapeHtml(ev.documents.file_path || '')}" data-doc-title="${escapeHtml(ev.documents.title || '')}" style="font-size:12px; color:#c5a15d; text-decoration:none;">
                         <i class="fa-solid fa-paperclip"></i> ${escapeHtml(ev.documents.title)}
                     </a>
                 </div>
@@ -2607,10 +2611,10 @@ function buildEventDetailCard(ev) {
     const rsvpHtml = buildRsvpHtml(ev, statusInfo);
 
     return `
-            <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e5e1d8; border-right: 1px solid #e5e1d8; border-bottom: 1px solid #e5e1d8; margin-bottom:10px;">
+            <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #d8d2c4; border-right: 1px solid #d8d2c4; border-bottom: 1px solid #d8d2c4; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
                     <h4 style="margin:0; font-size:16px; color:#101b2d;">${escapeHtml(ev.title)} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
-                    <span style="font-weight:600; color:#3976c5; font-size:14px;">${formatEventRange(ev.start_date, ev.end_date)}</span>
+                    <span style="font-weight:600; color:#c5a15d; font-size:14px;">${formatEventRange(ev.start_date, ev.end_date)}</span>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#4f5b6d;">
                     <span><i class="fa-solid fa-location-dot" style="width:16px; color:#64748b;"></i> ${escapeHtml(ev.location || 'Office')}</span>
@@ -3238,8 +3242,8 @@ async function renderScheduleSummaryWidget() {
             const rows = events
                 .map(
                     (ev) => `
-                    <div style="padding:13px 0; border-bottom:1px solid #eeebe3;">
-                        <div style="font-size:14.5px; font-weight:600; color:#252d3a;">${escapeHtml(ev.title)}</div>
+                    <div style="padding:13px 0; border-bottom:1px solid #e5e1d8;">
+                        <div style="font-size:14.5px; font-weight:600; color:#101b2d;">${escapeHtml(ev.title)}</div>
                         <div style="font-size:12.5px; color:#64748b; margin-top:3px;">${escapeHtml(formatDate(ev.start_date))} &middot; ${escapeHtml(timeRange(ev))}</div>
                     </div>
                 `
@@ -3261,9 +3265,9 @@ async function renderScheduleSummaryWidget() {
                       : 'Unassigned';
                 return `
                     <tr>
-                        <td style="padding:13px 8px; border-bottom:1px solid #e5e1d8; line-height:1.45; font-weight:600; color:#252d3a; vertical-align:top;">${escapeHtml(lawyerName)}</td>
-                        <td style="padding:13px 8px; border-bottom:1px solid #e5e1d8; line-height:1.45; color:#4f5b6d; white-space:nowrap; vertical-align:top;">${escapeHtml(formatDate(ev.start_date))}<br><span style="color:#64748b;">${escapeHtml(timeRange(ev))}</span></td>
-                        <td style="padding:13px 8px; border-bottom:1px solid #e5e1d8; line-height:1.45; color:#3b4656; vertical-align:top;">${escapeHtml(ev.title)}</td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #d8d2c4; line-height:1.45; font-weight:600; color:#101b2d; vertical-align:top;">${escapeHtml(lawyerName)}</td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #d8d2c4; line-height:1.45; color:#4f5b6d; white-space:nowrap; vertical-align:top;">${escapeHtml(formatDate(ev.start_date))}<br><span style="color:#64748b;">${escapeHtml(timeRange(ev))}</span></td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #d8d2c4; line-height:1.45; color:#3b4656; vertical-align:top;">${escapeHtml(ev.title)}</td>
                     </tr>
                 `;
             })
@@ -3275,9 +3279,9 @@ async function renderScheduleSummaryWidget() {
                     <table style="width:100%; border-collapse:collapse; font-size:13.5px; text-align:left;">
                         <thead>
                             <tr style="background:#f7f5f0;">
-                                <th style="padding:10px 8px; border-bottom:2px solid #d5cfc2; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Lawyer</th>
-                                <th style="padding:10px 8px; border-bottom:2px solid #d5cfc2; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Date &amp; Time</th>
-                                <th style="padding:10px 8px; border-bottom:2px solid #d5cfc2; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Event</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #d8d2c4; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Lawyer</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #d8d2c4; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Date &amp; Time</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #d8d2c4; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Event</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
@@ -3350,7 +3354,7 @@ async function renderLawyerStatusWidget() {
         lawyerList.innerHTML = availableLawyers
             .map(
                 (l) => `
-                    <li style="padding:10px 0; border-bottom:1px solid #eeebe3; font-size:13px;">
+                    <li style="padding:10px 0; border-bottom:1px solid #e5e1d8; font-size:13px;">
                         <span>Atty. ${escapeHtml(l.full_name || 'Unknown')}</span>
                     </li>
                 `
@@ -3652,7 +3656,7 @@ function docFieldLabel(text) {
 }
 
 const DOC_INPUT_STYLE =
-    'width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; font-family:inherit; background:#f7f5f0; margin-bottom:14px;';
+    'width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d8d2c4; border-radius:6px; font-family:inherit; background:#f7f5f0; margin-bottom:14px;';
 
 window.openEditDocumentModal = async function (docId) {
     const doc = (window.__docsRegistry || {})[docId];
@@ -3857,9 +3861,9 @@ window.openDocumentHistory = async function (docId) {
             items
                 .map(
                     (v) => `
-                <div style="border:1px solid ${v.current ? '#d7e5f6' : '#e5e1d8'}; background:${v.current ? '#eaf1fa' : '#ffffff'}; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
+                <div style="border:1px solid ${v.current ? '#efe4cc' : '#cbd5e1'}; background:${v.current ? '#f7f2e8' : '#ffffff'}; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <strong style="font-size:13px; color:#101b2d;">Version ${v.version_no}${v.current ? ' <span style="background:#d7e5f6; color:#285791; font-size:12px; padding:2px 8px; border-radius:99px; margin-left:6px;">Current</span>' : ''}</strong>
+                        <strong style="font-size:13px; color:#101b2d;">Version ${v.version_no}${v.current ? ' <span style="background:#efe4cc; color:#8f6f33; font-size:12px; padding:2px 8px; border-radius:99px; margin-left:6px;">Current</span>' : ''}</strong>
                         <span style="font-size:12px; color:#64748b;">${escapeHtml(v.size || '')}</span>
                     </div>
                     <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">${escapeHtml(formatStamp(v.uploaded_at))} by ${escapeHtml(v.by)}</p>
@@ -3872,7 +3876,7 @@ window.openDocumentHistory = async function (docId) {
                             <button type="button" data-vh-action="download" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" class="doc-small-btn"><i class="fa-solid fa-download"></i> Download</button>`
                                 : ''
                         }
-                        ${!v.current && canVersion ? `<button type="button" data-vh-action="restore" data-id="${escapeHtml(v.id)}" data-no="${v.version_no}" class="doc-small-btn" style="color:#3976c5;"><i class="fa-solid fa-rotate-left"></i> Restore</button>` : ''}
+                        ${!v.current && canVersion ? `<button type="button" data-vh-action="restore" data-id="${escapeHtml(v.id)}" data-no="${v.version_no}" class="doc-small-btn" style="color:#c5a15d;"><i class="fa-solid fa-rotate-left"></i> Restore</button>` : ''}
                     </div>
                 </div>
             `
@@ -4118,19 +4122,19 @@ async function confirmDuplicateUpload(file, title) {
 
 function getCategoryColor(type) {
     const t = (type || '').toLowerCase();
-    if (t === 'motion' || t === 'motions') return { bg: '#e0e7ff', text: '#2f65ad' };
-    if (t === 'memoranda') return { bg: '#e0f2fe', text: '#2f65ad' };
+    if (t === 'motion' || t === 'motions') return { bg: '#f1e8d3', text: '#8f6f33' };
+    if (t === 'memoranda') return { bg: '#f1e8d3', text: '#8f6f33' };
     if (t === 'affidavits') return { bg: '#f8edd2', text: '#a2711a' };
     if (t === 'agreements') return { bg: '#dff1e9', text: '#116b4b' };
-    if (t === 'legal opinions') return { bg: '#e6ecf4', text: '#2f4a6b' };
+    if (t === 'legal opinions') return { bg: '#e5e1d8', text: '#2f4a6b' };
     if (t === 'invoices') return { bg: '#f9e1e1', text: '#a83030' };
     if (t === 'contract' || t === 'contracts') return { bg: '#dff1e9', text: '#16835d' };
     if (t === 'pleading' || t === 'pleadings') return { bg: '#f3e8ff', text: '#3d5a80' };
     if (t === 'evidence' || t === 'documentary evidence') return { bg: '#f1dba0', text: '#b9811f' };
     if (t === 'order') return { bg: '#f9e1e1', text: '#c23a3a' };
     if (t === 'transcript') return { bg: '#f8edd2', text: '#b9811f' };
-    if (t === 'estate') return { bg: '#eef2f8', text: '#3d5a80' };
-    return { bg: '#eeebe3', text: '#4f5b6d' };
+    if (t === 'estate') return { bg: '#f7f5f0', text: '#3d5a80' };
+    return { bg: '#e5e1d8', text: '#4f5b6d' };
 }
 
 function generateTagsHtml(tagsStr) {
@@ -4142,7 +4146,7 @@ function generateTagsHtml(tagsStr) {
     return tags
         .map(
             (t) =>
-                `<span style="border: 1px solid #e5e1d8; padding: 2px 10px; border-radius: 99px; font-size: 12px; color: #4f5b6d; font-weight: 500;">${escapeHtml(t)}</span>`
+                `<span style="border: 1px solid #d8d2c4; padding: 2px 10px; border-radius: 99px; font-size: 12px; color: #4f5b6d; font-weight: 500;">${escapeHtml(t)}</span>`
         )
         .join('');
 }
@@ -4351,18 +4355,18 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                         '<span style="background:#dff1e9; color:#16835d; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-magnifying-glass"></i> Searchable</span>';
                 } else if (doc.ocr_status === 'processing' && !staleProcessing) {
                     chip =
-                        '<span style="background:#d7e5f6; color:#285791; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-spinner fa-spin"></i> Indexing</span>';
+                        '<span style="background:#efe4cc; color:#8f6f33; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-spinner fa-spin"></i> Indexing</span>';
                 } else if (doc.ocr_status === 'failed') {
                     chip =
                         '<span style="background:#f9e1e1; color:#c23a3a; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Index failed</span>';
                 } else if (supported) {
                     chip =
-                        '<span style="background:#eeebe3; color:#64748b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Not indexed</span>';
+                        '<span style="background:#e5e1d8; color:#64748b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Not indexed</span>';
                 }
 
                 const versionBadge =
                     (doc.version_no || 1) > 1
-                        ? `<span style="background:#e6ecf4; color:#2f4a6b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:700;">v${doc.version_no}</span>`
+                        ? `<span style="background:#e5e1d8; color:#2f4a6b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:700;">v${doc.version_no}</span>`
                         : '';
 
                 const hit = contentHits[doc.id];
@@ -4407,9 +4411,9 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const typeColor = getCategoryColor(doc.type);
 
                 return `
-            <div class="doc-card${isClientDoc ? ' doc-card-client' : ''}${isNewClientDoc ? ' doc-card-new' : ''}" data-doc-id="${escapeHtml(String(doc.id))}" style="background: #ffffff; border: 1px solid #e5e1d8; border-radius: 12px; padding: 20px; box-sizing: border-box;">
+            <div class="doc-card${isClientDoc ? ' doc-card-client' : ''}${isNewClientDoc ? ' doc-card-new' : ''}" data-doc-id="${escapeHtml(String(doc.id))}" style="background: #ffffff; border: 1px solid #d8d2c4; border-radius: 12px; padding: 20px; box-sizing: border-box;">
                 <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-start;">
-                    <div style="background: #eaf1fa; color: #3976c5; width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <div style="background: #f7f2e8; color: #c5a15d; width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fa-solid fa-file-lines" style="font-size: 18px;"></i>
                     </div>
                     <div>
@@ -4445,7 +4449,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     ${generateTagsHtml(isClientDoc ? String(doc.tags || '').split(',').map((t) => t.trim()).filter((t) => t && t.toLowerCase() !== 'client upload').join(', ') : doc.tags)}
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #eeebe3; padding-top: 15px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #e5e1d8; padding-top: 15px;">
                     <button type="button" class="doc-action-btn" onclick="${isNewClientDoc ? `markClientDocReviewed(${idArg}, true); ` : ''}${onBtnClick}">
                         <i class="fa-regular fa-eye"></i> View
                     </button>
@@ -4786,11 +4790,11 @@ async function renderRecentDocumentsInSchedule() {
                 .map(
                     (doc) => `
                     <div style="background:#f7f5f0; border-radius:10px; padding:15px; margin-bottom:12px; display:flex; align-items:center; gap:15px;">
-                        <div style="background:#eaf1fa; color:#3976c5; width:40px; height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center;">
+                        <div style="background:#f7f2e8; color:#c5a15d; width:40px; height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center;">
                             <i class="fa-solid fa-file-lines"></i>
                         </div>
                         <div>
-                            <h4 style="font-size:13px; color:#252d3a; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
+                            <h4 style="font-size:13px; color:#101b2d; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
                             <p style="font-size:12px; color:#64748b; text-transform:capitalize;">${escapeHtml(doc.type || 'Doc')}</p>
                         </div>
                     </div>
@@ -4824,13 +4828,13 @@ async function renderMyCasesTab() {
         if (cases && cases.length > 0) {
             let html = '<h3 style="margin-bottom: 20px; font-size: 16px;">My Active Cases</h3>';
             cases.forEach((c) => {
-                const statusColor = c.status === 'active' ? '#3976c5' : '#64748b';
-                const statusBg = c.status === 'active' ? '#eaf1fa' : '#eeebe3';
+                const statusColor = c.status === 'active' ? '#c5a15d' : '#64748b';
+                const statusBg = c.status === 'active' ? '#f7f2e8' : '#e5e1d8';
 
                 const clientName = c.clients ? c.clients.client_name : 'No Client';
 
                 html += `
-                        <div style="padding: 15px; border: 1px solid #eeebe3; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #f7f5f0;">
+                        <div style="padding: 15px; border: 1px solid #e5e1d8; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #f7f5f0;">
                             <div>
                                 <h4 style="color: #101b2d; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
                                 <p style="color: #64748b; font-size: 12px;"><i class="fa-regular fa-clock"></i> Filed: ${formatDate(c.date_filed || c.created_at)}</p>
@@ -4860,7 +4864,7 @@ function perfBarRow(label, value, max, color) {
                     <span style="color:#4f5b6d;">${escapeHtml(label)}</span>
                     <strong style="color:#101b2d;">${value}</strong>
                 </div>
-                <div style="background:#eeebe3; height:8px; border-radius:4px; overflow:hidden;">
+                <div style="background:#e5e1d8; height:8px; border-radius:4px; overflow:hidden;">
                     <div style="background:${color}; width:${pct}%; height:100%; border-radius:4px;"></div>
                 </div>
             </div>`;
@@ -4868,7 +4872,7 @@ function perfBarRow(label, value, max, color) {
 
 function perfKpi(label, value, color) {
     return `
-            <div style="flex:1; min-width:140px; background:#f7f5f0; border:1px solid #eeebe3; border-radius:12px; padding:14px 16px;">
+            <div style="flex:1; min-width:140px; background:#f7f5f0; border:1px solid #e5e1d8; border-radius:12px; padding:14px 16px;">
                 <div style="font-size:24px; font-weight:800; color:${color};">${value}</div>
                 <div style="font-size:12px; color:#64748b; margin-top:2px;">${escapeHtml(label)}</div>
             </div>`;
@@ -4876,7 +4880,7 @@ function perfKpi(label, value, color) {
 
 function perfPanel(title, bodyHtml) {
     return `
-            <div style="border:1px solid #eeebe3; border-radius:14px; padding:18px 20px; background:#ffffff;">
+            <div style="border:1px solid #e5e1d8; border-radius:14px; padding:18px 20px; background:#ffffff;">
                 <h4 style="margin:0 0 14px 0; font-size:13px; color:#101b2d;">${escapeHtml(title)}</h4>
                 ${bodyHtml}
             </div>`;
@@ -4908,7 +4912,7 @@ function perfMonthlyChart(months, opened, closed) {
             (m) => `
             <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
                 <div style="display:flex; align-items:flex-end; gap:4px;">
-                    ${bar(opened[m.key] || 0, '#3976c5')}
+                    ${bar(opened[m.key] || 0, '#c5a15d')}
                     ${closed ? bar(closed[m.key] || 0, '#16835d') : ''}
                 </div>
                 <span style="font-size:12px; color:#64748b; margin-top:6px; white-space:nowrap;">${escapeHtml(m.label)}</span>
@@ -4917,7 +4921,7 @@ function perfMonthlyChart(months, opened, closed) {
         .join('');
     const legend = `
             <div style="display:flex; gap:14px; margin-top:12px; font-size:12px; color:#64748b;">
-                <span><span style="display:inline-block; width:8px; height:8px; background:#3976c5; border-radius:2px; margin-right:5px;"></span>Opened</span>
+                <span><span style="display:inline-block; width:8px; height:8px; background:#c5a15d; border-radius:2px; margin-right:5px;"></span>Opened</span>
                 ${closed ? '<span><span style="display:inline-block; width:8px; height:8px; background:#16835d; border-radius:2px; margin-right:5px;"></span>Closed</span>' : ''}
             </div>`;
     return `<div style="display:flex; align-items:flex-end; gap:10px; height:150px;">${columns}</div>${legend}`;
@@ -5016,7 +5020,7 @@ function perfValueChart(months, values, color, legendText) {
             return `
             <div style="flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
                 <span style="font-size:12px; color:#4f5b6d; margin-bottom:2px;">${shown}</span>
-                <div style="width:70%; max-width:22px; height:${h}px; background:${has ? color : '#e5e1d8'}; border-radius:4px 4px 0 0;"></div>
+                <div style="width:70%; max-width:22px; height:${h}px; background:${has ? color : '#cbd5e1'}; border-radius:4px 4px 0 0;"></div>
                 <span style="font-size:12px; color:#64748b; margin-top:6px; white-space:nowrap;">${escapeHtml(m.label)}</span>
             </div>`;
         })
@@ -5138,10 +5142,10 @@ async function renderPerformanceTab() {
 
         if (isLawyerView) {
             kpis = [
-                perfKpi('My active cases', active.length, '#3976c5'),
+                perfKpi('My active cases', active.length, '#c5a15d'),
                 perfKpi('My closed cases', closed.length, '#16835d'),
                 perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#3d5a80'),
-                perfKpi('My new clients this month', newClientsThisMonth, '#3976c5'),
+                perfKpi('My new clients this month', newClientsThisMonth, '#c5a15d'),
                 perfKpi('Events in the next 7 days', events.length, '#d69b2d')
             ].join('');
         } else {
@@ -5152,11 +5156,11 @@ async function renderPerformanceTab() {
             const maxLoad = Math.max(1, ...lawyers.map((l) => (workload[l.id] || {}).active || 0));
 
             kpis = [
-                perfKpi('Active cases', active.length, '#3976c5'),
+                perfKpi('Active cases', active.length, '#c5a15d'),
                 perfKpi('Closed cases', closed.length, '#16835d'),
                 perfKpi('Closure rate', closureRate + '%', '#3d5a80'),
                 perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#3d5a80'),
-                perfKpi('New clients this month', newClientsThisMonth, '#3976c5'),
+                perfKpi('New clients this month', newClientsThisMonth, '#c5a15d'),
                 perfKpi('Avg. active cases per lawyer', avgLoad.toFixed(1), '#d69b2d'),
                 perfKpi('Active cases without a lawyer', unassigned, unassigned > 0 ? '#d64545' : '#16835d')
             ].join('');
@@ -5177,20 +5181,20 @@ async function renderPerformanceTab() {
                           : '';
                     return `
                             <tr>
-                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; font-weight:600; color:#101b2d;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; width:30%;">
+                                <td style="padding:10px 8px; border-bottom:1px solid #e5e1d8; font-weight:600; color:#101b2d;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #e5e1d8; width:30%;">
                                     <div style="display:flex; align-items:center; gap:10px;">
-                                        <div style="flex:1; background:#eeebe3; height:8px; border-radius:4px; overflow:hidden;">
-                                            <div style="background:${high ? '#d64545' : '#3976c5'}; width:${Math.round((w.active / maxLoad) * 100)}%; height:100%;"></div>
+                                        <div style="flex:1; background:#e5e1d8; height:8px; border-radius:4px; overflow:hidden;">
+                                            <div style="background:${high ? '#d64545' : '#c5a15d'}; width:${Math.round((w.active / maxLoad) * 100)}%; height:100%;"></div>
                                         </div>
                                         <strong style="font-size:12px; color:#101b2d; min-width:18px;">${w.active}</strong>
                                     </div>
                                 </td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${w.lead}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${c.closed}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${perfFmtDays(perfAvg(c.days))}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${w.events}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3;">${flag}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #e5e1d8; color:#4f5b6d;">${w.lead}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #e5e1d8; color:#4f5b6d;">${c.closed}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #e5e1d8; color:#4f5b6d;">${perfFmtDays(perfAvg(c.days))}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #e5e1d8; color:#4f5b6d;">${w.events}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #e5e1d8;">${flag}</td>
                             </tr>`;
                 })
                 .join('');
@@ -5221,7 +5225,7 @@ async function renderPerformanceTab() {
 
         const stagePanel = perfPanel(
             'Active cases by stage',
-            CASE_STAGES.map((st) => perfBarRow(st, stageCounts[st], stageMax, '#3976c5')).join('')
+            CASE_STAGES.map((st) => perfBarRow(st, stageCounts[st], stageMax, '#c5a15d')).join('')
         );
         const typePanel = perfPanel(
             'Active cases by type',
@@ -5240,7 +5244,7 @@ async function renderPerformanceTab() {
         const clientsPanel = perfPanel(
             isLawyerView ? 'My new clients per month' : 'New clients per month',
             clientDates
-                ? perfValueChart(months, newClientsByMonth, '#3976c5', 'New clients')
+                ? perfValueChart(months, newClientsByMonth, '#c5a15d', 'New clients')
                 : '<p style="color:#64748b; font-size:13px; margin:0;">Client data could not be loaded.</p>'
         );
 
@@ -5248,7 +5252,7 @@ async function renderPerformanceTab() {
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:18px;">
                     <h3 style="margin:0; font-size:16px;">${isLawyerView ? 'My Performance' : 'Firm Performance'}</h3>
                     <label style="font-size:12px; color:#64748b; display:flex; align-items:center; gap:8px;">Chart range
-                        <select id="perf-range" style="padding:6px 10px; border:1px solid #e5e1d8; border-radius:8px; font-size:12px; font-family:inherit; background:#ffffff; color:#101b2d;">
+                        <select id="perf-range" style="padding:6px 10px; border:1px solid #d8d2c4; border-radius:8px; font-size:12px; font-family:inherit; background:#ffffff; color:#101b2d;">
                             ${PERF_RANGES.map((r) => `<option value="${r.value}" ${perfRange === r.value ? 'selected' : ''}>${r.option}</option>`).join('')}
                         </select>
                     </label>
@@ -5447,18 +5451,18 @@ const NOTIF_STYLES = {
     client_pending: { icon: 'fa-solid fa-user-clock', color: '#d69b2d' },
     client_approved: { icon: 'fa-regular fa-circle-check', color: '#16835d' },
     client_rejected: { icon: 'fa-regular fa-circle-xmark', color: '#d64545' },
-    case_assigned: { icon: 'fa-solid fa-briefcase', color: '#3976c5' },
-    client_assigned: { icon: 'fa-solid fa-user-tie', color: '#3976c5' },
+    case_assigned: { icon: 'fa-solid fa-briefcase', color: '#c5a15d' },
+    client_assigned: { icon: 'fa-solid fa-user-tie', color: '#c5a15d' },
     conflict: { icon: 'fa-solid fa-triangle-exclamation', color: '#d64545' },
     event_reminder: { icon: 'fa-regular fa-bell', color: '#3d5a80' },
-    client_upload: { icon: 'fa-solid fa-file-arrow-up', color: '#3976c5' },
+    client_upload: { icon: 'fa-solid fa-file-arrow-up', color: '#c5a15d' },
     appointment_request: { icon: 'fa-solid fa-calendar-plus', color: '#d69b2d' },
     email_failed: { icon: 'fa-solid fa-triangle-exclamation', color: '#d64545' }
 };
 
 const EMAIL_STATUS = {
     pending: { label: 'Pending', bg: '#f8edd2', color: '#a2711a' },
-    processing: { label: 'Sending', bg: '#d7e5f6', color: '#285791' },
+    processing: { label: 'Sending', bg: '#efe4cc', color: '#8f6f33' },
     sent: { label: 'Sent', bg: '#dff1e9', color: '#16835d' },
     failed: { label: 'Failed', bg: '#f9e1e1', color: '#c23a3a' }
 };
@@ -6020,7 +6024,7 @@ async function prepareEventModal() {
             customInput.id = 'event-location-custom';
             customInput.placeholder = 'Type custom location...';
             customInput.style.cssText =
-                'width:100%; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; background:#f7f5f0; font-family:inherit; margin-top:8px; display:none; box-sizing:border-box;';
+                'width:100%; padding:10px 12px; border:1px solid #d8d2c4; border-radius:6px; background:#f7f5f0; font-family:inherit; margin-top:8px; display:none; box-sizing:border-box;';
             locSelect.parentNode.appendChild(customInput);
         }
 
@@ -6620,7 +6624,7 @@ async function renderResourcesWidget() {
                 return `
                     <div class="resource-item" ${clickAttrs}>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#252d3a; font-weight:500;">${room}</span>
+                            <span style="color:#101b2d; font-weight:500;">${room}</span>
                             <span class="tag ${tagClass}" style="font-size:12px; padding:3px 8px; border-radius:4px; font-weight:bold; ${tagStyle}">
                                 ${tagText}
                             </span>
@@ -7777,6 +7781,8 @@ function setTeamModalLocked(locked) {
     if (typeof teamModalState.syncCo === 'function') teamModalState.syncCo();
 }
 
+const TEAM_MAX_LAWYERS = 2;
+
 async function openTeamModal(kind, id, { approve = false } = {}) {
     if (!isAdminUser()) return;
     const modal = document.getElementById('team-modal');
@@ -7831,11 +7837,17 @@ async function openTeamModal(kind, id, { approve = false } = {}) {
             : '<p class="team-co-empty">No active lawyers. Add one in Manage Lawyers first.</p>';
 
     teamModalState.syncCo = () => {
-        coList.querySelectorAll('.team-co-item').forEach((item) => {
+        const items = Array.from(coList.querySelectorAll('.team-co-item'));
+        items.forEach((item) => {
+            const cb = item.querySelector('input[type="checkbox"]');
+            if (cb.value === leadSel.value) cb.checked = false;
+        });
+        const checkedCount = items.filter((item) => item.querySelector('input[type="checkbox"]').checked).length;
+        const atLimit = checkedCount >= TEAM_MAX_LAWYERS - 1;
+        items.forEach((item) => {
             const cb = item.querySelector('input[type="checkbox"]');
             const isLead = cb.value === leadSel.value;
-            if (isLead) cb.checked = false;
-            cb.disabled = teamModalState.locked || isLead;
+            cb.disabled = teamModalState.locked || isLead || (atLimit && !cb.checked);
             item.classList.toggle('is-disabled', cb.disabled);
         });
     };
@@ -7843,7 +7855,10 @@ async function openTeamModal(kind, id, { approve = false } = {}) {
         hideTeamError();
         teamModalState.syncCo();
     };
-    coList.onchange = hideTeamError;
+    coList.onchange = () => {
+        hideTeamError();
+        teamModalState.syncCo();
+    };
 
     setTeamModalLocked(false);
     hideTeamError();
@@ -7885,6 +7900,10 @@ function setupTeamModal() {
                     ? 'Choose a lead lawyer first. Co-lawyers cannot be saved without a lead lawyer.'
                     : 'Choose a lead lawyer before saving.'
             );
+            return;
+        }
+        if (co.length + 1 > TEAM_MAX_LAWYERS) {
+            showTeamError('A court hearing allows a maximum of ' + TEAM_MAX_LAWYERS + ' lawyers: 1 lead lawyer and 1 co-lawyer. Please remove the extra lawyers.');
             return;
         }
         hideTeamError();
@@ -9989,7 +10008,7 @@ function setupUploadModal() {
         dropText.innerText = file.name;
         if (fileNameInput) fileNameInput.value = sanitizeFileName(file.name);
         showNameError('');
-        dropArea.style.borderColor = '#3976c5';
+        dropArea.style.borderColor = '#c5a15d';
         dropArea.style.backgroundColor = 'var(--accent-soft)';
     }
 
@@ -10057,7 +10076,7 @@ function setupUploadModal() {
 
         dropArea.addEventListener('dragover', (e) => {
             e.preventDefault();
-            dropArea.style.borderColor = '#3976c5';
+            dropArea.style.borderColor = '#c5a15d';
             dropArea.style.backgroundColor = 'var(--accent-soft)';
         });
 
@@ -10418,7 +10437,7 @@ function setupMyProfileModal() {
                         specSelect.style.cursor = 'pointer';
                     } else {
                         specSelect.disabled = true;
-                        specSelect.style.backgroundColor = '#eeebe3';
+                        specSelect.style.backgroundColor = '#e5e1d8';
                         specSelect.style.color = '#64748b';
                         specSelect.style.cursor = 'not-allowed';
                     }
@@ -10738,9 +10757,9 @@ function openUserModal(title, subtitleHtml, bodyHtml) {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
             <div style="width:90%; max-width:480px; padding:25px 30px; background:#ffffff; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.1); max-height:90vh; overflow-y:auto;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e5e1d8; padding-bottom:15px; margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #d8d2c4; padding-bottom:15px; margin-bottom:16px;">
                     <div>
-                        <h2 style="font-size:18px; font-weight:700; color:#252d3a; margin:0;">${escapeHtml(title)}</h2>
+                        <h2 style="font-size:18px; font-weight:700; color:#101b2d; margin:0;">${escapeHtml(title)}</h2>
                         <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">${subtitleHtml}</p>
                     </div>
                     <button type="button" data-um-close aria-label="Close" title="Close" style="background:transparent; border:none; font-size:20px; cursor:pointer; color:#64748b; padding:0;"><i class="fa-solid fa-xmark"></i></button>
@@ -10779,7 +10798,7 @@ async function getLawyerWorkSummary(lawyerId) {
 function workSummaryHtml(work) {
     const row = (n, singular, plural) => `<li>${n} ${n === 1 ? singular : plural}</li>`;
     return `
-            <div style="background:#f7f5f0; border:1px solid #e5e1d8; border-radius:8px; padding:12px 14px; font-size:13px; color:#3b4656; margin-bottom:16px;">
+            <div style="background:#f7f5f0; border:1px solid #d8d2c4; border-radius:8px; padding:12px 14px; font-size:13px; color:#3b4656; margin-bottom:16px;">
                 <strong>Currently assigned</strong>
                 <ul style="margin:8px 0 0 18px; padding:0; line-height:1.7;">
                     ${row(work.cases, 'active case', 'active cases')}
@@ -10793,7 +10812,7 @@ function replacementSelectHtml(lawyers) {
     return `
             <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Transfer their work to</label>
             <div style="position:relative; margin-bottom:8px;">
-                <select id="um-replacement" style="width:100%; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; background:#f7f5f0; font-family:inherit; appearance:none;">
+                <select id="um-replacement" style="width:100%; padding:10px 12px; border:1px solid #d8d2c4; border-radius:6px; background:#f7f5f0; font-family:inherit; appearance:none;">
                     <option value="">Select a lawyer</option>
                     ${lawyers.map((l) => `<option value="${escapeHtml(l.id)}">Atty. ${escapeHtml(l.full_name || 'Unnamed')}${l.specialization ? ' — ' + escapeHtml(l.specialization) : ''}</option>`).join('')}
                 </select>
@@ -10806,7 +10825,7 @@ function modalButtonsHtml(confirmLabel, confirmColor) {
     return `
             <div id="um-error" style="color:#d64545; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
             <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button type="button" id="um-cancel" style="padding:10px 18px; border:1px solid #d5cfc2; background:white; border-radius:6px; cursor:pointer; font-weight:600;">Cancel</button>
+                <button type="button" id="um-cancel" style="padding:10px 18px; border:1px solid #d8d2c4; background:white; border-radius:6px; cursor:pointer; font-weight:600;">Cancel</button>
                 <button type="button" id="um-confirm" style="padding:10px 18px; background:${confirmColor}; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600;">${escapeHtml(confirmLabel)}</button>
             </div>`;
 }
@@ -10904,7 +10923,7 @@ window.openChangeRoleModal = async function (id, name, currentRole) {
                     <p style="font-size:13px; color:#4f5b6d; margin:0 0 14px 0;">As a lawyer they can be assigned clients and cases.</p>
                     <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Specialization</label>
                     <div style="position:relative; margin-bottom:16px;">
-                        <select id="um-spec" style="width:100%; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; background:#f7f5f0; font-family:inherit; appearance:none;">
+                        <select id="um-spec" style="width:100%; padding:10px 12px; border:1px solid #d8d2c4; border-radius:6px; background:#f7f5f0; font-family:inherit; appearance:none;">
                             ${SPECIALIZATIONS.map((sp) => `<option value="${escapeHtml(sp)}">${escapeHtml(sp)}</option>`).join('')}
                         </select>
                         <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#64748b; pointer-events:none; font-size:12px;"></i>
@@ -10914,7 +10933,7 @@ window.openChangeRoleModal = async function (id, name, currentRole) {
         middle +=
             '<p style="font-size:12px; color:#64748b; margin:0 0 12px 0;">The change applies immediately. If they are signed in, they should sign in again to see the right menus.</p>';
 
-        modal.body.innerHTML = middle + modalButtonsHtml('Change role', '#3976c5');
+        modal.body.innerHTML = middle + modalButtonsHtml('Change role', '#c5a15d');
         const confirmBtn = modal.body.querySelector('#um-confirm');
         const errEl = modal.body.querySelector('#um-error');
         modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
@@ -10974,9 +10993,9 @@ window.openResetPasswordModal = function (id, name) {
             <p style="font-size:13px; color:#4f5b6d; margin:0 0 14px 0;">Set a password. They will be asked to choose their own the next time they sign in.</p>
             <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Password</label>
             <div style="display:flex; gap:8px; margin-bottom:6px;">
-                <input type="text" id="um-pw" autocomplete="off" style="flex:1; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; font-family:monospace; background:#f7f5f0;">
-                <button type="button" id="um-pw-generate" style="padding:10px 12px; border:1px solid #d5cfc2; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Generate</button>
-                <button type="button" id="um-pw-copy" style="padding:10px 12px; border:1px solid #d5cfc2; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Copy</button>
+                <input type="text" id="um-pw" autocomplete="off" style="flex:1; padding:10px 12px; border:1px solid #d8d2c4; border-radius:6px; font-family:monospace; background:#f7f5f0;">
+                <button type="button" id="um-pw-generate" style="padding:10px 12px; border:1px solid #d8d2c4; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Generate</button>
+                <button type="button" id="um-pw-copy" style="padding:10px 12px; border:1px solid #d8d2c4; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Copy</button>
             </div>
             <p style="font-size:12px; color:#64748b; margin:0 0 16px 0;">At least 8 characters with a letter and a number. Share it with them privately.</p>
             ${modalButtonsHtml('Reset password', '#3d5a80')}
@@ -11578,10 +11597,10 @@ function initAuditFilters() {
 
 const AUDIT_ACTIONS = {
     INSERT: { label: 'Added', color: '#16835d', icon: 'fa-plus' },
-    UPDATE: { label: 'Updated', color: '#2f65ad', icon: 'fa-pen' },
+    UPDATE: { label: 'Updated', color: '#8f6f33', icon: 'fa-pen' },
     DELETE: { label: 'Deleted', color: '#c23a3a', icon: 'fa-trash' },
     CLOSE: { label: 'Closed', color: '#b9811f', icon: 'fa-lock' },
-    REOPEN: { label: 'Reopened', color: '#3976c5', icon: 'fa-rotate-left' },
+    REOPEN: { label: 'Reopened', color: '#c5a15d', icon: 'fa-rotate-left' },
     RESCHEDULE: { label: 'Rescheduled', color: '#3d5a80', icon: 'fa-calendar-days' },
     ARCHIVE: { label: 'Archived', color: '#a2711a', icon: 'fa-box-archive' },
     RESTORE: { label: 'Restored', color: '#116b4b', icon: 'fa-rotate-left' },
@@ -11700,7 +11719,7 @@ function paintAudits() {
         .map((log) => {
             const action = AUDIT_ACTIONS[log.action] || {
                 label: log.action || 'Changed',
-                color: '#2f65ad',
+                color: '#8f6f33',
                 icon: 'fa-pen'
             };
             const entity = auditEntityLabel(log.table_name);
@@ -12690,3 +12709,176 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') setAuditExportMenu(false);
 });
+
+const DEFAULT_EMAIL_TEMPLATES = [
+    {
+        name: 'General Case Update',
+        subject: 'Update on your case: {{case_title}} ({{case_number}})',
+        body: `
+Dear {{client_name}},
+
+Good day. I am writing to update you on your case, {{case_title}} ({{case_number}}).
+
+Current status: {{case_stage}}
+
+[Summary of what happened or what we did since the last update]
+
+Next step: [What happens next and when]
+
+Please feel free to reply to this email or call the office if you have any questions.
+
+Respectfully,
+{{lawyer_name}}`
+    },
+    {
+        name: 'Hearing Reminder',
+        subject: 'Reminder: Hearing on [Hearing Date] - {{case_title}}',
+        body: `
+Dear {{client_name}},
+
+This is a reminder that your case, {{case_title}} (Court Case No. {{court_case_no}}), has a hearing scheduled as follows:
+
+Date: [Hearing Date]
+Time: [Hearing Time]
+Court: {{court_branch}}
+
+Please arrive at least 30 minutes early and bring a valid government-issued ID. Dress appropriately for court.
+
+If you are unable to attend, please let us know as soon as possible.
+
+Respectfully,
+{{lawyer_name}}`
+    },
+    {
+        name: 'Documents Request',
+        subject: 'Documents needed for your case: {{case_title}}',
+        body: `
+Dear {{client_name}},
+
+To move forward with your case ({{case_number}}), we need the following documents from you:
+
+1. [Document 1]
+2. [Document 2]
+3. [Document 3]
+
+Please send clear scanned copies or photos by [Deadline]. You may reply directly to this email with the files attached, or upload them through your client portal.
+
+If any of these are hard to obtain, please tell us and we will help you find another way.
+
+Thank you,
+{{lawyer_name}}`
+    },
+    {
+        name: 'Appointment Confirmation',
+        subject: 'Appointment confirmed: [Date and Time]',
+        body: `
+Dear {{client_name}},
+
+This confirms your appointment regarding {{case_title}} ({{case_number}}).
+
+Date: [Date]
+Time: [Time]
+Venue: [Office address or online meeting link]
+
+Please bring any new documents or questions you would like to discuss. If you need to reschedule, kindly notify us at least 24 hours in advance.
+
+See you then,
+{{lawyer_name}}`
+    },
+    {
+        name: 'Court Decision Received',
+        subject: 'Court decision received: {{case_title}}',
+        body: `
+Dear {{client_name}},
+
+We have received the court's [Decision / Order / Resolution] dated [Date] in your case, {{case_title}} (Court Case No. {{court_case_no}}).
+
+In short: [Plain-language summary of the ruling]
+
+What this means for you: [Explanation of the effect]
+
+Recommended next step: [For example, file a motion for reconsideration, appeal, or comply by a deadline]
+Deadline: [Date]
+
+I would like to discuss this with you. Please reply with a good time to talk, or call the office.
+
+Respectfully,
+{{lawyer_name}}`
+    },
+    {
+        name: 'Billing Reminder',
+        subject: 'Billing reminder: {{case_number}}',
+        body: `
+Dear {{client_name}},
+
+Good day. This is a friendly reminder regarding the outstanding balance for legal services on your case, {{case_title}} ({{case_number}}).
+
+Amount due: PHP [Amount]
+Due date: [Date]
+Payment options: [Bank / GCash / Cash at office]
+
+If you have already paid, please disregard this message and send us a copy of your proof of payment. If you would like to discuss a payment arrangement, please let us know.
+
+Thank you,
+{{lawyer_name}}`
+    },
+    {
+        name: 'Case Closure Notice',
+        subject: 'Your case has been closed: {{case_title}}',
+        body: `
+Dear {{client_name}},
+
+We are writing to inform you that your case, {{case_title}} ({{case_number}}), has been closed as of {{date}}.
+
+Outcome: [Brief description of the result]
+
+We will keep your records on file. If you need copies of any documents, or if you have other legal concerns in the future, please do not hesitate to contact us.
+
+Thank you for trusting us with your case.
+
+Respectfully,
+{{lawyer_name}}`
+    },
+    {
+        name: 'Welcome New Client',
+        subject: 'Welcome, {{client_name}}',
+        body: `
+Dear {{client_name}},
+
+Welcome, and thank you for choosing our firm to handle your {{case_type}} matter.
+
+Your case has been opened under {{case_number}}. You can follow its progress and our updates through your client portal.
+
+Here is what to expect next:
+1. [First step, for example document collection]
+2. [Second step, for example filing]
+3. [Third step]
+
+Please send any questions to this email, and we will respond as soon as we can.
+
+Warm regards,
+{{lawyer_name}}`
+    }
+];
+
+async function seedDefaultEmailTemplates() {
+    if (!currentUser || !canManageTemplate()) return false;
+    const existing = new Set((templatesCache || []).map((t) => t.name.trim().toLowerCase()));
+    const rows = DEFAULT_EMAIL_TEMPLATES.filter((t) => !existing.has(t.name.toLowerCase())).map((t) => ({
+        name: t.name,
+        kind: 'email',
+        subject: t.subject,
+        body: t.body.trim(),
+        created_by: currentUser.id,
+        updated_by: currentUser.id
+    }));
+    if (rows.length === 0) return false;
+    const { error } = await supabaseClient.from('document_templates').insert(rows);
+    if (error) {
+        console.error('Error adding default templates:', error);
+        return false;
+    }
+    await loadTemplates(true);
+    await populateEmailTemplateSelect();
+    return true;
+}

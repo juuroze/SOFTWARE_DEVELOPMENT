@@ -16,7 +16,7 @@
             width: 100%;
             box-sizing: border-box;
             padding: 12px;
-            border: 1px solid #cbd5e1;
+            border: 1px solid #d8d2c4;
             border-radius: 6px;
             font-family: inherit;
             font-size: 20px;
@@ -25,8 +25,8 @@
         }
         .cl-code-input:focus {
             outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+            border-color: #c5a15d;
+            box-shadow: 0 0 0 3px rgba(197, 161, 93, 0.15);
         }
         .cl-msg { font-size: 13px; min-height: 18px; margin: 10px 0 0 0; text-align: center; }
         .cl-msg.error { color: #ef4444; }
@@ -38,7 +38,7 @@
             padding: 0;
             font-family: inherit;
             font-size: 13px;
-            color: #3b82f6;
+            color: #8f6f33;
             cursor: pointer;
         }
         .cl-link-btn:disabled { color: #94a3b8; cursor: not-allowed; }
@@ -50,8 +50,8 @@
             font-size: 12px;
             font-family: monospace;
             word-break: break-all;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
+            background: #faf8f4;
+            border: 1px solid #e5e1d8;
             border-radius: 6px;
             padding: 8px;
             margin: 0 0 14px 0;
@@ -74,7 +74,7 @@
             display: flex;
             align-items: center;
         }
-        .cl-meter { height: 6px; border-radius: 99px; background: #e2e8f0; overflow: hidden; margin: 4px 0 10px 0; }
+        .cl-meter { height: 6px; border-radius: 99px; background: #e5e1d8; overflow: hidden; margin: 4px 0 10px 0; }
         .cl-meter-fill { height: 100%; width: 0; border-radius: 99px; background: #ef4444; transition: width 0.2s ease, background-color 0.2s ease; }
         .cl-rules { list-style: none; margin: 0 0 14px 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
         .cl-rules li { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; }
@@ -210,8 +210,6 @@
         const PORTAL_URL = 'client-portal.html';
         const RESET_COOLDOWN_SECONDS = 60;
         const FLOW_KEY = 'jurisync-client-flow';
-        const GUARD_KEY = 'jurisync-client-login-guard';
-        const MAX_FREE_ATTEMPTS = 5;
         const COMMON_WORDS = ['password', 'qwerty', '123456', '12345678', 'letmein', 'welcome', 'iloveyou', 'admin', 'jurisync', 'abc123'];
 
         const $ = (id) => document.getElementById(id);
@@ -245,31 +243,44 @@
             } catch (e) {}
         }
 
-        function readGuard() {
-            try { return JSON.parse(localStorage.getItem(GUARD_KEY)) || { count: 0, until: 0 }; }
-            catch (e) { return { count: 0, until: 0 }; }
+        function lockWaitText(lockedUntil) {
+            const ms = new Date(lockedUntil).getTime() - Date.now();
+            const mins = Math.max(1, Math.ceil(ms / 60000));
+            return mins === 1 ? '1 minute' : mins + ' minutes';
         }
 
-        function writeGuard(guard) {
-            try { localStorage.setItem(GUARD_KEY, JSON.stringify(guard)); } catch (e) {}
+        function lockedText(lockedUntil) {
+            return 'Too many failed sign-in attempts. This account is locked. Try again in ' + lockWaitText(lockedUntil) + '.';
         }
 
-        function lockSecondsLeft() {
-            return Math.max(0, Math.ceil((readGuard().until - Date.now()) / 1000));
-        }
-
-        function registerFailure() {
-            const guard = readGuard();
-            guard.count += 1;
-            if (guard.count >= MAX_FREE_ATTEMPTS) {
-                const level = Math.min(guard.count - MAX_FREE_ATTEMPTS, 5);
-                guard.until = Date.now() + Math.min(30 * Math.pow(2, level), 900) * 1000;
+        async function getLoginLock(email) {
+            try {
+                const { data, error } = await supabaseClient.rpc('get_login_lock', { p_email: email });
+                if (error) return null;
+                return data || null;
+            } catch (e) {
+                return null;
             }
-            writeGuard(guard);
         }
 
-        function clearGuard() {
-            writeGuard({ count: 0, until: 0 });
+        async function recordLoginAttempt(email, success) {
+            try {
+                const { data, error } = await supabaseClient.rpc('record_login_attempt', { p_email: email, p_success: success });
+                if (error) return null;
+                return data;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function failureText(result) {
+            if (result && result.locked) return lockedText(result.locked_until);
+            const base = 'Incorrect email or password.';
+            if (result && typeof result.attempts_left === 'number' && result.attempts_left <= 2) {
+                const left = result.attempts_left;
+                return base + ' You have ' + left + (left === 1 ? ' attempt' : ' attempts') + ' left before this account is locked.';
+            }
+            return base;
         }
 
         function showStep(name) {
@@ -449,18 +460,21 @@
 
         steps.signin.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const wait = lockSecondsLeft();
-            if (wait > 0) {
-                setMsg('signin-msg', 'Too many attempts. Try again in ' + wait + ' seconds.', 'error');
-                return;
-            }
-
             const email = $('signin-email').value.trim();
             const password = $('signin-password').value;
             const btn = $('signin-btn');
             btn.disabled = true;
             btn.innerText = 'Signing in...';
             setMsg('signin-msg', '', 'info');
+
+            const existingLock = await getLoginLock(email);
+            if (existingLock) {
+                btn.disabled = false;
+                btn.innerText = 'Sign In';
+                setMsg('signin-msg', lockedText(existingLock), 'error');
+                $('signin-password').value = '';
+                return;
+            }
 
             const { data, error } = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
 
@@ -472,8 +486,8 @@
                     setMsg('signin-msg', 'Open the invite link we emailed you first to activate your account.', 'error');
                     return;
                 }
-                registerFailure();
-                setMsg('signin-msg', 'Incorrect email or password.', 'error');
+                const failed = await recordLoginAttempt(email, false);
+                setMsg('signin-msg', failureText(failed), 'error');
                 $('signin-password').value = '';
                 return;
             }
@@ -481,13 +495,13 @@
             const meta = (data.user && data.user.user_metadata) || {};
             if (!meta.portal_client) {
                 await supabaseClient.auth.signOut();
-                registerFailure();
-                setMsg('signin-msg', 'Incorrect email or password.', 'error');
+                const failed = await recordLoginAttempt(email, false);
+                setMsg('signin-msg', failureText(failed), 'error');
                 $('signin-password').value = '';
                 return;
             }
 
-            clearGuard();
+            await recordLoginAttempt(email, true);
             flow = 'signin';
             writeStoredFlow(null);
             currentEmail = email;

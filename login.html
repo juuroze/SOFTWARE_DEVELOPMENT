@@ -57,6 +57,36 @@
 
         const loginMessageEl = document.getElementById('login-message');
 
+        function formatLockWait(lockedUntil) {
+            const ms = new Date(lockedUntil).getTime() - Date.now();
+            const mins = Math.max(1, Math.ceil(ms / 60000));
+            return mins === 1 ? '1 minute' : mins + ' minutes';
+        }
+
+        function lockedText(lockedUntil) {
+            return 'Too many failed sign-in attempts. This account is locked. Try again in ' + formatLockWait(lockedUntil) + '.';
+        }
+
+        async function getLoginLock(email) {
+            try {
+                const { data, error } = await supabaseClient.rpc('get_login_lock', { p_email: email });
+                if (error) return null;
+                return data || null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function recordLoginAttempt(email, success) {
+            try {
+                const { data, error } = await supabaseClient.rpc('record_login_attempt', { p_email: email, p_success: success });
+                if (error) return null;
+                return data;
+            } catch (e) {
+                return null;
+            }
+        }
+
         function showLoginMessage(text, kind) {
             loginMessageEl.textContent = text;
             loginMessageEl.className = 'login-message ' + (kind || 'error');
@@ -95,17 +125,36 @@
             loginBtn.disabled = true;
             loginBtn.innerText = 'Signing In...';
 
+            const existingLock = await getLoginLock(emailInput);
+            if (existingLock) {
+                showLoginMessage(lockedText(existingLock), 'error');
+                loginBtn.disabled = false;
+                loginBtn.innerText = 'Sign In';
+                return;
+            }
+
             const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
                 email: emailInput,
                 password: passwordInput
             });
 
             if (authError) {
-                showLoginMessage('Login failed: ' + authError.message, 'error');
+                const result = await recordLoginAttempt(emailInput, false);
+                if (result && result.locked) {
+                    showLoginMessage(lockedText(result.locked_until), 'error');
+                } else if (result && typeof result.attempts_left === 'number' && result.attempts_left <= 2) {
+                    const left = result.attempts_left;
+                    showLoginMessage('Login failed: ' + authError.message + ' You have ' + left + (left === 1 ? ' attempt' : ' attempts') + ' left before this account is locked.', 'error');
+                } else {
+                    showLoginMessage('Login failed: ' + authError.message, 'error');
+                }
+                document.getElementById('password').value = '';
                 loginBtn.disabled = false;
                 loginBtn.innerText = 'Sign In';
                 return;
             }
+
+            await recordLoginAttempt(emailInput, true);
 
             const userId = authData.user.id;
 
