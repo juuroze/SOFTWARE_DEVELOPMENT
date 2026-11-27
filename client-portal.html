@@ -232,6 +232,14 @@
         .pill { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; text-transform: capitalize; white-space: nowrap; }
         .pill.active { background: #dcfce7; color: #16a34a; }
         .pill.closed { background: #f1f5f9; color: #64748b; }
+        .u-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 99px; background: #dc2626; color: #ffffff; font-size: 11px; font-weight: 700; line-height: 1; vertical-align: middle; }
+        .u-badge[hidden] { display: none; }
+        .pill.ongoing { background: #dbeafe; color: #1d4ed8; }
+        .pill.complete { background: #f1f5f9; color: #475569; }
+        .pill.ongoing::before, .pill.complete::before { font-family: "Font Awesome 6 Free"; font-weight: 900; font-style: normal; display: inline-block; margin-right: 6px; font-size: 0.95em; line-height: 1; text-transform: none; -webkit-font-smoothing: antialiased; }
+        .pill.ongoing::before { content: "\f110"; }
+        .pill.complete::before { content: "\f058"; }
+        .c-meta .chip.stage { background: #eff6ff; color: #1d4ed8; }
         .p-convo {
             background: var(--p-card); border: 1px solid var(--p-line); border-radius: 18px;
             display: flex; flex-direction: column; overflow: hidden;
@@ -535,7 +543,8 @@
             items: [],
             signature: '',
             pollTimer: null,
-            loadToken: 0
+            loadToken: 0,
+            unread: {}
         };
 
         function escapeHtml(value) {
@@ -706,6 +715,18 @@
 
             state.cases = cases || [];
             try {
+                const { data: stageRows } = await supabaseClient.rpc('portal_case_stages');
+                const stageByCase = {};
+                (stageRows || []).forEach((r) => {
+                    stageByCase[String(r.case_id)] = r.case_stage;
+                });
+                state.cases.forEach((c) => {
+                    if (stageByCase[String(c.id)]) c.case_stage = stageByCase[String(c.id)];
+                });
+            } catch (stageErr) {
+                console.warn('Case status was not loaded:', stageErr);
+            }
+            try {
                 const { data: avatarRows } = await supabaseClient.rpc('portal_lawyer_avatars');
                 const avatarByCase = {};
                 (avatarRows || []).forEach((r) => {
@@ -760,22 +781,84 @@
             openCase(keep ? keep.id : state.cases[0].id);
         }
 
+        function seenKey(caseId) {
+            return 'jurisync-portal-msg-seen:' + (state.userId || '') + ':' + caseId;
+        }
+
+        function getSeen(caseId) {
+            try { return localStorage.getItem(seenKey(caseId)) || ''; } catch (e) { return ''; }
+        }
+
+        function setSeen(caseId, iso) {
+            try { localStorage.setItem(seenKey(caseId), iso); } catch (e) {}
+        }
+
+        function setBadge(el, n) {
+            el.hidden = n < 1;
+            el.textContent = n > 0 ? (n > 99 ? '99+' : String(n)) : '';
+            if (n > 0) el.setAttribute('aria-label', n + (n === 1 ? ' unread message' : ' unread messages'));
+            else el.removeAttribute('aria-label');
+        }
+
+        function paintUnread() {
+            document.querySelectorAll('[data-unread-case]').forEach(el => setBadge(el, state.unread[el.dataset.unreadCase] || 0));
+            const tabBadge = document.getElementById('tab-badge-messages');
+            if (tabBadge) setBadge(tabBadge, state.activeId ? (state.unread[String(state.activeId)] || 0) : 0);
+        }
+
+        async function refreshUnread() {
+            const ids = state.cases.map(c => c.id);
+            if (!ids.length) return;
+            const { data, error } = await supabaseClient
+                .from('email_queue')
+                .select('case_id, sent_at, created_at')
+                .in('case_id', ids)
+                .eq('is_sent', true)
+                .neq('kind', 'client_message');
+            if (error) return;
+            const counts = {};
+            const newest = {};
+            (data || []).forEach(r => {
+                const key = String(r.case_id);
+                const ts = r.sent_at || r.created_at;
+                if (!newest[key] || new Date(ts) > new Date(newest[key])) newest[key] = ts;
+                const seen = getSeen(key);
+                if (!seen || new Date(ts) > new Date(seen)) counts[key] = (counts[key] || 0) + 1;
+            });
+            if (state.tab === 'messages' && state.activeId) {
+                const key = String(state.activeId);
+                if (counts[key]) {
+                    setSeen(key, newest[key]);
+                    counts[key] = 0;
+                }
+            }
+            state.unread = counts;
+            paintUnread();
+        }
+
+        function caseStatusOf(c) {
+            if (c.status === 'closed') return { key: 'complete', label: 'Complete' };
+            if (!c.case_stage || c.case_stage === 'For Filing') return { key: 'active', label: 'Active' };
+            return { key: 'ongoing', label: 'Ongoing' };
+        }
+
         function renderCaseList() {
             const listEl = document.getElementById('case-list');
             if (!listEl) return;
             listEl.innerHTML = state.cases.map(c => {
                 const lawyerName = c.lead_lawyer ? `Atty. ${escapeHtml(c.lead_lawyer)}` : 'Lawyer not assigned yet';
-                const status = c.status === 'closed' ? 'closed' : 'active';
+                const st = caseStatusOf(c);
                 const active = String(c.id) === String(state.activeId);
                 return `
                     <button type="button" class="p-case ${active ? 'active' : ''}" data-case-id="${escapeHtml(c.id)}" aria-pressed="${active}">
                         <div class="p-case-top">
-                            <h3>${escapeHtml(c.title)}</h3>
-                            <span class="pill ${status}">${escapeHtml(status)}</span>
+                            <h3>${escapeHtml(c.title)}<span class="u-badge" data-unread-case="${escapeHtml(c.id)}" hidden></span></h3>
+                            <span class="pill ${st.key}">${escapeHtml(st.label)}</span>
                         </div>
-                        <p class="p-case-sub">${c.case_number ? '#' + escapeHtml(c.case_number) + ' • ' : ''}${escapeHtml(c.case_type || 'General')}<br>${lawyerName}</p>
+                        <p class="p-case-sub">${c.case_number ? '#' + escapeHtml(c.case_number) + ' • ' : ''}${escapeHtml(c.case_type || 'General')}${c.case_stage ? ' • ' + escapeHtml(c.case_stage) : ''}<br>${lawyerName}</p>
                     </button>`;
             }).join('');
+            paintUnread();
         }
 
         function activeCase() {
@@ -793,17 +876,17 @@
             if (!c || !convo) return;
 
             const lawyer = c.lead_lawyer ? `Atty. ${escapeHtml(c.lead_lawyer)}` : 'Your legal team';
-            const status = c.status === 'closed' ? 'closed' : 'active';
+            const st = caseStatusOf(c);
 
             convo.innerHTML = `
                 <div class="c-head">
                     <div>
                         <h2>${escapeHtml(c.title)}</h2>
                         <div class="c-meta">
-                            <span class="pill ${status}">${escapeHtml(status)}</span>
+                            <span class="pill ${st.key}">${escapeHtml(st.label)}</span>
                             ${c.case_number ? `<span class="chip">#${escapeHtml(c.case_number)}</span>` : ''}
                             <span class="chip">${escapeHtml(c.case_type || 'General')}</span>
-                            ${c.case_stage ? `<span class="chip">${escapeHtml(c.case_stage)}</span>` : ''}
+                            ${c.case_stage ? `<span class="chip stage">Stage: ${escapeHtml(c.case_stage)}</span>` : ''}
                         </div>
                     </div>
                     <div class="c-lawyer">
@@ -814,7 +897,7 @@
                 <div class="c-tabs" role="tablist" aria-label="Case sections">
                     <button type="button" class="c-tab active" role="tab" data-tab="overview" aria-selected="true">Overview</button>
                     <button type="button" class="c-tab" role="tab" data-tab="history" aria-selected="false">History</button>
-                    <button type="button" class="c-tab" role="tab" data-tab="messages" aria-selected="false">Messages</button>
+                    <button type="button" class="c-tab" role="tab" data-tab="messages" aria-selected="false">Messages<span class="u-badge" id="tab-badge-messages" hidden></span></button>
                     <button type="button" class="c-tab" role="tab" data-tab="documents" aria-selected="false">Documents</button>
                     <button type="button" class="c-tab" role="tab" data-tab="appointments" aria-selected="false">Appointments</button>
                 </div>
@@ -840,6 +923,7 @@
         }
 
         async function checkIncomingAlerts() {
+            refreshUnread();
             const caseId = state.activeId;
             if (!caseId) return false;
             let fired = false;
@@ -949,6 +1033,15 @@
                 doc: m.documents || m.legacy_doc || null
             }));
             items.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+            const lawyerItems = items.filter(i => i.side === 'lawyer');
+            if (lawyerItems.length) {
+                const newestTs = lawyerItems[lawyerItems.length - 1].ts;
+                const seen = getSeen(caseId);
+                if (!seen || new Date(newestTs) > new Date(seen)) setSeen(caseId, newestTs);
+            }
+            state.unread[String(caseId)] = 0;
+            paintUnread();
 
             const signature = items.map(i => i.key).join('|');
             const firstPaint = !document.getElementById('c-form') && !document.getElementById('c-footer').children.length;
@@ -1209,6 +1302,7 @@
             const c = activeCase();
             if (!pane || !c) return;
 
+            const st = caseStatusOf(c);
             const status = c.status === 'closed' ? 'closed' : 'active';
             const reports = updatesFor(c.id).filter(u => u.source === 'report')
                 .sort((a, b) => String(b.event_at).localeCompare(String(a.event_at)));
@@ -1216,8 +1310,8 @@
             const next = status === 'closed' ? null : nextHearingOf(reports);
 
             const facts = [
-                ['Status', `<span class="pill ${status}">${status}</span>`],
-                ['Stage', c.case_stage ? escapeHtml(c.case_stage) : '-'],
+                ['Status', `<span class="pill ${st.key}">${escapeHtml(st.label)}</span>`],
+                ['Stage', escapeHtml(c.case_stage || 'Not set yet')],
                 ['Case type', escapeHtml(c.case_type || 'General')],
                 ['Lead lawyer', c.lead_lawyer ? 'Atty. ' + escapeHtml(c.lead_lawyer) : 'Not assigned yet'],
                 c.case_number ? ['Case number', '#' + escapeHtml(c.case_number)] : null,
@@ -1864,6 +1958,7 @@
             else if (tab === 'documents') renderDocumentsTab();
             else if (tab === 'appointments') renderAppointmentsTab();
             else renderMessagesTab();
+            paintUnread();
         }
 
         if (window.JuriSyncSound) {

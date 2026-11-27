@@ -118,6 +118,7 @@ let currentYear = new Date().getFullYear();
 let globalUserRole = '';
 let globalUserName = '';
 let globalRoleName = '';
+let calendarFilter = 'all';
 
 const TOAST_ICONS = {
     success: 'fa-circle-check',
@@ -615,18 +616,18 @@ function showMfaOverlay(innerHtml) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.style.zIndex = '10001';
-    overlay.style.background = '#0f172a';
+    overlay.style.background = '#101b2d';
     overlay.innerHTML = `<div style="width: 90%; max-width: 420px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); max-height: 92vh; overflow-y: auto;">${innerHtml}</div>`;
     document.body.appendChild(overlay);
     return overlay;
 }
 
 const MFA_CODE_INPUT =
-    'width:100%; box-sizing:border-box; padding:12px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit; font-size:20px; letter-spacing:6px; text-align:center; margin-bottom:10px;';
+    'width:100%; box-sizing:border-box; padding:12px; border:1px solid #d5cfc2; border-radius:6px; font-family:inherit; font-size:20px; letter-spacing:6px; text-align:center; margin-bottom:10px;';
 const MFA_PRIMARY_BTN =
-    'width:100%; padding:12px; background:#0f172a; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;';
+    'width:100%; padding:12px; background:#101b2d; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;';
 const MFA_SECONDARY_BTN =
-    'width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e2e8f0; border-radius:6px; font-weight:600; cursor:pointer; color:#475569;';
+    'width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e5e1d8; border-radius:6px; font-weight:600; cursor:pointer; color:#4f5b6d;';
 
 async function promptMfaEnroll() {
     try {
@@ -644,18 +645,18 @@ async function promptMfaEnroll() {
 
     return new Promise((resolve) => {
         const overlay = showMfaOverlay(`
-                <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;">Set up two-factor authentication</h2>
+                <h2 style="font-size: 20px; font-weight: 700; color: #252d3a; margin: 0 0 6px 0;">Set up two-factor authentication</h2>
                 <p style="color: #64748b; font-size: 13px; margin: 0 0 16px 0;">Staff accounts require an authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password).</p>
-                <ol style="color:#334155; font-size:13px; margin:0 0 14px 18px; line-height:1.6;">
+                <ol style="color:#3b4656; font-size:13px; margin:0 0 14px 18px; line-height:1.6;">
                     <li>Scan this QR code with your authenticator app.</li>
                     <li>Enter the 6-digit code the app shows.</li>
                 </ol>
                 <div style="text-align:center; margin-bottom:10px;"><img id="mfa-qr" alt="Authenticator QR code" style="width:180px; height:180px;"></div>
                 <p style="font-size:12px; color:#64748b; margin:0 0 4px 0; text-align:center;">Can't scan? Enter this key manually:</p>
-                <p id="mfa-secret" style="font-size:12px; font-family:monospace; word-break:break-all; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px; margin:0 0 16px 0; text-align:center; user-select:all;"></p>
+                <p id="mfa-secret" style="font-size:12px; font-family:monospace; word-break:break-all; background:#f7f5f0; border:1px solid #e5e1d8; border-radius:6px; padding:8px; margin:0 0 16px 0; text-align:center; user-select:all;"></p>
                 <form id="mfa-form" autocomplete="off">
                     <input type="text" id="mfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="${MFA_CODE_INPUT}">
-                    <div id="mfa-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+                    <div id="mfa-error" style="color:#d64545; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
                     <button type="submit" id="mfa-submit" style="${MFA_PRIMARY_BTN}">Verify and enable</button>
                 </form>
                 <button type="button" id="mfa-logout" style="${MFA_SECONDARY_BTN}">Log out</button>
@@ -704,11 +705,11 @@ async function promptMfaVerify() {
 
     return new Promise((resolve) => {
         const overlay = showMfaOverlay(`
-                <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;">Two-factor verification</h2>
+                <h2 style="font-size: 20px; font-weight: 700; color: #252d3a; margin: 0 0 6px 0;">Two-factor verification</h2>
                 <p style="color: #64748b; font-size: 13px; margin: 0 0 18px 0;">Enter the 6-digit code from your authenticator app to continue.</p>
                 <form id="mfa-form" autocomplete="off">
                     <input type="text" id="mfa-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="${MFA_CODE_INPUT}">
-                    <div id="mfa-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+                    <div id="mfa-error" style="color:#d64545; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
                     <button type="submit" id="mfa-submit" style="${MFA_PRIMARY_BTN}">Verify</button>
                 </form>
                 <button type="button" id="mfa-logout" style="${MFA_SECONDARY_BTN}">Log out</button>
@@ -771,17 +772,17 @@ function promptForcedPasswordChange() {
         overlay.style.zIndex = '10000';
         overlay.innerHTML = `
                 <div style="width: 90%; max-width: 420px; padding: 25px 30px; background: #ffffff; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
-                    <h2 style="font-size: 20px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;">Set a new password</h2>
+                    <h2 style="font-size: 20px; font-weight: 700; color: #252d3a; margin: 0 0 6px 0;">Set a new password</h2>
                     <p style="color: #64748b; font-size: 13px; margin: 0 0 18px 0;">Your account was created with a temporary password. Choose your own to continue.</p>
                     <form id="force-pw-form" autocomplete="off">
-                        <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">New password</label>
-                        <input type="password" id="force-pw-1" autocomplete="new-password" placeholder="Min. 8 characters, with a letter and a number" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:14px; font-family:inherit;">
-                        <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Confirm password</label>
-                        <input type="password" id="force-pw-2" autocomplete="new-password" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:10px; font-family:inherit;">
-                        <div id="force-pw-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
-                        <button type="submit" id="force-pw-submit" style="width:100%; padding:12px; background:#0f172a; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Save password</button>
+                        <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">New password</label>
+                        <input type="password" id="force-pw-1" autocomplete="new-password" placeholder="Min. 8 characters, with a letter and a number" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; margin-bottom:14px; font-family:inherit;">
+                        <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Confirm password</label>
+                        <input type="password" id="force-pw-2" autocomplete="new-password" style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; margin-bottom:10px; font-family:inherit;">
+                        <div id="force-pw-error" style="color:#d64545; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+                        <button type="submit" id="force-pw-submit" style="width:100%; padding:12px; background:#101b2d; color:white; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Save password</button>
                     </form>
-                    <button type="button" id="force-pw-logout" style="width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e2e8f0; border-radius:6px; font-weight:600; cursor:pointer; color:#475569;">Log out</button>
+                    <button type="button" id="force-pw-logout" style="width:100%; margin-top:10px; padding:10px; background:white; border:1px solid #e5e1d8; border-radius:6px; font-weight:600; cursor:pointer; color:#4f5b6d;">Log out</button>
                 </div>`;
         document.body.appendChild(overlay);
 
@@ -1810,10 +1811,10 @@ async function renderDashboardContent() {
 
                 if (diffDays === 0) {
                     timeframeLabel.innerText = 'Today';
-                    timeframeLabel.style.color = '#ef4444';
+                    timeframeLabel.style.color = '#d64545';
                 } else if (diffDays === 1) {
                     timeframeLabel.innerText = 'Tomorrow';
-                    timeframeLabel.style.color = '#f97316';
+                    timeframeLabel.style.color = '#d69b2d';
                 } else {
                     timeframeLabel.innerText = `In ${diffDays} days`;
                     timeframeLabel.style.color = 'var(--text-muted)';
@@ -1829,17 +1830,17 @@ async function renderDashboardContent() {
                           : 'Unassigned';
                     const clientName = d.cases?.clients?.client_name || 'No Client';
                     const isGeneralBadge = d.is_general
-                        ? '<span style="background:#dbeafe; color:#1d4ed8; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">Firm-wide</span>'
+                        ? '<span style="background:#d7e5f6; color:#285791; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">Firm-wide</span>'
                         : '';
                     const priorityBadge =
                         d.priority === 'high'
-                            ? '<span style="background:#fee2e2; color:#ef4444; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">High</span>'
+                            ? '<span style="background:#f9e1e1; color:#d64545; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px;">High</span>'
                             : '';
                     const statusInfo = getEventStatusInfo(d.start_date, d.end_date);
                     const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:12px; padding:3px 8px; border-radius:10px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:3px;"></i>${statusInfo.label}</span>`;
 
                     return `
-                        <div style="background:#fff; border:1px solid #e2e8f0; border-left:4px solid ${statusInfo.color}; padding:18px 20px; border-radius:12px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
+                        <div style="background:#fff; border:1px solid #e5e1d8; border-left:4px solid ${statusInfo.color}; padding:18px 20px; border-radius:12px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; ${statusInfo.label === 'Completed' ? 'opacity:0.65;' : ''}">
                             <div>
                                 <h4 style="font-size:15px;">
                                     ${escapeHtml(d.title || 'Untitled Event')} 
@@ -1852,7 +1853,7 @@ async function renderDashboardContent() {
                                     <i class="fa-regular fa-calendar"></i> ${formatDate(d.start_date)} at ${formatEventRange(d.start_date, d.end_date)}
                                 </div>
                             </div>
-                            <button style="padding:10px 18px; border:1px solid #e2e8f0; background:white; border-radius:10px; cursor:pointer; font-weight:600;" onclick="document.querySelector('.nav-links li[data-target=\\'calendar-view\\']').click()">
+                            <button style="padding:10px 18px; border:1px solid #e5e1d8; background:white; border-radius:10px; cursor:pointer; font-weight:600;" onclick="document.querySelector('.nav-links li[data-target=\\'calendar-view\\']').click()">
                                 View
                             </button>
                         </div>
@@ -1921,6 +1922,34 @@ function setupCalendarControls() {
             renderScheduleSummaryWidget();
         });
     }
+
+    const filterBar = document.getElementById('calendar-filters');
+    if (filterBar) {
+        filterBar.addEventListener('click', (e) => {
+            const chip = e.target.closest('[data-calfilter]');
+            if (!chip) return;
+            calendarFilter = chip.getAttribute('data-calfilter');
+            filterBar.querySelectorAll('[data-calfilter]').forEach((el) => {
+                const on = el === chip;
+                el.classList.toggle('active', on);
+                el.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            generateCalendarGrid();
+        });
+    }
+}
+
+const CALENDAR_FILTER_PATTERNS = {
+    hearing: /hearing|trial|arraignment|pre-?trial|court/i,
+    appointment: /appointment|consultation|meeting|conference|interview/i
+};
+
+function eventMatchesCalendarFilter(ev) {
+    if (calendarFilter === 'all') return true;
+    if (calendarFilter === 'general') return !!ev.is_general;
+    if (calendarFilter === 'high') return ev.priority === 'high';
+    const pattern = CALENDAR_FILTER_PATTERNS[calendarFilter];
+    return pattern ? pattern.test(ev.title || '') : true;
 }
 
 async function generateCalendarGrid() {
@@ -1959,7 +1988,7 @@ async function generateCalendarGrid() {
 
     const eventsByDay = {};
     if (calendarEvents) {
-        calendarEvents.forEach((event) => {
+        calendarEvents.filter(eventMatchesCalendarFilter).forEach((event) => {
             const day = new Date(event.start_date).getDate();
             if (!eventsByDay[day]) eventsByDay[day] = [];
             eventsByDay[day].push(event);
@@ -2066,7 +2095,7 @@ function setupStatDetailsModal() {
     });
 }
 
-const SD_COLORS = ['#2563eb', '#7c3aed', '#0d9488', '#d97706', '#db2777', '#4f46e5'];
+const SD_COLORS = ['#2f65ad', '#3d5a80', '#16835d', '#b9811f', '#a83030', '#3d5a80'];
 
 function sdAvatar(name, url) {
     const clean = String(name || '').replace(/^Atty\.?\s*/i, '').trim();
@@ -2326,10 +2355,10 @@ function getEventStatusInfo(startDateISO, endDateISO) {
     const end = getEventEndTime(startDateISO, endDateISO);
     const now = new Date();
 
-    if (now >= end) return { label: 'Completed', color: '#16a34a', bg: '#dcfce7', icon: 'fa-circle-check' };
+    if (now >= end) return { label: 'Completed', color: '#16835d', bg: '#dff1e9', icon: 'fa-circle-check' };
     if (now >= start && now < end)
-        return { label: 'Ongoing', color: '#d97706', bg: '#fef3c7', icon: 'fa-hourglass-half' };
-    return { label: 'Upcoming', color: '#2563eb', bg: '#dbeafe', icon: 'fa-clock' };
+        return { label: 'Ongoing', color: '#b9811f', bg: '#f8edd2', icon: 'fa-hourglass-half' };
+    return { label: 'Upcoming', color: '#2f65ad', bg: '#d7e5f6', icon: 'fa-clock' };
 }
 
 window.__eventResponses = window.__eventResponses || {};
@@ -2537,22 +2566,22 @@ function buildEventDetailCard(ev) {
     const clientName = ev.cases?.clients?.client_name || 'No Client';
     const statusInfo = getEventStatusInfo(ev.start_date, ev.end_date);
     const isDone = statusInfo.label === 'Completed';
-    const borderColor = ev.is_conflict ? '#ef4444' : ev.is_general ? '#8b5cf6' : '#3b82f6';
-    const bgColor = ev.is_conflict ? '#fef2f2' : ev.is_general ? '#f5f3ff' : '#f8fafc';
+    const borderColor = ev.is_conflict ? '#d64545' : ev.is_general ? '#3d5a80' : '#3976c5';
+    const bgColor = ev.is_conflict ? '#fbeeee' : ev.is_general ? '#f5f3ff' : '#f7f5f0';
     const conflictStyle = `border-left: 4px solid ${borderColor}; background: ${bgColor}; ${isDone ? 'opacity: 0.65;' : ''}`;
     const priorityBadge = ev.priority === 'high' ? '<span class="badge-pill bg-red"><i class="fa-solid fa-star"></i> High Priority</span>' : '';
     const generalBadge = ev.is_general
-        ? '<span style="background:#ede9fe; color:#7c3aed; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>'
+        ? '<span style="background:#e6ecf4; color:#3d5a80; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px;">Firm-wide</span>'
         : '';
     const statusBadge = `<span style="background:${statusInfo.bg}; color:${statusInfo.color}; font-size:12px; padding:2px 10px; border-radius:99px; margin-left:8px; font-weight:600;"><i class="fa-solid ${statusInfo.icon}" style="margin-right:4px;"></i>${statusInfo.label}</span>`;
 
     let caseDetailsHtml = '';
     if (ev.cases) {
         caseDetailsHtml = `
-                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 12px;">
+                <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e1d8; font-size: 12px;">
                     <div style="display:flex; gap: 15px; margin-bottom: 6px;">
-                        <span style="color:#475569;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
-                        <span style="color:#475569;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
+                        <span style="color:#4f5b6d;"><strong>Case No:</strong> ${escapeHtml(ev.cases.case_number || 'N/A')}</span>
+                        <span style="color:#4f5b6d;"><strong>Type:</strong> ${escapeHtml(ev.cases.case_type || 'N/A')}</span>
                     </div>
                     <p style="color:#64748b; margin:0; line-height: 1.4;"><em>"${escapeHtml(ev.cases.case_description || 'No description provided.')}"</em></p>
                 </div>
@@ -2563,7 +2592,7 @@ function buildEventDetailCard(ev) {
     if (ev.documents) {
         attachmentHtml = `
                 <div style="margin-top: 10px;">
-                    <a href="#" data-doc-path="${escapeHtml(ev.documents.file_path || '')}" data-doc-title="${escapeHtml(ev.documents.title || '')}" style="font-size:12px; color:#3b82f6; text-decoration:none;">
+                    <a href="#" data-doc-path="${escapeHtml(ev.documents.file_path || '')}" data-doc-title="${escapeHtml(ev.documents.title || '')}" style="font-size:12px; color:#3976c5; text-decoration:none;">
                         <i class="fa-solid fa-paperclip"></i> ${escapeHtml(ev.documents.title)}
                     </a>
                 </div>
@@ -2578,12 +2607,12 @@ function buildEventDetailCard(ev) {
     const rsvpHtml = buildRsvpHtml(ev, statusInfo);
 
     return `
-            <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; margin-bottom:10px;">
+            <div style="${conflictStyle} border-radius: 8px; padding: 15px; border-top: 1px solid #e5e1d8; border-right: 1px solid #e5e1d8; border-bottom: 1px solid #e5e1d8; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 8px;">
-                    <h4 style="margin:0; font-size:16px; color:#0f172a;">${escapeHtml(ev.title)} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
-                    <span style="font-weight:600; color:#3b82f6; font-size:14px;">${formatEventRange(ev.start_date, ev.end_date)}</span>
+                    <h4 style="margin:0; font-size:16px; color:#101b2d;">${escapeHtml(ev.title)} ${priorityBadge} ${generalBadge} ${statusBadge}</h4>
+                    <span style="font-weight:600; color:#3976c5; font-size:14px;">${formatEventRange(ev.start_date, ev.end_date)}</span>
                 </div>
-                <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#475569;">
+                <div style="display:flex; flex-direction:column; gap:6px; font-size:13px; color:#4f5b6d;">
                     <span><i class="fa-solid fa-location-dot" style="width:16px; color:#64748b;"></i> ${escapeHtml(ev.location || 'Office')}</span>
                     <span><i class="fa-solid fa-user" style="width:16px; color:#64748b;"></i> Client: <strong>${escapeHtml(clientName)}</strong></span>
                     <span><i class="fa-solid fa-gavel" style="width:16px; color:#64748b;"></i> ${ev.is_general ? '<strong>All Lawyers</strong>' : `Atty. ${escapeHtml(lawyerName)}`}</span>
@@ -3209,8 +3238,8 @@ async function renderScheduleSummaryWidget() {
             const rows = events
                 .map(
                     (ev) => `
-                    <div style="padding:13px 0; border-bottom:1px solid #f1f5f9;">
-                        <div style="font-size:14.5px; font-weight:600; color:#1e293b;">${escapeHtml(ev.title)}</div>
+                    <div style="padding:13px 0; border-bottom:1px solid #eeebe3;">
+                        <div style="font-size:14.5px; font-weight:600; color:#252d3a;">${escapeHtml(ev.title)}</div>
                         <div style="font-size:12.5px; color:#64748b; margin-top:3px;">${escapeHtml(formatDate(ev.start_date))} &middot; ${escapeHtml(timeRange(ev))}</div>
                     </div>
                 `
@@ -3232,9 +3261,9 @@ async function renderScheduleSummaryWidget() {
                       : 'Unassigned';
                 return `
                     <tr>
-                        <td style="padding:13px 8px; border-bottom:1px solid #e2e8f0; line-height:1.45; font-weight:600; color:#1e293b; vertical-align:top;">${escapeHtml(lawyerName)}</td>
-                        <td style="padding:13px 8px; border-bottom:1px solid #e2e8f0; line-height:1.45; color:#475569; white-space:nowrap; vertical-align:top;">${escapeHtml(formatDate(ev.start_date))}<br><span style="color:#64748b;">${escapeHtml(timeRange(ev))}</span></td>
-                        <td style="padding:13px 8px; border-bottom:1px solid #e2e8f0; line-height:1.45; color:#334155; vertical-align:top;">${escapeHtml(ev.title)}</td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #e5e1d8; line-height:1.45; font-weight:600; color:#252d3a; vertical-align:top;">${escapeHtml(lawyerName)}</td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #e5e1d8; line-height:1.45; color:#4f5b6d; white-space:nowrap; vertical-align:top;">${escapeHtml(formatDate(ev.start_date))}<br><span style="color:#64748b;">${escapeHtml(timeRange(ev))}</span></td>
+                        <td style="padding:13px 8px; border-bottom:1px solid #e5e1d8; line-height:1.45; color:#3b4656; vertical-align:top;">${escapeHtml(ev.title)}</td>
                     </tr>
                 `;
             })
@@ -3245,10 +3274,10 @@ async function renderScheduleSummaryWidget() {
                 <div style="overflow-x:auto;">
                     <table style="width:100%; border-collapse:collapse; font-size:13.5px; text-align:left;">
                         <thead>
-                            <tr style="background:#f8fafc;">
-                                <th style="padding:10px 8px; border-bottom:2px solid #cbd5e1; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Lawyer</th>
-                                <th style="padding:10px 8px; border-bottom:2px solid #cbd5e1; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Date &amp; Time</th>
-                                <th style="padding:10px 8px; border-bottom:2px solid #cbd5e1; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#475569;">Event</th>
+                            <tr style="background:#f7f5f0;">
+                                <th style="padding:10px 8px; border-bottom:2px solid #d5cfc2; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Lawyer</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #d5cfc2; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Date &amp; Time</th>
+                                <th style="padding:10px 8px; border-bottom:2px solid #d5cfc2; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#4f5b6d;">Event</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
@@ -3321,7 +3350,7 @@ async function renderLawyerStatusWidget() {
         lawyerList.innerHTML = availableLawyers
             .map(
                 (l) => `
-                    <li style="padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:13px;">
+                    <li style="padding:10px 0; border-bottom:1px solid #eeebe3; font-size:13px;">
                         <span>Atty. ${escapeHtml(l.full_name || 'Unknown')}</span>
                     </li>
                 `
@@ -3407,7 +3436,7 @@ function showIndexProgress(message) {
         el = document.createElement('div');
         el.id = 'index-progress';
         el.style.cssText =
-            'position:fixed; right:20px; bottom:20px; z-index:10002; background:#0f172a; color:#ffffff; padding:12px 16px; border-radius:10px; font-size:12px; box-shadow:0 8px 20px rgba(0,0,0,0.2); max-width:320px;';
+            'position:fixed; right:20px; bottom:20px; z-index:10002; background:#101b2d; color:#ffffff; padding:12px 16px; border-radius:10px; font-size:12px; box-shadow:0 8px 20px rgba(0,0,0,0.2); max-width:320px;';
         document.body.appendChild(el);
     }
     el.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${escapeHtml(message)}`;
@@ -3619,11 +3648,11 @@ function caseOptionsHtml(cases, selectedId) {
 }
 
 function docFieldLabel(text) {
-    return `<label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">${text}</label>`;
+    return `<label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">${text}</label>`;
 }
 
 const DOC_INPUT_STYLE =
-    'width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit; background:#f8fafc; margin-bottom:14px;';
+    'width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; font-family:inherit; background:#f7f5f0; margin-bottom:14px;';
 
 window.openEditDocumentModal = async function (docId) {
     const doc = (window.__docsRegistry || {})[docId];
@@ -3649,7 +3678,7 @@ window.openEditDocumentModal = async function (docId) {
                 <input type="text" id="ed-tags" value="${escapeHtml(doc.tags || '')}" placeholder="e.g., motion, criminal, dismissal" style="${DOC_INPUT_STYLE}">
                 ${docFieldLabel('Case')}
                 <select id="ed-case" style="${DOC_INPUT_STYLE}">${caseOptionsHtml(cases, doc.case_id)}</select>
-                ${modalButtonsHtml('Save changes', '#0f172a')}
+                ${modalButtonsHtml('Save changes', '#101b2d')}
             `;
 
         const catSel = modal.body.querySelector('#ed-category');
@@ -3711,12 +3740,12 @@ window.openNewVersionModal = function (docId) {
         'Upload a new version',
         escapeHtml(doc.title || ''),
         `
-            <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">The current file (version ${doc.version_no || 1}) is kept in the version history. You can restore it at any time.</p>
+            <p style="font-size:13px; color:#4f5b6d; margin:0 0 14px 0;">The current file (version ${doc.version_no || 1}) is kept in the version history. You can restore it at any time.</p>
             ${docFieldLabel('New file')}
             <input type="file" id="nv-file" accept=".pdf,.docx,.jpg,.jpeg,.png,.txt" style="${DOC_INPUT_STYLE}">
             ${docFieldLabel('What changed? <span style="font-weight:400; color:#64748b;">(optional)</span>')}
             <input type="text" id="nv-note" maxlength="200" placeholder="e.g., Signed copy from the client" style="${DOC_INPUT_STYLE}">
-            ${modalButtonsHtml('Upload version', '#0f172a')}
+            ${modalButtonsHtml('Upload version', '#101b2d')}
         `
     );
 
@@ -3828,13 +3857,13 @@ window.openDocumentHistory = async function (docId) {
             items
                 .map(
                     (v) => `
-                <div style="border:1px solid ${v.current ? '#bfdbfe' : '#e2e8f0'}; background:${v.current ? '#eff6ff' : '#ffffff'}; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
+                <div style="border:1px solid ${v.current ? '#d7e5f6' : '#e5e1d8'}; background:${v.current ? '#eaf1fa' : '#ffffff'}; border-radius:10px; padding:12px 14px; margin-bottom:10px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                        <strong style="font-size:13px; color:#0f172a;">Version ${v.version_no}${v.current ? ' <span style="background:#dbeafe; color:#1d4ed8; font-size:12px; padding:2px 8px; border-radius:99px; margin-left:6px;">Current</span>' : ''}</strong>
+                        <strong style="font-size:13px; color:#101b2d;">Version ${v.version_no}${v.current ? ' <span style="background:#d7e5f6; color:#285791; font-size:12px; padding:2px 8px; border-radius:99px; margin-left:6px;">Current</span>' : ''}</strong>
                         <span style="font-size:12px; color:#64748b;">${escapeHtml(v.size || '')}</span>
                     </div>
                     <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">${escapeHtml(formatStamp(v.uploaded_at))} by ${escapeHtml(v.by)}</p>
-                    ${v.note ? `<p style="font-size:12px; color:#334155; margin:6px 0 0 0;">${escapeHtml(v.note)}</p>` : ''}
+                    ${v.note ? `<p style="font-size:12px; color:#3b4656; margin:6px 0 0 0;">${escapeHtml(v.note)}</p>` : ''}
                     <div style="display:flex; gap:8px; margin-top:10px;">
                         ${
                             v.file_path
@@ -3843,7 +3872,7 @@ window.openDocumentHistory = async function (docId) {
                             <button type="button" data-vh-action="download" data-path="${escapeHtml(v.file_path)}" data-title="${escapeHtml(v.title || 'document')}" class="doc-small-btn"><i class="fa-solid fa-download"></i> Download</button>`
                                 : ''
                         }
-                        ${!v.current && canVersion ? `<button type="button" data-vh-action="restore" data-id="${escapeHtml(v.id)}" data-no="${v.version_no}" class="doc-small-btn" style="color:#0ea5e9;"><i class="fa-solid fa-rotate-left"></i> Restore</button>` : ''}
+                        ${!v.current && canVersion ? `<button type="button" data-vh-action="restore" data-id="${escapeHtml(v.id)}" data-no="${v.version_no}" class="doc-small-btn" style="color:#3976c5;"><i class="fa-solid fa-rotate-left"></i> Restore</button>` : ''}
                     </div>
                 </div>
             `
@@ -4089,19 +4118,19 @@ async function confirmDuplicateUpload(file, title) {
 
 function getCategoryColor(type) {
     const t = (type || '').toLowerCase();
-    if (t === 'motion' || t === 'motions') return { bg: '#e0e7ff', text: '#2563eb' };
-    if (t === 'memoranda') return { bg: '#e0f2fe', text: '#0369a1' };
-    if (t === 'affidavits') return { bg: '#fef3c7', text: '#b45309' };
-    if (t === 'agreements') return { bg: '#ccfbf1', text: '#0f766e' };
-    if (t === 'legal opinions') return { bg: '#ede9fe', text: '#6d28d9' };
-    if (t === 'invoices') return { bg: '#fce7f3', text: '#be185d' };
-    if (t === 'contract' || t === 'contracts') return { bg: '#dcfce7', text: '#16a34a' };
-    if (t === 'pleading' || t === 'pleadings') return { bg: '#f3e8ff', text: '#9333ea' };
-    if (t === 'evidence' || t === 'documentary evidence') return { bg: '#fef08a', text: '#ea580c' };
-    if (t === 'order') return { bg: '#fee2e2', text: '#dc2626' };
-    if (t === 'transcript') return { bg: '#ffedd5', text: '#c2410c' };
-    if (t === 'estate') return { bg: '#fae8ff', text: '#a855f7' };
-    return { bg: '#f1f5f9', text: '#475569' };
+    if (t === 'motion' || t === 'motions') return { bg: '#e0e7ff', text: '#2f65ad' };
+    if (t === 'memoranda') return { bg: '#e0f2fe', text: '#2f65ad' };
+    if (t === 'affidavits') return { bg: '#f8edd2', text: '#a2711a' };
+    if (t === 'agreements') return { bg: '#dff1e9', text: '#116b4b' };
+    if (t === 'legal opinions') return { bg: '#e6ecf4', text: '#2f4a6b' };
+    if (t === 'invoices') return { bg: '#f9e1e1', text: '#a83030' };
+    if (t === 'contract' || t === 'contracts') return { bg: '#dff1e9', text: '#16835d' };
+    if (t === 'pleading' || t === 'pleadings') return { bg: '#f3e8ff', text: '#3d5a80' };
+    if (t === 'evidence' || t === 'documentary evidence') return { bg: '#f1dba0', text: '#b9811f' };
+    if (t === 'order') return { bg: '#f9e1e1', text: '#c23a3a' };
+    if (t === 'transcript') return { bg: '#f8edd2', text: '#b9811f' };
+    if (t === 'estate') return { bg: '#eef2f8', text: '#3d5a80' };
+    return { bg: '#eeebe3', text: '#4f5b6d' };
 }
 
 function generateTagsHtml(tagsStr) {
@@ -4113,7 +4142,7 @@ function generateTagsHtml(tagsStr) {
     return tags
         .map(
             (t) =>
-                `<span style="border: 1px solid #e2e8f0; padding: 2px 10px; border-radius: 99px; font-size: 12px; color: #475569; font-weight: 500;">${escapeHtml(t)}</span>`
+                `<span style="border: 1px solid #e5e1d8; padding: 2px 10px; border-radius: 99px; font-size: 12px; color: #4f5b6d; font-weight: 500;">${escapeHtml(t)}</span>`
         )
         .join('');
 }
@@ -4319,32 +4348,32 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 let chip = '';
                 if (doc.ocr_status === 'done') {
                     chip =
-                        '<span style="background:#dcfce7; color:#16a34a; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-magnifying-glass"></i> Searchable</span>';
+                        '<span style="background:#dff1e9; color:#16835d; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-magnifying-glass"></i> Searchable</span>';
                 } else if (doc.ocr_status === 'processing' && !staleProcessing) {
                     chip =
-                        '<span style="background:#dbeafe; color:#1d4ed8; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-spinner fa-spin"></i> Indexing</span>';
+                        '<span style="background:#d7e5f6; color:#285791; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;"><i class="fa-solid fa-spinner fa-spin"></i> Indexing</span>';
                 } else if (doc.ocr_status === 'failed') {
                     chip =
-                        '<span style="background:#fee2e2; color:#dc2626; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Index failed</span>';
+                        '<span style="background:#f9e1e1; color:#c23a3a; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Index failed</span>';
                 } else if (supported) {
                     chip =
-                        '<span style="background:#f1f5f9; color:#64748b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Not indexed</span>';
+                        '<span style="background:#eeebe3; color:#64748b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:600;">Not indexed</span>';
                 }
 
                 const versionBadge =
                     (doc.version_no || 1) > 1
-                        ? `<span style="background:#ede9fe; color:#6d28d9; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:700;">v${doc.version_no}</span>`
+                        ? `<span style="background:#e6ecf4; color:#2f4a6b; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:700;">v${doc.version_no}</span>`
                         : '';
 
                 const hit = contentHits[doc.id];
                 const snippetHtml =
                     hit && hit.includes('<<')
-                        ? `<div style="font-size:12px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 10px; margin-bottom:14px; line-height:1.5;"><i class="fa-solid fa-magnifying-glass" style="color:#f59e0b; margin-right:6px;"></i>…${escapeHtml(
+                        ? `<div style="font-size:12px; color:#4f5b6d; background:#fbf4e3; border:1px solid #f1dba0; border-radius:8px; padding:8px 10px; margin-bottom:14px; line-height:1.5;"><i class="fa-solid fa-magnifying-glass" style="color:#d69b2d; margin-right:6px;"></i>…${escapeHtml(
                               hit
                           )
                               .replace(
                                   /&lt;&lt;/g,
-                                  '<mark style="background:#fde047; padding:0 2px; border-radius:2px;">'
+                                  '<mark style="background:#e8b552; padding:0 2px; border-radius:2px;">'
                               )
                               .replace(/&gt;&gt;/g, '</mark>')}…</div>`
                         : '';
@@ -4378,13 +4407,13 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                 const typeColor = getCategoryColor(doc.type);
 
                 return `
-            <div class="doc-card${isClientDoc ? ' doc-card-client' : ''}${isNewClientDoc ? ' doc-card-new' : ''}" data-doc-id="${escapeHtml(String(doc.id))}" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-sizing: border-box;">
+            <div class="doc-card${isClientDoc ? ' doc-card-client' : ''}${isNewClientDoc ? ' doc-card-new' : ''}" data-doc-id="${escapeHtml(String(doc.id))}" style="background: #ffffff; border: 1px solid #e5e1d8; border-radius: 12px; padding: 20px; box-sizing: border-box;">
                 <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-start;">
-                    <div style="background: #eff6ff; color: #3b82f6; width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <div style="background: #eaf1fa; color: #3976c5; width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                         <i class="fa-solid fa-file-lines" style="font-size: 18px;"></i>
                     </div>
                     <div>
-                        <h4 style="font-size: 14px; font-weight: 600; color: #0f172a; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
+                        <h4 style="font-size: 14px; font-weight: 600; color: #101b2d; margin: 0 0 6px 0; word-break: break-word;">${escapeHtml(doc.title || 'Untitled Document')}</h4>
                         <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
                             ${isClientDoc ? '' : `<span style="background: ${typeColor.bg}; color: ${typeColor.text}; padding: 3px 8px; border-radius: 12px; font-size:12px; font-weight: 600; text-transform: lowercase;">${escapeHtml(doc.type || 'document')}</span>`}
                             <span style="font-size: 12px; color: #64748b;">${escapeHtml(doc.size || '0 KB')}</span>
@@ -4397,7 +4426,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
 
                 ${snippetHtml}
 
-                <div style="font-size: 12px; color: #475569; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="font-size: 12px; color: #4f5b6d; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <i class="fa-solid fa-tag" style="color: #64748b; width: 14px; text-align: center;"></i>
                         ${escapeHtml(doc.cases?.case_number || 'No Case Number')}
@@ -4416,7 +4445,7 @@ async function renderDocumentList(searchQuery = '', filterType = 'all') {
                     ${generateTagsHtml(isClientDoc ? String(doc.tags || '').split(',').map((t) => t.trim()).filter((t) => t && t.toLowerCase() !== 'client upload').join(', ') : doc.tags)}
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #f1f5f9; padding-top: 15px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid #eeebe3; padding-top: 15px;">
                     <button type="button" class="doc-action-btn" onclick="${isNewClientDoc ? `markClientDocReviewed(${idArg}, true); ` : ''}${onBtnClick}">
                         <i class="fa-regular fa-eye"></i> View
                     </button>
@@ -4756,12 +4785,12 @@ async function renderRecentDocumentsInSchedule() {
             list.innerHTML = documents
                 .map(
                     (doc) => `
-                    <div style="background:#f8fafc; border-radius:10px; padding:15px; margin-bottom:12px; display:flex; align-items:center; gap:15px;">
-                        <div style="background:#eff6ff; color:#3b82f6; width:40px; height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center;">
+                    <div style="background:#f7f5f0; border-radius:10px; padding:15px; margin-bottom:12px; display:flex; align-items:center; gap:15px;">
+                        <div style="background:#eaf1fa; color:#3976c5; width:40px; height:40px; border-radius:8px; display:flex; align-items:center; justify-content:center;">
                             <i class="fa-solid fa-file-lines"></i>
                         </div>
                         <div>
-                            <h4 style="font-size:13px; color:#1e293b; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
+                            <h4 style="font-size:13px; color:#252d3a; margin-bottom:4px;">${escapeHtml(doc.title)}</h4>
                             <p style="font-size:12px; color:#64748b; text-transform:capitalize;">${escapeHtml(doc.type || 'Doc')}</p>
                         </div>
                     </div>
@@ -4795,15 +4824,15 @@ async function renderMyCasesTab() {
         if (cases && cases.length > 0) {
             let html = '<h3 style="margin-bottom: 20px; font-size: 16px;">My Active Cases</h3>';
             cases.forEach((c) => {
-                const statusColor = c.status === 'active' ? '#3b82f6' : '#64748b';
-                const statusBg = c.status === 'active' ? '#eff6ff' : '#f1f5f9';
+                const statusColor = c.status === 'active' ? '#3976c5' : '#64748b';
+                const statusBg = c.status === 'active' ? '#eaf1fa' : '#eeebe3';
 
                 const clientName = c.clients ? c.clients.client_name : 'No Client';
 
                 html += `
-                        <div style="padding: 15px; border: 1px solid #f1f5f9; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #fafbfc;">
+                        <div style="padding: 15px; border: 1px solid #eeebe3; border-radius: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #f7f5f0;">
                             <div>
-                                <h4 style="color: #0f172a; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
+                                <h4 style="color: #101b2d; margin-bottom: 4px; font-size: 14px;">${escapeHtml(c.title)} <span style="color:#64748b; font-weight:normal; font-size:12px;">(${escapeHtml(clientName)})</span></h4>
                                 <p style="color: #64748b; font-size: 12px;"><i class="fa-regular fa-clock"></i> Filed: ${formatDate(c.date_filed || c.created_at)}</p>
                             </div>
                             <span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 10px; border-radius: 99px; font-size:12px; font-weight: bold; text-transform: uppercase;">
@@ -4828,10 +4857,10 @@ function perfBarRow(label, value, max, color) {
     return `
             <div style="margin-bottom:12px;">
                 <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px;">
-                    <span style="color:#475569;">${escapeHtml(label)}</span>
-                    <strong style="color:#0f172a;">${value}</strong>
+                    <span style="color:#4f5b6d;">${escapeHtml(label)}</span>
+                    <strong style="color:#101b2d;">${value}</strong>
                 </div>
-                <div style="background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
+                <div style="background:#eeebe3; height:8px; border-radius:4px; overflow:hidden;">
                     <div style="background:${color}; width:${pct}%; height:100%; border-radius:4px;"></div>
                 </div>
             </div>`;
@@ -4839,7 +4868,7 @@ function perfBarRow(label, value, max, color) {
 
 function perfKpi(label, value, color) {
     return `
-            <div style="flex:1; min-width:140px; background:#f8fafc; border:1px solid #f1f5f9; border-radius:12px; padding:14px 16px;">
+            <div style="flex:1; min-width:140px; background:#f7f5f0; border:1px solid #eeebe3; border-radius:12px; padding:14px 16px;">
                 <div style="font-size:24px; font-weight:800; color:${color};">${value}</div>
                 <div style="font-size:12px; color:#64748b; margin-top:2px;">${escapeHtml(label)}</div>
             </div>`;
@@ -4847,8 +4876,8 @@ function perfKpi(label, value, color) {
 
 function perfPanel(title, bodyHtml) {
     return `
-            <div style="border:1px solid #f1f5f9; border-radius:14px; padding:18px 20px; background:#ffffff;">
-                <h4 style="margin:0 0 14px 0; font-size:13px; color:#0f172a;">${escapeHtml(title)}</h4>
+            <div style="border:1px solid #eeebe3; border-radius:14px; padding:18px 20px; background:#ffffff;">
+                <h4 style="margin:0 0 14px 0; font-size:13px; color:#101b2d;">${escapeHtml(title)}</h4>
                 ${bodyHtml}
             </div>`;
 }
@@ -4871,7 +4900,7 @@ function perfMonthlyChart(months, opened, closed) {
     const dense = months.length > 12;
     const bar = (v, color) => `
             <div style="display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
-                ${dense ? '' : `<span style="font-size:12px; color:#475569; margin-bottom:2px;">${v}</span>`}
+                ${dense ? '' : `<span style="font-size:12px; color:#4f5b6d; margin-bottom:2px;">${v}</span>`}
                 <div title="${v}" style="width:${dense ? 6 : 16}px; height:${Math.max(2, Math.round((v / max) * 100))}px; background:${color}; border-radius:3px 3px 0 0;"></div>
             </div>`;
     const columns = months
@@ -4879,8 +4908,8 @@ function perfMonthlyChart(months, opened, closed) {
             (m) => `
             <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
                 <div style="display:flex; align-items:flex-end; gap:4px;">
-                    ${bar(opened[m.key] || 0, '#3b82f6')}
-                    ${closed ? bar(closed[m.key] || 0, '#22c55e') : ''}
+                    ${bar(opened[m.key] || 0, '#3976c5')}
+                    ${closed ? bar(closed[m.key] || 0, '#16835d') : ''}
                 </div>
                 <span style="font-size:12px; color:#64748b; margin-top:6px; white-space:nowrap;">${escapeHtml(m.label)}</span>
             </div>`
@@ -4888,8 +4917,8 @@ function perfMonthlyChart(months, opened, closed) {
         .join('');
     const legend = `
             <div style="display:flex; gap:14px; margin-top:12px; font-size:12px; color:#64748b;">
-                <span><span style="display:inline-block; width:8px; height:8px; background:#3b82f6; border-radius:2px; margin-right:5px;"></span>Opened</span>
-                ${closed ? '<span><span style="display:inline-block; width:8px; height:8px; background:#22c55e; border-radius:2px; margin-right:5px;"></span>Closed</span>' : ''}
+                <span><span style="display:inline-block; width:8px; height:8px; background:#3976c5; border-radius:2px; margin-right:5px;"></span>Opened</span>
+                ${closed ? '<span><span style="display:inline-block; width:8px; height:8px; background:#16835d; border-radius:2px; margin-right:5px;"></span>Closed</span>' : ''}
             </div>`;
     return `<div style="display:flex; align-items:flex-end; gap:10px; height:150px;">${columns}</div>${legend}`;
 }
@@ -4986,8 +5015,8 @@ function perfValueChart(months, values, color, legendText) {
             const h = has ? Math.max(2, Math.round((v / max) * 100)) : 2;
             return `
             <div style="flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
-                <span style="font-size:12px; color:#475569; margin-bottom:2px;">${shown}</span>
-                <div style="width:70%; max-width:22px; height:${h}px; background:${has ? color : '#e2e8f0'}; border-radius:4px 4px 0 0;"></div>
+                <span style="font-size:12px; color:#4f5b6d; margin-bottom:2px;">${shown}</span>
+                <div style="width:70%; max-width:22px; height:${h}px; background:${has ? color : '#e5e1d8'}; border-radius:4px 4px 0 0;"></div>
                 <span style="font-size:12px; color:#64748b; margin-top:6px; white-space:nowrap;">${escapeHtml(m.label)}</span>
             </div>`;
         })
@@ -5109,11 +5138,11 @@ async function renderPerformanceTab() {
 
         if (isLawyerView) {
             kpis = [
-                perfKpi('My active cases', active.length, '#3b82f6'),
-                perfKpi('My closed cases', closed.length, '#22c55e'),
-                perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#a855f7'),
-                perfKpi('My new clients this month', newClientsThisMonth, '#0ea5e9'),
-                perfKpi('Events in the next 7 days', events.length, '#f97316')
+                perfKpi('My active cases', active.length, '#3976c5'),
+                perfKpi('My closed cases', closed.length, '#16835d'),
+                perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#3d5a80'),
+                perfKpi('My new clients this month', newClientsThisMonth, '#3976c5'),
+                perfKpi('Events in the next 7 days', events.length, '#d69b2d')
             ].join('');
         } else {
             const lawyers = await getActiveLawyersData();
@@ -5123,13 +5152,13 @@ async function renderPerformanceTab() {
             const maxLoad = Math.max(1, ...lawyers.map((l) => (workload[l.id] || {}).active || 0));
 
             kpis = [
-                perfKpi('Active cases', active.length, '#3b82f6'),
-                perfKpi('Closed cases', closed.length, '#22c55e'),
-                perfKpi('Closure rate', closureRate + '%', '#a855f7'),
-                perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#8b5cf6'),
-                perfKpi('New clients this month', newClientsThisMonth, '#0ea5e9'),
-                perfKpi('Avg. active cases per lawyer', avgLoad.toFixed(1), '#f97316'),
-                perfKpi('Active cases without a lawyer', unassigned, unassigned > 0 ? '#ef4444' : '#22c55e')
+                perfKpi('Active cases', active.length, '#3976c5'),
+                perfKpi('Closed cases', closed.length, '#16835d'),
+                perfKpi('Closure rate', closureRate + '%', '#3d5a80'),
+                perfKpi('Avg. days to close', perfFmtDays(avgCloseDays), '#3d5a80'),
+                perfKpi('New clients this month', newClientsThisMonth, '#3976c5'),
+                perfKpi('Avg. active cases per lawyer', avgLoad.toFixed(1), '#d69b2d'),
+                perfKpi('Active cases without a lawyer', unassigned, unassigned > 0 ? '#d64545' : '#16835d')
             ].join('');
 
             const rows = lawyers
@@ -5148,20 +5177,20 @@ async function renderPerformanceTab() {
                           : '';
                     return `
                             <tr>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; font-weight:600; color:#0f172a;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; width:30%;">
+                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; font-weight:600; color:#101b2d;">Atty. ${escapeHtml(l.full_name || 'Unnamed')}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; width:30%;">
                                     <div style="display:flex; align-items:center; gap:10px;">
-                                        <div style="flex:1; background:#f1f5f9; height:8px; border-radius:4px; overflow:hidden;">
-                                            <div style="background:${high ? '#ef4444' : '#3b82f6'}; width:${Math.round((w.active / maxLoad) * 100)}%; height:100%;"></div>
+                                        <div style="flex:1; background:#eeebe3; height:8px; border-radius:4px; overflow:hidden;">
+                                            <div style="background:${high ? '#d64545' : '#3976c5'}; width:${Math.round((w.active / maxLoad) * 100)}%; height:100%;"></div>
                                         </div>
-                                        <strong style="font-size:12px; color:#0f172a; min-width:18px;">${w.active}</strong>
+                                        <strong style="font-size:12px; color:#101b2d; min-width:18px;">${w.active}</strong>
                                     </div>
                                 </td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${w.lead}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${c.closed}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${perfFmtDays(perfAvg(c.days))}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9; color:#475569;">${w.events}</td>
-                                <td style="padding:10px 8px; border-bottom:1px solid #f1f5f9;">${flag}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${w.lead}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${c.closed}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${perfFmtDays(perfAvg(c.days))}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3; color:#4f5b6d;">${w.events}</td>
+                                <td style="padding:10px 8px; border-bottom:1px solid #eeebe3;">${flag}</td>
                             </tr>`;
                 })
                 .join('');
@@ -5192,11 +5221,11 @@ async function renderPerformanceTab() {
 
         const stagePanel = perfPanel(
             'Active cases by stage',
-            CASE_STAGES.map((st) => perfBarRow(st, stageCounts[st], stageMax, '#3b82f6')).join('')
+            CASE_STAGES.map((st) => perfBarRow(st, stageCounts[st], stageMax, '#3976c5')).join('')
         );
         const typePanel = perfPanel(
             'Active cases by type',
-            CASE_TYPES.map((t) => perfBarRow(t, typeCounts[t], typeMax, '#8b5cf6')).join('')
+            CASE_TYPES.map((t) => perfBarRow(t, typeCounts[t], typeMax, '#3d5a80')).join('')
         );
         const monthPanel = perfPanel(
             `Cases opened and closed (${perfRangeTitle()})`,
@@ -5205,13 +5234,13 @@ async function renderPerformanceTab() {
         const closeTimePanel = perfPanel(
             'Average days to close a case, by month closed',
             tracksClosing
-                ? perfValueChart(months, closeDaysByMonth, '#8b5cf6', 'Average days from filing to closing')
+                ? perfValueChart(months, closeDaysByMonth, '#3d5a80', 'Average days from filing to closing')
                 : '<p style="color:#64748b; font-size:13px; margin:0;">Closing dates are not available yet.</p>'
         );
         const clientsPanel = perfPanel(
             isLawyerView ? 'My new clients per month' : 'New clients per month',
             clientDates
-                ? perfValueChart(months, newClientsByMonth, '#0ea5e9', 'New clients')
+                ? perfValueChart(months, newClientsByMonth, '#3976c5', 'New clients')
                 : '<p style="color:#64748b; font-size:13px; margin:0;">Client data could not be loaded.</p>'
         );
 
@@ -5219,7 +5248,7 @@ async function renderPerformanceTab() {
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:18px;">
                     <h3 style="margin:0; font-size:16px;">${isLawyerView ? 'My Performance' : 'Firm Performance'}</h3>
                     <label style="font-size:12px; color:#64748b; display:flex; align-items:center; gap:8px;">Chart range
-                        <select id="perf-range" style="padding:6px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:12px; font-family:inherit; background:#ffffff; color:#0f172a;">
+                        <select id="perf-range" style="padding:6px 10px; border:1px solid #e5e1d8; border-radius:8px; font-size:12px; font-family:inherit; background:#ffffff; color:#101b2d;">
                             ${PERF_RANGES.map((r) => `<option value="${r.value}" ${perfRange === r.value ? 'selected' : ''}>${r.option}</option>`).join('')}
                         </select>
                     </label>
@@ -5261,7 +5290,7 @@ function setNavBadge(target, count) {
         badge = document.createElement('span');
         badge.className = 'nav-badge';
         badge.style.cssText =
-            'margin-left:auto; background:#ef4444; color:#ffffff; font-size:12px; font-weight:700; padding:2px 7px; border-radius:99px;';
+            'margin-left:auto; background:#d64545; color:#ffffff; font-size:12px; font-weight:700; padding:2px 7px; border-radius:99px;';
         nav.appendChild(badge);
     }
     badge.textContent = count;
@@ -5332,8 +5361,7 @@ async function renderAdminAttention() {
         if (pending > 0) {
             items.push({
                 icon: 'fa-user-clock',
-                color: '#f59e0b',
-                bg: '#fffbeb',
+                tone: 'warn',
                 action: 'clients-pending',
                 text: `${pending} client${pending === 1 ? '' : 's'} waiting for approval`,
                 button: admin ? 'Review' : 'View'
@@ -5342,8 +5370,7 @@ async function renderAdminAttention() {
         if (clientsNoLawyer > 0) {
             items.push({
                 icon: 'fa-user-slash',
-                color: '#ef4444',
-                bg: '#fef2f2',
+                tone: 'danger',
                 action: 'clients-unassigned',
                 text: `${clientsNoLawyer} approved client${clientsNoLawyer === 1 ? ' has' : 's have'} no assigned lawyer`,
                 button: admin ? 'Assign' : 'View'
@@ -5352,8 +5379,7 @@ async function renderAdminAttention() {
         if (casesNoLawyer > 0) {
             items.push({
                 icon: 'fa-briefcase',
-                color: '#ef4444',
-                bg: '#fef2f2',
+                tone: 'danger',
                 action: 'cases-unassigned',
                 text: `${casesNoLawyer} active case${casesNoLawyer === 1 ? ' has' : 's have'} no lawyer`,
                 button: 'View cases'
@@ -5362,18 +5388,18 @@ async function renderAdminAttention() {
 
         const body =
             items.length === 0
-                ? `<div style="display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:10px; background:#f0fdf4; color:#16a34a; font-size:13px; font-weight:600;"><i class="fa-regular fa-circle-check"></i> Nothing needs your attention right now.</div>`
-                : items
+                ? `<div class="attn-list"><div class="attn-row is-ok"><span class="attn-text"><i class="fa-regular fa-circle-check"></i> Nothing needs your attention right now.</span></div></div>`
+                : `<div class="attn-list">${items
                       .map(
                           (it) => `
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px; border-radius:10px; background:${it.bg}; margin-bottom:10px;">
-                        <span style="display:flex; align-items:center; gap:10px; font-size:13px; color:#0f172a;">
-                            <i class="fa-solid ${it.icon}" style="color:${it.color};"></i> ${escapeHtml(it.text)}
+                    <div class="attn-row ${it.tone === 'danger' ? 'is-danger' : ''}">
+                        <span class="attn-text">
+                            <i class="fa-solid ${it.icon}"></i> ${escapeHtml(it.text)}
                         </span>
-                        <button type="button" data-attn="${it.action}" style="padding:7px 14px; border:1px solid #e2e8f0; background:#ffffff; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;">${escapeHtml(it.button)}</button>
+                        <button type="button" class="attn-btn" data-attn="${it.action}">${escapeHtml(it.button)}</button>
                     </div>`
                       )
-                      .join('');
+                      .join('')}</div>`;
 
         card.innerHTML = `
                 <div class="card-title-flex">
@@ -5418,28 +5444,33 @@ function setupScheduleButtons() {
 }
 
 const NOTIF_STYLES = {
-    client_pending: { icon: 'fa-solid fa-user-clock', color: '#f59e0b' },
-    client_approved: { icon: 'fa-regular fa-circle-check', color: '#22c55e' },
-    client_rejected: { icon: 'fa-regular fa-circle-xmark', color: '#ef4444' },
-    case_assigned: { icon: 'fa-solid fa-briefcase', color: '#3b82f6' },
-    client_assigned: { icon: 'fa-solid fa-user-tie', color: '#3b82f6' },
-    conflict: { icon: 'fa-solid fa-triangle-exclamation', color: '#ef4444' },
-    event_reminder: { icon: 'fa-regular fa-bell', color: '#a855f7' },
-    client_upload: { icon: 'fa-solid fa-file-arrow-up', color: '#0ea5e9' },
-    appointment_request: { icon: 'fa-solid fa-calendar-plus', color: '#f59e0b' },
-    email_failed: { icon: 'fa-solid fa-triangle-exclamation', color: '#ef4444' }
+    client_pending: { icon: 'fa-solid fa-user-clock', color: '#d69b2d' },
+    client_approved: { icon: 'fa-regular fa-circle-check', color: '#16835d' },
+    client_rejected: { icon: 'fa-regular fa-circle-xmark', color: '#d64545' },
+    case_assigned: { icon: 'fa-solid fa-briefcase', color: '#3976c5' },
+    client_assigned: { icon: 'fa-solid fa-user-tie', color: '#3976c5' },
+    conflict: { icon: 'fa-solid fa-triangle-exclamation', color: '#d64545' },
+    event_reminder: { icon: 'fa-regular fa-bell', color: '#3d5a80' },
+    client_upload: { icon: 'fa-solid fa-file-arrow-up', color: '#3976c5' },
+    appointment_request: { icon: 'fa-solid fa-calendar-plus', color: '#d69b2d' },
+    email_failed: { icon: 'fa-solid fa-triangle-exclamation', color: '#d64545' }
 };
 
 const EMAIL_STATUS = {
-    pending: { label: 'Pending', bg: '#fef3c7', color: '#b45309' },
-    processing: { label: 'Sending', bg: '#dbeafe', color: '#1d4ed8' },
-    sent: { label: 'Sent', bg: '#dcfce7', color: '#16a34a' },
-    failed: { label: 'Failed', bg: '#fee2e2', color: '#dc2626' }
+    pending: { label: 'Pending', bg: '#f8edd2', color: '#a2711a' },
+    processing: { label: 'Sending', bg: '#d7e5f6', color: '#285791' },
+    sent: { label: 'Sent', bg: '#dff1e9', color: '#16835d' },
+    failed: { label: 'Failed', bg: '#f9e1e1', color: '#c23a3a' }
 };
 
 function emailStatusBadge(status) {
     const st = EMAIL_STATUS[status] || EMAIL_STATUS.pending;
     return `<span style="background:${st.bg}; color:${st.color}; font-size:12px; padding:2px 8px; border-radius:99px; font-weight:700; white-space:nowrap;">${st.label}</span>`;
+}
+
+function emailStatusPill(status) {
+    const st = EMAIL_STATUS[status] ? status : 'pending';
+    return `<span class="nt-status nt-status--${st}">${EMAIL_STATUS[st].label}</span>`;
 }
 
 function emailTimeText(m) {
@@ -5504,34 +5535,108 @@ async function renderNotificationsList() {
         const high = unread.filter((n) => n.priority === 'high');
         updateNotificationCounters(unread.length, high.length);
 
-        if (window.__notifications.length === 0) {
-            list.innerHTML =
-                '<p style="color:#64748b; text-align:center; padding:20px;">You have no notifications.</p>';
-            return;
-        }
-
-        list.innerHTML = window.__notifications
-            .map((n) => {
-                const style = NOTIF_STYLES[n.type] || { icon: 'fa-regular fa-bell', color: '#64748b' };
-                const priorityBg = n.priority === 'high' ? '#ef4444' : n.priority === 'low' ? '#94a3b8' : '#0f172a';
-                const priorityLabel = n.priority === 'high' ? 'High Priority' : n.priority === 'low' ? 'Low' : 'Medium';
-                return `
-                    <div class="notif-item-card" onclick="openNotification(${jsArg(n.id)})" style="cursor:pointer; background:${n.is_read ? '#ffffff' : '#eff6ff'}; border:1px solid ${n.is_read ? '#e2e8f0' : '#93c5fd'}; border-radius:8px; padding:20px; margin-bottom:15px;">
-                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-                            <i class="${style.icon}" style="color:${style.color}; font-size:16px;"></i>
-                            <h4 style="font-size:15px; color:#0f172a; margin:0; font-weight:${n.is_read ? '500' : '600'};">${escapeHtml(n.title)}</h4>
-                            ${n.is_read ? '' : '<div class="notif-dot" role="img" aria-label="Unread" title="Unread" style="width:8px; height:8px; background:#3b82f6; border-radius:50%;"></div>'}
-                        </div>
-                        <span style="background:${priorityBg}; color:white; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600; display:inline-block; margin-bottom:10px;">${priorityLabel}</span>
-                        <p style="font-size:13px; color:#475569; margin:0 0 12px 0;">${escapeHtml(n.message || '')}</p>
-                        <div style="font-size:12px; color:#64748b;">${escapeHtml(formatTimeAgo(n.created_at))}</div>
-                    </div>`;
-            })
-            .join('');
+        paintNotifications();
     } catch (error) {
         console.error('Error rendering notifications:', error);
         list.innerHTML = errorStateHtml('Could not load notifications.', 'renderNotificationsList');
     }
+}
+
+function notifDayLabel(dateString) {
+    const d = new Date(dateString);
+    const today = new Date();
+    const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diffDays = Math.round((startOf(today) - startOf(d)) / 86400000);
+    if (diffDays <= 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    return 'Earlier';
+}
+
+function notifEntryHtml(n) {
+    const style = NOTIF_STYLES[n.type] || { icon: 'fa-regular fa-bell', color: '#64748b' };
+    const prio = n.priority === 'high' ? 'high' : n.priority === 'low' ? 'low' : 'medium';
+    return `
+        <article class="nt-entry prio-${prio}${n.is_read ? '' : ' unread'}" role="button" tabindex="0"
+            onclick="openNotification(${jsArg(n.id)})"
+            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNotification(${jsArg(n.id)});}">
+            <span class="nt-icon" style="--c:${style.color};"><i class="${style.icon}" aria-hidden="true"></i></span>
+            <div class="nt-body">
+                <div class="nt-top">
+                    <h4 class="nt-title">${escapeHtml(n.title)}</h4>
+                    ${n.is_read ? '' : '<span class="nt-dot" role="img" aria-label="Unread" title="Unread"></span>'}
+                </div>
+                <p class="nt-msg">${escapeHtml(n.message || '')}</p>
+                <div class="nt-meta">
+                    ${prio === 'high' ? '<span class="nt-prio"><span class="nt-pdot" aria-hidden="true"></span>High priority</span>' : ''}
+                    <span class="nt-time">${escapeHtml(formatTimeAgo(n.created_at))}</span>
+                </div>
+            </div>
+        </article>`;
+}
+
+function paintNotifications() {
+    const list = document.getElementById('notifications-list-inject');
+    if (!list) return;
+    const all = window.__notifications || [];
+    const filter = window.__notifFilter || 'all';
+
+    if (all.length === 0) {
+        list.innerHTML = `
+            <div class="nt-empty">
+                <i class="fa-regular fa-bell" aria-hidden="true"></i>
+                <p>You have no notifications.</p>
+                <span>New case assignments and reminders will appear here.</span>
+            </div>`;
+        return;
+    }
+
+    const shown = all.filter((n) =>
+        filter === 'unread' ? !n.is_read : filter === 'high' ? n.priority === 'high' : true
+    );
+    if (shown.length === 0) {
+        const msg = filter === 'unread' ? 'You are all caught up.' : 'No high priority notifications.';
+        list.innerHTML = `
+            <div class="nt-empty">
+                <i class="fa-regular fa-circle-check" aria-hidden="true"></i>
+                <p>${msg}</p>
+                <span>Choose All to see every notification.</span>
+            </div>`;
+        return;
+    }
+
+    const groups = [];
+    shown.forEach((n) => {
+        const label = notifDayLabel(n.created_at);
+        let g = groups.find((x) => x.label === label);
+        if (!g) groups.push((g = { label, items: [] }));
+        g.items.push(n);
+    });
+
+    list.innerHTML = groups
+        .map(
+            (g) => `
+            <section class="nt-group">
+                <div class="nt-group-head"><h5>${g.label}</h5><span>${g.items.length}</span></div>
+                ${g.items.map(notifEntryHtml).join('')}
+            </section>`
+        )
+        .join('');
+}
+
+function setupNotificationFilters() {
+    const wrap = document.querySelector('.nt-filters');
+    if (!wrap) return;
+    wrap.addEventListener('click', (e) => {
+        const btn = e.target.closest('.nt-filter');
+        if (!btn) return;
+        window.__notifFilter = btn.dataset.nfilter;
+        wrap.querySelectorAll('.nt-filter').forEach((b) => {
+            const on = b === btn;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        paintNotifications();
+    });
 }
 
 window.openNotification = async function (id) {
@@ -5584,29 +5689,33 @@ async function renderEmailQueueList() {
 
         const emails = listRes.data || [];
         if (emails.length === 0) {
-            list.innerHTML = '<p style="color:#64748b; text-align:center; padding:20px;">No emails in queue</p>';
+            list.innerHTML = `
+                <div class="nt-empty">
+                    <i class="fa-regular fa-envelope" aria-hidden="true"></i>
+                    <p>No emails in the queue.</p>
+                    <span>Client updates and reminders you send will be listed here.</span>
+                </div>`;
             return;
         }
 
         list.innerHTML = emails
             .map(
                 (m) => `
-                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:20px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
-                    <div style="display:flex; gap:15px; min-width:0;">
-                        <i class="fa-regular fa-envelope" style="color:#64748b; font-size:16px; margin-top:2px;"></i>
-                        <div style="min-width:0;">
-                            <h4 style="font-size:14px; color:#0f172a; margin:0 0 5px 0; font-weight:600; word-break:break-word;">${escapeHtml(m.secure_subject != null ? m.secure_subject : m.subject)}</h4>
-                            <p style="font-size:12px; color:#64748b; margin:0 0 8px 0;">${m.category === 'reminder' ? 'Reminder' : 'Case update'} • To: ${escapeHtml(m.recipient_email)}</p>
-                            <p style="font-size:12px; color:#64748b; margin:0; font-weight:500;">${escapeHtml(emailTimeText(m))}</p>
-                            ${m.last_error && m.status !== 'sent' ? `<p style="font-size:12px; color:#dc2626; margin:6px 0 0 0;">${escapeHtml(m.last_error)}</p>` : ''}
+                <div class="nt-entry nt-email${m.status === 'failed' ? ' is-failed' : ''}">
+                    <span class="nt-icon" style="--c:${m.status === 'failed' ? '#c23a3a' : '#64748b'};"><i class="fa-regular fa-envelope" aria-hidden="true"></i></span>
+                    <div class="nt-body">
+                        <div class="nt-top">
+                            <h4 class="nt-title">${escapeHtml(m.secure_subject != null ? m.secure_subject : m.subject)}</h4>
                         </div>
+                        <p class="nt-msg">${m.category === 'reminder' ? 'Reminder' : 'Case update'} to ${escapeHtml(m.recipient_email)}</p>
+                        <div class="nt-meta"><span class="nt-time">${escapeHtml(emailTimeText(m))}</span></div>
+                        ${m.last_error && m.status !== 'sent' ? `<p class="nt-error">${escapeHtml(m.last_error)}</p>` : ''}
                     </div>
-                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0;">
-                        ${emailStatusBadge(m.status)}
-                        ${m.status === 'failed' ? `<button type="button" onclick="retryEmail(${jsArg(m.id)})" style="padding:5px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; color:#334155;"><i class="fa-solid fa-rotate-right"></i> Retry</button>` : ''}
+                    <div class="nt-side">
+                        ${emailStatusPill(m.status)}
+                        ${m.status === 'failed' ? `<button type="button" class="nt-retry" onclick="retryEmail(${jsArg(m.id)})"><i class="fa-solid fa-rotate-right"></i> Retry</button>` : ''}
                     </div>
-                </div>
-            `
+                </div>`
             )
             .join('');
     } catch (error) {
@@ -5625,75 +5734,6 @@ window.retryEmail = async function (id) {
 };
 
 function setupNotificationActions() {
-    const btnMarkRead = document.getElementById('btn-mark-read');
-    const btnClearRead = document.getElementById('btn-clear-read');
-    const btnSendTest = document.getElementById('btn-send-test-email');
-
-    if (btnMarkRead) {
-        btnMarkRead.addEventListener('click', async () => {
-            const { error } = await supabaseClient
-                .from('notifications')
-                .update({ is_read: true, read_at: new Date().toISOString() })
-                .eq('user_id', currentUser.id)
-                .eq('is_read', false);
-            if (error) {
-                showToast('Could not mark notifications as read: ' + error.message, 'error');
-                return;
-            }
-            await renderNotificationsList();
-        });
-    }
-
-    if (btnClearRead) {
-        btnClearRead.addEventListener('click', async () => {
-            if (
-                !(await confirmDialog({
-                    title: 'Clear read notifications',
-                    confirmLabel: 'Delete',
-                    danger: true,
-                    message: 'Delete all notifications you have already read?'
-                }))
-            )
-                return;
-            const { error } = await supabaseClient
-                .from('notifications')
-                .delete()
-                .eq('user_id', currentUser.id)
-                .eq('is_read', true);
-            if (error) {
-                showToast('Could not clear notifications: ' + error.message, 'error');
-                return;
-            }
-            await renderNotificationsList();
-        });
-    }
-
-    if (btnSendTest) {
-        btnSendTest.addEventListener('click', async () => {
-            const idleHtml = btnSendTest.innerHTML;
-            btnSendTest.disabled = true;
-            btnSendTest.textContent = 'Sending...';
-            try {
-                const { data, error } = await supabaseClient.functions.invoke('send-test-email');
-                if (error) {
-                    let message = error.message;
-                    try {
-                        const errBody = await error.context.json();
-                        if (errBody && errBody.error) message = errBody.error;
-                    } catch (e) {}
-                    throw new Error(message);
-                }
-                showToast(`Test email sent to ${data.to}. Check your inbox.`, 'success');
-            } catch (err) {
-                console.error('Test email error:', err);
-                showToast('The test email could not be sent: ' + err.message, 'error');
-            } finally {
-                btnSendTest.disabled = false;
-                btnSendTest.innerHTML = idleHtml;
-            }
-        });
-    }
-
     setInterval(() => {
         refreshNotificationBadge();
         const view = document.getElementById('notifications-view');
@@ -5705,6 +5745,7 @@ function setupNotificationActions() {
 }
 
 function setupNotificationTabs() {
+    setupNotificationFilters();
     const notifTabs = document.querySelectorAll('.notif-tab-btn');
 
     notifTabs.forEach((tab) => {
@@ -5774,11 +5815,12 @@ function formatTimeAgo(dateString) {
     const now = new Date();
     const date = new Date(dateString);
     const seconds = Math.floor((now - date) / 1000);
+    const unit = (n, word) => `${n} ${word}${n === 1 ? '' : 's'} ago`;
 
     if (seconds < 60) return 'Just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
-    return `${Math.floor(seconds / 86400)} days ago`;
+    if (seconds < 3600) return unit(Math.floor(seconds / 60), 'minute');
+    if (seconds < 86400) return unit(Math.floor(seconds / 3600), 'hour');
+    return unit(Math.floor(seconds / 86400), 'day');
 }
 
 function setupLogoutValidation() {
@@ -5978,7 +6020,7 @@ async function prepareEventModal() {
             customInput.id = 'event-location-custom';
             customInput.placeholder = 'Type custom location...';
             customInput.style.cssText =
-                'width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; margin-top:8px; display:none; box-sizing:border-box;';
+                'width:100%; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; background:#f7f5f0; font-family:inherit; margin-top:8px; display:none; box-sizing:border-box;';
             locSelect.parentNode.appendChild(customInput);
         }
 
@@ -6088,7 +6130,7 @@ function setupAddEventModal() {
         clearBtn.id = 'add-event-attach-clear';
         clearBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Remove attachment';
         clearBtn.style.cssText =
-            'display:none; margin-top:8px; font-size:12px; padding:6px 10px; background:#fee2e2; color:#dc2626; border:none; border-radius:4px; cursor:pointer; font-weight:600;';
+            'display:none; margin-top:8px; font-size:12px; padding:6px 10px; background:#f9e1e1; color:#c23a3a; border:none; border-radius:4px; cursor:pointer; font-weight:600;';
         attachNameInput.parentElement.appendChild(clearBtn);
 
         attachInput.addEventListener('change', () => {
@@ -6148,12 +6190,12 @@ function setupAddEventModal() {
     function markEventFieldInvalid(el, message) {
         el.dataset.prevBorder = el.style.borderColor || '';
         el.setAttribute('data-had-error', '1');
-        el.style.borderColor = '#ef4444';
+        el.style.borderColor = '#d64545';
 
         const note = document.createElement('div');
         note.className = 'event-field-error';
         note.textContent = message;
-        note.style.cssText = 'color:#ef4444; font-size:12px; margin-top:4px;';
+        note.style.cssText = 'color:#d64545; font-size:12px; margin-top:4px;';
 
         const wrapper = el.parentElement;
         const anchor = el.tagName === 'SELECT' && wrapper && !wrapper.classList.contains('form-group') ? wrapper : el;
@@ -6578,7 +6620,7 @@ async function renderResourcesWidget() {
                 return `
                     <div class="resource-item" ${clickAttrs}>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#1e293b; font-weight:500;">${room}</span>
+                            <span style="color:#252d3a; font-weight:500;">${room}</span>
                             <span class="tag ${tagClass}" style="font-size:12px; padding:3px 8px; border-radius:4px; font-weight:bold; ${tagStyle}">
                                 ${tagText}
                             </span>
@@ -7253,9 +7295,9 @@ function teamChipsHtml(rows) {
 
 function approvalBadge(status) {
     const styles = {
-        pending: 'background:#fef3c7; color:#b45309;',
-        approved: 'background:#dcfce7; color:#16a34a;',
-        rejected: 'background:#fee2e2; color:#dc2626;'
+        pending: 'background:#f8edd2; color:#a2711a;',
+        approved: 'background:#dff1e9; color:#16835d;',
+        rejected: 'background:#f9e1e1; color:#c23a3a;'
     };
     const labels = { pending: 'Pending approval', approved: 'Approved', rejected: 'Rejected' };
     return `<span style="font-size:12px; padding:3px 10px; border-radius:99px; font-weight:700; margin-left:8px; vertical-align:middle; ${styles[status] || ''}">${labels[status] || escapeHtml(status || '')}</span>`;
@@ -7511,7 +7553,7 @@ function openClientViewModal(client) {
         `<div class="cv-field"><span class="cv-label">${label}</span><div class="cv-value">${html}</div></div>`;
     const rejected =
         client.approval_status === 'rejected' && client.rejection_reason
-            ? field('Rejection reason', `<span style="color:#dc2626;">${escapeHtml(client.rejection_reason)}</span>`)
+            ? field('Rejection reason', `<span style="color:#c23a3a;">${escapeHtml(client.rejection_reason)}</span>`)
             : '';
 
     const overlay = document.createElement('div');
@@ -8026,7 +8068,7 @@ async function openCaseForm(caseId = null) {
         document.getElementById('cf-title').readOnly = true;
         document.getElementById('cf-type').disabled = !!record.case_type;
         document.getElementById('cf-party').disabled = !!record.party_type;
-        document.getElementById('cf-stage').disabled = true;
+        document.getElementById('cf-stage').disabled = false;
         document.getElementById('cf-date').disabled = true;
         document.getElementById('cf-court').readOnly = !!record.court_branch;
         document.getElementById('cf-date').value = toLocalDateKey(record.date_filed || record.created_at);
@@ -8724,7 +8766,8 @@ window.openCaseReports = async function (caseId, initialTab) {
         if (!ok) return;
         const { data, error } = await supabaseClient.from('case_reports').delete().eq('id', id).select('id');
         if (error || !data || data.length === 0) {
-            showToast('Could not delete the report: ' + (error ? error.message : 'permission denied'), 'error');
+            if (error) console.error('Error deleting report:', error);
+            showToast('The report could not be deleted. ' + readableDbError(error, 'You do not have permission to do this.'), 'error');
             return;
         }
         showToast('Report deleted.', 'success');
@@ -9279,6 +9322,24 @@ window.openCaseForm = openCaseForm;
 window.openCaseTeam = function (caseId) {
     openTeamModal('case', caseId);
 };
+function readableDbError(error, fallback) {
+    const raw = error && error.message ? String(error.message) : '';
+    const code = error && error.code ? String(error.code) : '';
+    if (code === '23503' || /foreign key|violates/i.test(raw)) {
+        return 'It is still linked to other records.';
+    }
+    if (/permission denied|row-level security|not authorized|not allowed/i.test(raw)) {
+        return 'You do not have permission to do this.';
+    }
+    if (/duplicate key|unique constraint|already exists/i.test(raw)) {
+        return 'This already exists.';
+    }
+    if (/failed to fetch|network|timeout/i.test(raw)) {
+        return 'There is a connection problem. Please check your internet and try again.';
+    }
+    return fallback || 'Something went wrong. Please try again.';
+}
+
 window.deleteCase = async function (caseId) {
     if (!isAdminUser()) return;
     const c = (window.__casesRegistry || {})[caseId];
@@ -9293,10 +9354,12 @@ window.deleteCase = async function (caseId) {
         return;
     const { error } = await supabaseClient.from('cases').delete().eq('id', caseId);
     if (error) {
+        console.error('Error deleting case:', error);
+        const linked = error.code === '23503' || /foreign key|violates/i.test(error.message || '');
         showToast(
-            'Could not delete the case: ' +
-                error.message +
-                '\n\nA case that still has documents or events linked to it cannot be deleted.',
+            linked
+                ? 'This case cannot be deleted because it still has calendar events, documents or other records linked to it. Remove those first, or close the case instead.'
+                : 'The case could not be deleted. ' + readableDbError(error),
             'error'
         );
         return;
@@ -9640,6 +9703,10 @@ function syncCaseAttachment() {
 
 const SECURE_EMAIL_REF_LENGTH = 4;
 
+function clientLoginUrl() {
+    return window.location.origin + window.location.pathname.replace('index.html', '') + 'client-login.html';
+}
+
 function buildSecureEmailContent(caseNumber) {
     const ref = String(caseNumber || '')
         .trim()
@@ -9650,7 +9717,9 @@ function buildSecureEmailContent(caseNumber) {
         body:
             'Message sent.' +
             refText +
-            '\n\nFor your privacy, the message is not shown in this email. Please sign in to your JuriSync client portal to read it.'
+            '\n\nFor your privacy, the message is not shown in this email. Please sign in to your JuriSync client portal to read it.' +
+            '\n\nSign in here: ' +
+            clientLoginUrl()
     };
 }
 
@@ -9893,7 +9962,7 @@ function setupUploadModal() {
     const nameError = document.createElement('p');
     nameError.id = 'doc-file-name-error';
     nameError.setAttribute('role', 'alert');
-    nameError.style.cssText = 'color:#dc2626; font-size:12px; margin:6px 0 0 0; display:none;';
+    nameError.style.cssText = 'color:#c23a3a; font-size:12px; margin:6px 0 0 0; display:none;';
     if (fileNameInput) {
         fileNameInput.insertAdjacentElement('afterend', nameError);
         fileNameInput.setAttribute('aria-describedby', 'doc-file-name-error');
@@ -9920,7 +9989,7 @@ function setupUploadModal() {
         dropText.innerText = file.name;
         if (fileNameInput) fileNameInput.value = sanitizeFileName(file.name);
         showNameError('');
-        dropArea.style.borderColor = '#3b82f6';
+        dropArea.style.borderColor = '#3976c5';
         dropArea.style.backgroundColor = 'var(--accent-soft)';
     }
 
@@ -9988,7 +10057,7 @@ function setupUploadModal() {
 
         dropArea.addEventListener('dragover', (e) => {
             e.preventDefault();
-            dropArea.style.borderColor = '#3b82f6';
+            dropArea.style.borderColor = '#3976c5';
             dropArea.style.backgroundColor = 'var(--accent-soft)';
         });
 
@@ -10344,12 +10413,12 @@ function setupMyProfileModal() {
                 if (specSelect) {
                     if (globalUserRole === 'administrator') {
                         specSelect.disabled = false;
-                        specSelect.style.backgroundColor = '#f8fafc';
-                        specSelect.style.color = '#0f172a';
+                        specSelect.style.backgroundColor = '#f7f5f0';
+                        specSelect.style.color = '#101b2d';
                         specSelect.style.cursor = 'pointer';
                     } else {
                         specSelect.disabled = true;
-                        specSelect.style.backgroundColor = '#f1f5f9';
+                        specSelect.style.backgroundColor = '#eeebe3';
                         specSelect.style.color = '#64748b';
                         specSelect.style.cursor = 'not-allowed';
                     }
@@ -10669,9 +10738,9 @@ function openUserModal(title, subtitleHtml, bodyHtml) {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
             <div style="width:90%; max-width:480px; padding:25px 30px; background:#ffffff; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.1); max-height:90vh; overflow-y:auto;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e2e8f0; padding-bottom:15px; margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e5e1d8; padding-bottom:15px; margin-bottom:16px;">
                     <div>
-                        <h2 style="font-size:18px; font-weight:700; color:#1e293b; margin:0;">${escapeHtml(title)}</h2>
+                        <h2 style="font-size:18px; font-weight:700; color:#252d3a; margin:0;">${escapeHtml(title)}</h2>
                         <p style="font-size:12px; color:#64748b; margin:4px 0 0 0;">${subtitleHtml}</p>
                     </div>
                     <button type="button" data-um-close aria-label="Close" title="Close" style="background:transparent; border:none; font-size:20px; cursor:pointer; color:#64748b; padding:0;"><i class="fa-solid fa-xmark"></i></button>
@@ -10710,7 +10779,7 @@ async function getLawyerWorkSummary(lawyerId) {
 function workSummaryHtml(work) {
     const row = (n, singular, plural) => `<li>${n} ${n === 1 ? singular : plural}</li>`;
     return `
-            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; font-size:13px; color:#334155; margin-bottom:16px;">
+            <div style="background:#f7f5f0; border:1px solid #e5e1d8; border-radius:8px; padding:12px 14px; font-size:13px; color:#3b4656; margin-bottom:16px;">
                 <strong>Currently assigned</strong>
                 <ul style="margin:8px 0 0 18px; padding:0; line-height:1.7;">
                     ${row(work.cases, 'active case', 'active cases')}
@@ -10722,9 +10791,9 @@ function workSummaryHtml(work) {
 
 function replacementSelectHtml(lawyers) {
     return `
-            <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Transfer their work to</label>
+            <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Transfer their work to</label>
             <div style="position:relative; margin-bottom:8px;">
-                <select id="um-replacement" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; appearance:none;">
+                <select id="um-replacement" style="width:100%; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; background:#f7f5f0; font-family:inherit; appearance:none;">
                     <option value="">Select a lawyer</option>
                     ${lawyers.map((l) => `<option value="${escapeHtml(l.id)}">Atty. ${escapeHtml(l.full_name || 'Unnamed')}${l.specialization ? ' — ' + escapeHtml(l.specialization) : ''}</option>`).join('')}
                 </select>
@@ -10735,9 +10804,9 @@ function replacementSelectHtml(lawyers) {
 
 function modalButtonsHtml(confirmLabel, confirmColor) {
     return `
-            <div id="um-error" style="color:#ef4444; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
+            <div id="um-error" style="color:#d64545; font-size:12px; min-height:16px; margin-bottom:10px;"></div>
             <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button type="button" id="um-cancel" style="padding:10px 18px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600;">Cancel</button>
+                <button type="button" id="um-cancel" style="padding:10px 18px; border:1px solid #d5cfc2; background:white; border-radius:6px; cursor:pointer; font-weight:600;">Cancel</button>
                 <button type="button" id="um-confirm" style="padding:10px 18px; background:${confirmColor}; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600;">${escapeHtml(confirmLabel)}</button>
             </div>`;
 }
@@ -10757,14 +10826,14 @@ window.openArchiveLawyerModal = async function (id, name) {
 
         let middle;
         if (!hasWork) {
-            middle = `<p style="font-size:13px; color:#475569; margin:0 0 16px 0;">Atty. ${escapeHtml(name)} has no active assignments. Their account will be deactivated and their historical records will stay intact.</p>`;
+            middle = `<p style="font-size:13px; color:#4f5b6d; margin:0 0 16px 0;">Atty. ${escapeHtml(name)} has no active assignments. Their account will be deactivated and their historical records will stay intact.</p>`;
         } else if (others.length === 0) {
-            middle = `${workSummaryHtml(work)}<p style="font-size:13px; color:#ef4444; margin:0 0 16px 0;">There is no other active lawyer to take over this work. Add or restore a lawyer first.</p>`;
+            middle = `${workSummaryHtml(work)}<p style="font-size:13px; color:#d64545; margin:0 0 16px 0;">There is no other active lawyer to take over this work. Add or restore a lawyer first.</p>`;
         } else {
             middle = workSummaryHtml(work) + replacementSelectHtml(others);
         }
 
-        modal.body.innerHTML = middle + modalButtonsHtml(hasWork ? 'Transfer & archive' : 'Archive account', '#f59e0b');
+        modal.body.innerHTML = middle + modalButtonsHtml(hasWork ? 'Transfer & archive' : 'Archive account', '#d69b2d');
         const confirmBtn = modal.body.querySelector('#um-confirm');
         const errEl = modal.body.querySelector('#um-error');
         modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
@@ -10824,18 +10893,18 @@ window.openChangeRoleModal = async function (id, name, currentRole) {
             hasWork = work.cases + work.clients + work.events > 0;
             if (!hasWork) {
                 middle =
-                    '<p style="font-size:13px; color:#475569; margin:0 0 16px 0;">They have no active assignments. As a secretary they will no longer be assignable to cases or clients.</p>';
+                    '<p style="font-size:13px; color:#4f5b6d; margin:0 0 16px 0;">They have no active assignments. As a secretary they will no longer be assignable to cases or clients.</p>';
             } else if (others.length === 0) {
-                middle = `${workSummaryHtml(work)}<p style="font-size:13px; color:#ef4444; margin:0 0 16px 0;">There is no other active lawyer to take over this work. Add or restore a lawyer first.</p>`;
+                middle = `${workSummaryHtml(work)}<p style="font-size:13px; color:#d64545; margin:0 0 16px 0;">There is no other active lawyer to take over this work. Add or restore a lawyer first.</p>`;
             } else {
                 middle = workSummaryHtml(work) + replacementSelectHtml(others);
             }
         } else {
             middle = `
-                    <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">As a lawyer they can be assigned clients and cases.</p>
-                    <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Specialization</label>
+                    <p style="font-size:13px; color:#4f5b6d; margin:0 0 14px 0;">As a lawyer they can be assigned clients and cases.</p>
+                    <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Specialization</label>
                     <div style="position:relative; margin-bottom:16px;">
-                        <select id="um-spec" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:inherit; appearance:none;">
+                        <select id="um-spec" style="width:100%; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; background:#f7f5f0; font-family:inherit; appearance:none;">
                             ${SPECIALIZATIONS.map((sp) => `<option value="${escapeHtml(sp)}">${escapeHtml(sp)}</option>`).join('')}
                         </select>
                         <i class="fa-solid fa-chevron-down" style="position:absolute; right:12px; top:14px; color:#64748b; pointer-events:none; font-size:12px;"></i>
@@ -10845,7 +10914,7 @@ window.openChangeRoleModal = async function (id, name, currentRole) {
         middle +=
             '<p style="font-size:12px; color:#64748b; margin:0 0 12px 0;">The change applies immediately. If they are signed in, they should sign in again to see the right menus.</p>';
 
-        modal.body.innerHTML = middle + modalButtonsHtml('Change role', '#0ea5e9');
+        modal.body.innerHTML = middle + modalButtonsHtml('Change role', '#3976c5');
         const confirmBtn = modal.body.querySelector('#um-confirm');
         const errEl = modal.body.querySelector('#um-error');
         modal.body.querySelector('#um-cancel').addEventListener('click', modal.close);
@@ -10902,15 +10971,15 @@ window.openResetPasswordModal = function (id, name) {
         'Reset Password',
         escapeHtml(name),
         `
-            <p style="font-size:13px; color:#475569; margin:0 0 14px 0;">Set a password. They will be asked to choose their own the next time they sign in.</p>
-            <label style="display:block; font-size:13px; font-weight:600; color:#0f172a; margin-bottom:6px;">Password</label>
+            <p style="font-size:13px; color:#4f5b6d; margin:0 0 14px 0;">Set a password. They will be asked to choose their own the next time they sign in.</p>
+            <label style="display:block; font-size:13px; font-weight:600; color:#101b2d; margin-bottom:6px;">Password</label>
             <div style="display:flex; gap:8px; margin-bottom:6px;">
-                <input type="text" id="um-pw" autocomplete="off" style="flex:1; padding:10px 12px; border:1px solid #cbd5e1; border-radius:6px; font-family:monospace; background:#f8fafc;">
-                <button type="button" id="um-pw-generate" style="padding:10px 12px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Generate</button>
-                <button type="button" id="um-pw-copy" style="padding:10px 12px; border:1px solid #cbd5e1; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Copy</button>
+                <input type="text" id="um-pw" autocomplete="off" style="flex:1; padding:10px 12px; border:1px solid #d5cfc2; border-radius:6px; font-family:monospace; background:#f7f5f0;">
+                <button type="button" id="um-pw-generate" style="padding:10px 12px; border:1px solid #d5cfc2; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Generate</button>
+                <button type="button" id="um-pw-copy" style="padding:10px 12px; border:1px solid #d5cfc2; background:white; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px;">Copy</button>
             </div>
             <p style="font-size:12px; color:#64748b; margin:0 0 16px 0;">At least 8 characters with a letter and a number. Share it with them privately.</p>
-            ${modalButtonsHtml('Reset password', '#8b5cf6')}
+            ${modalButtonsHtml('Reset password', '#3d5a80')}
         `
     );
 
@@ -11508,24 +11577,24 @@ function initAuditFilters() {
 }
 
 const AUDIT_ACTIONS = {
-    INSERT: { label: 'Added', color: '#16a34a', icon: 'fa-plus' },
-    UPDATE: { label: 'Updated', color: '#2563eb', icon: 'fa-pen' },
-    DELETE: { label: 'Deleted', color: '#dc2626', icon: 'fa-trash' },
-    CLOSE: { label: 'Closed', color: '#d97706', icon: 'fa-lock' },
-    REOPEN: { label: 'Reopened', color: '#0284c7', icon: 'fa-rotate-left' },
-    RESCHEDULE: { label: 'Rescheduled', color: '#7c3aed', icon: 'fa-calendar-days' },
-    ARCHIVE: { label: 'Archived', color: '#b45309', icon: 'fa-box-archive' },
-    RESTORE: { label: 'Restored', color: '#15803d', icon: 'fa-rotate-left' },
-    LOGIN: { label: 'Signed in', color: '#0d9488', icon: 'fa-right-to-bracket' },
-    LOGIN_FAILED: { label: 'Failed sign-in', color: '#dc2626', icon: 'fa-triangle-exclamation' },
-    ACCOUNT_LOCKED: { label: 'Account locked', color: '#b91c1c', icon: 'fa-lock' },
-    MFA_RESET: { label: '2FA reset', color: '#be185d', icon: 'fa-user-shield' },
+    INSERT: { label: 'Added', color: '#16835d', icon: 'fa-plus' },
+    UPDATE: { label: 'Updated', color: '#2f65ad', icon: 'fa-pen' },
+    DELETE: { label: 'Deleted', color: '#c23a3a', icon: 'fa-trash' },
+    CLOSE: { label: 'Closed', color: '#b9811f', icon: 'fa-lock' },
+    REOPEN: { label: 'Reopened', color: '#3976c5', icon: 'fa-rotate-left' },
+    RESCHEDULE: { label: 'Rescheduled', color: '#3d5a80', icon: 'fa-calendar-days' },
+    ARCHIVE: { label: 'Archived', color: '#a2711a', icon: 'fa-box-archive' },
+    RESTORE: { label: 'Restored', color: '#116b4b', icon: 'fa-rotate-left' },
+    LOGIN: { label: 'Signed in', color: '#16835d', icon: 'fa-right-to-bracket' },
+    LOGIN_FAILED: { label: 'Failed sign-in', color: '#c23a3a', icon: 'fa-triangle-exclamation' },
+    ACCOUNT_LOCKED: { label: 'Account locked', color: '#a83030', icon: 'fa-lock' },
+    MFA_RESET: { label: '2FA reset', color: '#a83030', icon: 'fa-user-shield' },
     LOGOUT: { label: 'Signed out', color: '#64748b', icon: 'fa-right-from-bracket' },
-    PASSWORD_CHANGE: { label: 'Password changed', color: '#be185d', icon: 'fa-key' },
-    PASSWORD_RESET: { label: 'Password reset', color: '#be185d', icon: 'fa-key' },
-    EXPORT: { label: 'Exported', color: '#475569', icon: 'fa-file-export' },
-    APPROVE: { label: 'Approved', color: '#15803d', icon: 'fa-circle-check' },
-    DECLINE: { label: 'Declined', color: '#dc2626', icon: 'fa-circle-xmark' }
+    PASSWORD_CHANGE: { label: 'Password changed', color: '#a83030', icon: 'fa-key' },
+    PASSWORD_RESET: { label: 'Password reset', color: '#a83030', icon: 'fa-key' },
+    EXPORT: { label: 'Exported', color: '#4f5b6d', icon: 'fa-file-export' },
+    APPROVE: { label: 'Approved', color: '#116b4b', icon: 'fa-circle-check' },
+    DECLINE: { label: 'Declined', color: '#c23a3a', icon: 'fa-circle-xmark' }
 };
 
 const AUDIT_ENTITIES = {
@@ -11569,6 +11638,20 @@ function auditFriendlyFields(fields) {
             else if (/^archived date$/.test(f)) text = 'archived';
             else if (/^archived by id$/.test(f)) text = '';
             else if (/^closed date$/.test(f)) text = 'closed';
+            else if (/^auth user( id)?$/.test(f)) text = '';
+            else if (/^status: pending to active$/.test(f)) text = 'account activated';
+            else if (/^status: active to pending$/.test(f)) text = 'waiting for activation';
+            else if (/^status: active to inactive$/.test(f)) text = 'account archived';
+            else if (/^status: inactive to active$/.test(f)) text = 'account restored';
+            else if (/^phone$/.test(f)) text = 'phone number';
+            else if (/^specialization: (.+) to (.+)$/.test(f)) text = f.replace(/^specialization: (.+) to (.+)$/, 'specialization changed from $1 to $2');
+            else if (/^is sent: false to true$/.test(f)) text = 'delivered';
+            else if (/^sent date$/.test(f)) text = '';
+            else if (/^status: [a-z]+ to sent$/.test(f)) text = 'delivered';
+            else if (/^status: [a-z]+ to processing$/.test(f)) text = 'being sent';
+            else if (/^status: [a-z]+ to failed$/.test(f)) text = 'could not be delivered';
+            else if (/^status: processing to pending$/.test(f)) text = 'will try again';
+            else if (/^(attempts|last attempt date|next attempt date|last error)(: .+)?$/.test(f)) text = '';
             else text = f.replace(/ id$/, '');
             if (text && !seen.has(text)) {
                 seen.add(text);
@@ -11579,7 +11662,7 @@ function auditFriendlyFields(fields) {
 }
 
 function auditFriendlyDetails(text) {
-    const m = String(text).match(/^(Updated [a-z ]+: .+?) - ([a-z][a-z ;:_,.\-0-9]*)$/);
+    const m = String(text).match(/^(Updated [a-z ]+: .+?) - ([a-z][A-Za-z ;:_,.\-0-9]*)$/);
     if (!m) return text;
     const parts = m[2].split(';').map((p) => p.trim());
     if (!parts.every((p) => /^[a-z ]+( date)?(: [^;]+ to [^;]+)?$/.test(p))) return text;
@@ -11617,7 +11700,7 @@ function paintAudits() {
         .map((log) => {
             const action = AUDIT_ACTIONS[log.action] || {
                 label: log.action || 'Changed',
-                color: '#2563eb',
+                color: '#2f65ad',
                 icon: 'fa-pen'
             };
             const entity = auditEntityLabel(log.table_name);
@@ -11646,15 +11729,11 @@ function paintAudits() {
 
     const body = rows
         .map((r) => {
-            const idHint =
-                !r.summary && r.recordId
-                    ? `<div class="ct-sub" title="${escapeHtml(r.recordId)}">ID ${escapeHtml(r.recordId.slice(0, 8))}${r.recordId.length > 8 ? '...' : ''}</div>`
-                    : '';
             return `
             <tr>
                 <td><span class="au-pill" style="background:${r.action.color}1a; color:${r.action.color};"><i class="fa-solid ${r.action.icon}"></i> ${escapeHtml(r.action.label)}</span></td>
                 <td>${escapeHtml(r.entity)}</td>
-                <td class="au-details">${escapeHtml(r.details)}${idHint}</td>
+                <td class="au-details">${escapeHtml(r.details)}</td>
                 <td>
                     <div class="ct-person">
                         <span class="ct-avatar ct-avatar-sm ct-avatar-blue">${
@@ -11928,7 +12007,7 @@ function buildAuditExportRows(logs, names, term) {
                 when,
                 iso: isNaN(d.getTime()) ? '' : d.toISOString(),
                 action,
-                color: (AUDIT_ACTIONS[log.action] && AUDIT_ACTIONS[log.action].color) || '#334155',
+                color: (AUDIT_ACTIONS[log.action] && AUDIT_ACTIONS[log.action].color) || '#3b4656',
                 entity,
                 details,
                 user,
